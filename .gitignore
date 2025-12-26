@@ -1,0 +1,30 @@
+# Local config with secrets
+config.env
+config.env.local
+.env
+.env.local
+
+# Runtime data
+/data/
+*.sqlite
+*.log
+*.db
+
+# Temporary and build files
+/tmp/
+/dev/shm/
+*.tmp
+*.swp
+
+# Video clips and caches
+*.mp4
+*.mkv
+
+# Docker and compose overrides
+docker-compose.override.yml
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,30 @@
+# Do not include local environment files with secrets
+config.env
+.env
+config.env.*
+
+# Runtime data and caches
+data/
+data/**
+*.sqlite
+*.db
+*.log
+*.mp4
+*.mkv
+
+# Temporary directories
+tmp/
+/dev/shm/
+
+# Docker / compose overrides
+docker-compose.override.yml
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git metadata
+.git
+.gitignore
