@@ -1,7 +1,7 @@
 services:
-  frigate-telegram:
-    image: ghcr.io/silverknightkma/frigate-telegram-record:1.0.0
-    container_name: frigate_tele_bot
+  frigate-telegram-record:
+    image: ghcr.io/silverknightkma/frigate-telegram-record:v1.0.0
+    container_name: frigate-telegram-record
     restart: unless-stopped
     tmpfs:
       - /dev/shm:rw,size=512m
