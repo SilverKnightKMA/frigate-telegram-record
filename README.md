@@ -36,7 +36,7 @@ Place environment variables either in a mounted `config.env` (the container read
 - `TEST_REC_DURATION_MIN` — Slot length used in `MODE=test` (default 1).
 - `PADDING_SEC` — Seconds to pad before/after requested clip when downloading from Frigate (default 5).
 - `MODE` — `record` (daemon) or `test` (single cycle).
-- `RETENTION_DAYS`, `ALERT_RETENTION_DAYS`, `LOOKBACK_HOURS`, `MAX_CONCURRENT_TASKS`, `MAX_RETRIES` — tuning and retention defaults available in the script.
+- `RETENTION_DAYS`, `ALERT_RETENTION_HOURS`, `ALERT_REPEAT`, `LOOKBACK_HOURS`, `MAX_CONCURRENT_TASKS`, `MAX_RETRIES` — tuning and retention defaults available in the script. `ALERT_RETENTION_HOURS` uses hours (not days); `ALERT_REPEAT` controls whether an already-sent alert should be resent (true/false).
 
 Example `config.env` (minimal)
 ```

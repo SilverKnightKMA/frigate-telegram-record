@@ -4,7 +4,14 @@
 # CONFIGURATION LOADER
 # ==============================================================================
 
-CONFIG_FILE="/app/config/config.env"
+CONFIG_FILE="${CONFIG_FILE:-}"
+if [ -z "$CONFIG_FILE" ]; then
+    if [ -f "./config/config.env" ]; then
+        CONFIG_FILE="./config/config.env"
+    else
+        CONFIG_FILE="/app/config/config.env"
+    fi
+fi
 
 load_config() {
     if [ -f "$CONFIG_FILE" ]; then
@@ -23,14 +30,19 @@ export TZ="${TZ:-Asia/Ho_Chi_Minh}"
 FRIGATE_HOST="${FRIGATE_HOST:-http://127.0.0.1:5000}"
 TELEGRAM_API_URL="${TELEGRAM_API_URL:-https://api.telegram.org}"
 
-DATA_DIR="/app/data"
+if [ -z "${DATA_DIR:-}" ]; then
+    if [ -d "./data" ]; then DATA_DIR="./data"; else DATA_DIR="/app/data"; fi
+fi
+
 TEMP_DIR="/dev/shm/frigate_clips"
 LOG_FILE="$DATA_DIR/execution.log"
 DB_FILE="$DATA_DIR/video_history.sqlite"
 
 # --- TUNING CONFIG ---
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
-ALERT_RETENTION_DAYS="${ALERT_RETENTION_DAYS:-3}"
+ALERT_RETENTION_HOURS="${ALERT_RETENTION_HOURS:-72}"
+# Whether to resend alerts for the same slot (true/false)
+ALERT_REPEAT="${ALERT_REPEAT:-false}"
 LOOKBACK_HOURS="${LOOKBACK_HOURS:-24}"
 # Keep low to avoid database locks
 MAX_CONCURRENT_TASKS="${MAX_CONCURRENT_TASKS:-2}" 
@@ -154,7 +166,7 @@ init_db() {
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
     db_exec "DELETE FROM sent_ranges WHERE created_at < $sent_cleanup_ts;"
 
-    local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_DAYS days" +%s)
+    local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
     db_exec "DELETE FROM alert_history WHERE created_at < $alert_cleanup_ts;"
 }
 init_db
@@ -249,7 +261,10 @@ trigger_failure_alert() {
     local record_id="${src}_${start_ts}_${end_ts}"
     local alerted=$(db_count "SELECT count(*) FROM alert_history WHERE id='$record_id';")
     
-    if [ "$alerted" -gt 0 ]; then
+    # Normalize ALERT_REPEAT for comparison
+    local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
+
+    if [ "$alerted" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
         log "[$src] Silent Fail (Already Alerted): $reason"
     else
         # --- FIX HIỂN THỊ NGÀY GIỜ TẠI ĐÂY ---
@@ -258,7 +273,12 @@ trigger_failure_alert() {
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')" "RECORDING|$src"
         
         local current_ts=$(date +%s)
-        db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at) VALUES ('$record_id', '$src', $current_ts);"
+        if [ "$alert_repeat" == "true" ]; then
+            # Replace existing entry so we can alert again for the same slot
+            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at) VALUES ('$record_id', '$src', $current_ts);"
+        else
+            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at) VALUES ('$record_id', '$src', $current_ts);"
+        fi
     fi
 }
 
