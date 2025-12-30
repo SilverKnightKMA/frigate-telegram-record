@@ -1,6 +1,6 @@
 services:
   frigate-telegram-record:
-    image: ghcr.io/silverknightkma/frigate-telegram-record:v1.0.0
+    image: ghcr.io/silverknightkma/frigate-telegram-record:1.0.1
     container_name: frigate-telegram-record
     restart: unless-stopped
     tmpfs:
