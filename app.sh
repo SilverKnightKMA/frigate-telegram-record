@@ -26,6 +26,10 @@ load_config() {
 }
 load_config
 
+# --- NOTE:
+# `load_config` reads a simple KEY=VALUE file (ignores comments/blank lines)
+# and only exports variables that are not already set in the environment.
+
 export TZ="${TZ:-Asia/Ho_Chi_Minh}"
 FRIGATE_HOST="${FRIGATE_HOST:-http://127.0.0.1:5000}"
 TELEGRAM_API_URL="${TELEGRAM_API_URL:-https://api.telegram.org}"
@@ -53,6 +57,15 @@ REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
 TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
 MODE="${MODE:-record}"
 
+# --- NEW CONFIG: Control Recovery Notification ---
+# true: Send Reply + Reaction + Edit Message
+# false: Only Edit Message (Silent update)
+NOTIFY_ON_RECOVERY="${NOTIFY_ON_RECOVERY:-true}"
+
+# Global vars to hold message IDs after sending
+SENT_ERROR_MSG_ID=""
+SENT_VIDEO_MSG_ID=""
+
 # ==============================================================================
 # SYSTEM PREP & LOGGING
 # ==============================================================================
@@ -79,19 +92,118 @@ db_count() {
     fi
 }
 
+# db_count: run a SQL query expected to return a single numeric value
+# and normalise non-numeric responses to 0 to avoid shell errors.
+
+# --- HELPER: EXTRACT JSON VALUE (Minimal grep/awk to avoid jq dependency) ---
+get_json_value() {
+    local json="$1"
+    local key="$2"
+    # Simple regex to extract integer values like "message_id":123
+    echo "$json" | grep -oE "\"$key\":[0-9]+" | head -n 1 | awk -F':' '{print $2}'
+}
+
+# --- TELEGRAM ACTIONS ---
+
+send_reaction() {
+    local chat_id="$1"
+    local msg_id="$2"
+    local emoji="$3"
+    
+    # Don't react if no msg_id
+    if [ -z "$msg_id" ] || [ "$msg_id" == "0" ]; then return; fi
+
+    curl -s -X POST "${TELEGRAM_API_URL}/bot${BOT_TOKEN}/setMessageReaction" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"chat_id\": $chat_id,
+            \"message_id\": $msg_id,
+            \"reaction\": [{
+                \"type\": \"emoji\",
+                \"emoji\": \"$emoji\"
+            }],
+            \"is_big\": true
+        }" > /dev/null
+}
+
+# send_reaction: add an emoji reaction to an existing message (if bot permitted).
+
+send_reply() {
+    local chat_id="$1"
+    local msg_id="$2"
+    local text="$3"
+    local thread_id="$4"
+
+    if [ -z "$msg_id" ] || [ "$msg_id" == "0" ]; then return; fi
+
+    local extra_params=""
+    if [ -n "$thread_id" ]; then
+        extra_params="\"message_thread_id\": $thread_id,"
+    fi
+
+    curl -s -X POST "${TELEGRAM_API_URL}/bot${BOT_TOKEN}/sendMessage" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"chat_id\": $chat_id,
+            $extra_params
+            \"text\": \"$text\",
+            \"reply_parameters\": {
+                \"message_id\": $msg_id
+            }
+        }" > /dev/null
+}
+
+# send_reply: send a message that is a reply to an existing message id.
+# Supports optional thread (message_thread_id) when provided.
+
+edit_message_text() {
+    local chat_id="$1"
+    local msg_id="$2"
+    local text="$3"
+    local thread_id="$4"
+
+    if [ -z "$msg_id" ] || [ "$msg_id" == "0" ]; then return; fi
+
+    local args=(
+        -s -X POST "${TELEGRAM_API_URL}/bot${BOT_TOKEN}/editMessageText"
+        -d "chat_id=${chat_id}"
+        -d "message_id=${msg_id}"
+        -d "parse_mode=HTML"
+        --data-urlencode "text=${text}"
+    )
+    if [ -n "$thread_id" ]; then args+=(-d "message_thread_id=${thread_id}"); fi
+
+    curl "${args[@]}" > /dev/null
+}
+
+# edit_message_text: update the text of an existing message using HTML parse mode.
+# Uses --data-urlencode to safely transmit multi-line content.
+
 # --- ERROR HANDLER ---
 handle_error() {
     local msg="$1"
     local context="$2"
     local ts=$(date '+%Y-%m-%d %H:%M:%S')
     
-    echo "[$ts] [ERROR] [$context] $msg" | tee -a "$LOG_FILE"
+    # Reset global ID
+    SENT_ERROR_MSG_ID=""
+
+    # Clean HTML tags for log file
+    local clean_msg=$(echo "$msg" | sed 's/<[^>]*>//g')
+    echo "[$ts] [ERROR] [$context] $clean_msg" | tee -a "$LOG_FILE"
     
     if [ -n "$ERROR_CHAT_ID" ]; then
-        local alert_text="🚨 <b>EXECUTION FAILED</b>
+        local alert_text=""
+        
+        # Smart Check: If input has HTML tags, use it as is. Else use default template.
+        if [[ "$msg" == *"<b>"* ]]; then
+            alert_text="$msg"
+        else
+            alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $ts
 <b>Context:</b> $context
 <b>Error:</b> $msg"
+        fi
 
         local attempt=1
         local max_alert_retries=3
@@ -108,10 +220,16 @@ handle_error() {
             if [ -n "$ERROR_THREAD_ID" ]; then args+=(-d "message_thread_id=${ERROR_THREAD_ID}"); fi
 
             local http_code=$(curl "${args[@]}")
-            local curl_exit=$?
             local response_content=$(cat "$response_body")
 
             if [ "$http_code" == "200" ] && echo "$response_content" | grep -q '"ok":true'; then
+                SENT_ERROR_MSG_ID=$(get_json_value "$response_content" "message_id")
+                
+                # Panic Reaction
+                if [ -n "$SENT_ERROR_MSG_ID" ]; then
+                    send_reaction "$ERROR_CHAT_ID" "$SENT_ERROR_MSG_ID" "🔥"
+                fi
+
                 rm -f "$response_body"
                 return 0
             fi
@@ -149,6 +267,7 @@ echo "[INFO] System Timezone: $TZ"
 # ==============================================================================
 
 init_db() {
+    # Basic tables
     db_exec "CREATE TABLE IF NOT EXISTS sent_ranges (
         camera TEXT,
         start_ts INTEGER,
@@ -162,6 +281,12 @@ init_db() {
         camera TEXT,
         created_at INTEGER
     );"
+
+    # MIGRATION: Add columns silently if not exist
+    db_exec "ALTER TABLE alert_history ADD COLUMN msg_id INTEGER;" 2>/dev/null
+    db_exec "ALTER TABLE sent_ranges ADD COLUMN msg_id INTEGER;" 2>/dev/null
+    # NEW: Store original error text
+    db_exec "ALTER TABLE alert_history ADD COLUMN alert_text TEXT;" 2>/dev/null
     
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
     db_exec "DELETE FROM sent_ranges WHERE created_at < $sent_cleanup_ts;"
@@ -193,6 +318,8 @@ send_telegram_video() {
 
     local attempt=1
     local response_body=$(mktemp)
+    
+    SENT_VIDEO_MSG_ID=""
 
     while [ $attempt -le $MAX_RETRIES ]; do
         if [ $attempt -gt 1 ]; then log "[$src] Retry $attempt/$MAX_RETRIES..."; fi
@@ -219,6 +346,7 @@ send_telegram_video() {
         fi
 
         if [ "$http_code" == "200" ] && echo "$response_content" | grep -q '"ok":true'; then
+            SENT_VIDEO_MSG_ID=$(get_json_value "$response_content" "message_id")
             rm -f "$response_body"
             return 0
         fi
@@ -242,6 +370,10 @@ send_telegram_video() {
     return 1
 }
 
+# send_telegram_video: upload a local MP4 file to Telegram using `sendVideo`.
+# Retries on network failures or Telegram "retry after" responses and sets
+# `SENT_VIDEO_MSG_ID` on success for downstream recovery logic.
+
 # ==============================================================================
 # PIPELINE LOGIC
 # ==============================================================================
@@ -261,26 +393,40 @@ trigger_failure_alert() {
     local record_id="${src}_${start_ts}_${end_ts}"
     local alerted=$(db_count "SELECT count(*) FROM alert_history WHERE id='$record_id';")
     
-    # Normalize ALERT_REPEAT for comparison
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
 
     if [ "$alerted" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
         log "[$src] Silent Fail (Already Alerted): $reason"
     else
-        # --- FIX HIỂN THỊ NGÀY GIỜ TẠI ĐÂY ---
-        handle_error "Failed to record/download video.
+        # 1. Prepare Full HTML Text
+        local alert_text="🚨 <b>EXECUTION FAILED</b>
+<b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
+<b>Context:</b> RECORDING|$src
+<b>Error:</b> Failed to record/download video.
 <b>Reason:</b> $reason
-<b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')" "RECORDING|$src"
+<b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
+
+        # 2. Send Alert (handle_error now detects HTML and uses it)
+        handle_error "$alert_text" "RECORDING|$src"
         
+        # 3. Save to DB (Base64 Encoded Text)
+        local msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
         local current_ts=$(date +%s)
+        # base64 -w 0 ensures no newlines in the encoded string
+        local b64_text=$(echo "$alert_text" | base64 -w 0)
+        
         if [ "$alert_repeat" == "true" ]; then
-            # Replace existing entry so we can alert again for the same slot
-            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at) VALUES ('$record_id', '$src', $current_ts);"
+            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at, msg_id, alert_text) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text');"
         else
-            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at) VALUES ('$record_id', '$src', $current_ts);"
+            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at, msg_id, alert_text) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text');"
         fi
     fi
 }
+
+# trigger_failure_alert: create and send a formatted HTML alert when a
+# recording/download fails. The function records the alert (base64-encoded)
+# and the Telegram message id into `alert_history` so the pipeline can later
+# detect recovery and edit the original alert message.
 
 execute_clip_pipeline() {
     local src="$1"
@@ -318,10 +464,49 @@ execute_clip_pipeline() {
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
                 if [ "$run_mode" == "record" ]; then
                     local current_ts=$(date +%s)
-                    db_exec "INSERT OR IGNORE INTO sent_ranges (camera, start_ts, end_ts, created_at) VALUES ('$src', $start_ts, $end_ts, $current_ts);"
+                    local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
+                    
+                    # --- RECOVERY LOGIC ---
+                    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, alert_text FROM alert_history WHERE id='$record_id' LIMIT 1;")
+                    local alert_msg_id=$(echo "$db_row" | awk -F'|' '{print $1}')
+                    local b64_alert_text=$(echo "$db_row" | awk -F'|' '{print $2}')
+                    
+                    if [ -n "$alert_msg_id" ] && [ "$alert_msg_id" -ne 0 ] && [ -n "$ERROR_CHAT_ID" ]; then
+                        log "[$src] Recovery detected. Updating alert $alert_msg_id..."
+                        
+                        # --- CHECK: NOTIFY_ON_RECOVERY ---
+                        local notify_rec=$(echo "${NOTIFY_ON_RECOVERY:-true}" | tr '[:upper:]' '[:lower:]')
+                        
+                        if [ "$notify_rec" == "true" ]; then
+                            send_reply "$ERROR_CHAT_ID" "$alert_msg_id" "✅ Retry successful! Video has been sent." "$ERROR_THREAD_ID"
+                            send_reaction "$ERROR_CHAT_ID" "$alert_msg_id" "❤"
+                        else
+                             log "[$src] NOTIFY_ON_RECOVERY=false. Skipping reply/reaction."
+                        fi
+
+                        # --- FIX: SAFE TEXT REPLACEMENT ---
+                        if [ -n "$b64_alert_text" ]; then
+                            local original_text=$(echo "$b64_alert_text" | base64 -d)
+                            
+                            # Drop the first line (old error header) and keep the rest
+                            # (Time, Context, Reason, etc.) so we can reuse it in the
+                            # resolved message.
+                            local body_text=$(echo "$original_text" | sed '1d')
+                            
+                            # Prepend a resolved header to the original body text
+                            local updated_text="✅ <b>RESOLVED</b>
+$body_text"
+                            
+                            edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "$updated_text" "$ERROR_THREAD_ID"
+                        else
+                             edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "✅ <b>RESOLVED</b> (Metadata unavailable)" "$ERROR_THREAD_ID"
+                        fi
+                    fi
+
+                    db_exec "INSERT OR IGNORE INTO sent_ranges (camera, start_ts, end_ts, created_at, msg_id) VALUES ('$src', $start_ts, $end_ts, $current_ts, $sent_msg_id);"
                     db_exec "DELETE FROM alert_history WHERE id='$record_id';"
                     
-                    log "[$src] ✅ Success."
+                    log "[$src] ✅ Success (MsgID: $sent_msg_id)."
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
@@ -338,6 +523,13 @@ execute_clip_pipeline() {
     
     rm -f "$filepath"
 }
+
+# execute_clip_pipeline: main per-slot pipeline
+# - downloads clip from Frigate
+# - validates the file
+# - sends to Telegram
+# - on success: records `sent_ranges`, checks for existing alert to mark as resolved
+# - on failure: triggers `trigger_failure_alert`
 
 process_time_window() {
     local src="$1"
@@ -376,6 +568,9 @@ process_time_window() {
     fi
 }
 
+# process_time_window: for a given camera and time window, determine gaps
+# (using `sent_ranges`) and invoke `execute_clip_pipeline` for missing segments.
+
 execute_cycle() {
     local duration_min=$1
     local run_mode=$2
@@ -405,6 +600,10 @@ execute_cycle() {
     log "--- CYCLE END ---"
 }
 
+# execute_cycle: computes aligned slot boundaries for the current time and
+# iterates cameras, spawning `process_camera_batch` jobs while respecting
+# `MAX_CONCURRENT_TASKS`.
+
 process_camera_batch() {
     local cam_info="$1"
     local master_end_ts="$2"
@@ -428,6 +627,9 @@ process_camera_batch() {
         log "[$src] Check complete."
     fi
 }
+
+# process_camera_batch: for a camera entry parses camera metadata and either
+# runs a single test slot or iterates historic slots according to `LOOKBACK_HOURS`.
 
 if [ "$MODE" == "test" ]; then
     log ">>> STARTING TEST MODE <<<"

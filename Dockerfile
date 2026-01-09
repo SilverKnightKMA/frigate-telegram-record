@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     file \
     sqlite \
     tzdata \
-    coreutils
+    coreutils \
+    jq
 
 # Setup Application Directory
 WORKDIR /app

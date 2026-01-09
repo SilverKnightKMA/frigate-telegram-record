@@ -32,6 +32,9 @@ Place environment variables either in a mounted `config.env` (the container read
 	- Example: `FrontDoor|frontdoor|2|-1001234567890;BackYard|backyard|3|-1001234567890`
 - `ERROR_CHAT_ID` — Telegram chat ID to send error alerts.
 - `ERROR_THREAD_ID` — Optional thread ID for grouped error messages.
+- `NOTIFY_ON_RECOVERY` — When a previously-failed recording is later successfully sent, control how the script notifies the original error message:
+	- `true` (default): send a reply, add a reaction, and edit the original error message to mark it resolved.
+	- `false`: only edit the original error message (silent update; no reply/reaction).
 - `REC_DURATION_MIN` — Recording/check slot length in minutes (default 15).
 - `TEST_REC_DURATION_MIN` — Slot length used in `MODE=test` (default 1).
 - `PADDING_SEC` — Seconds to pad before/after requested clip when downloading from Frigate (default 5).
@@ -45,6 +48,7 @@ FRIGATE_HOST=http://127.0.0.1:5000
 TELEGRAM_API_URL=https://api.telegram.org
 # BOT_TOKEN=<set via docker-compose or docker run>
 ERROR_CHAT_ID=-1001234567890
+NOTIFY_ON_RECOVERY=true
 PADDING_SEC=5
 REC_DURATION_MIN=15
 MODE=record
