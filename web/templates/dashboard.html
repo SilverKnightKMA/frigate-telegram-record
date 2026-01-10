@@ -1798,7 +1798,7 @@
                 updateCustomInputs(currentDuration);
                 
                 // Reload timeline
-                loadTimeline();
+                loadTimelineVersion(currentVersion);
             });
         });
         
@@ -1815,7 +1815,7 @@
             }
             
             currentEndTs = Math.floor(Date.now() / 1000);
-            loadTimeline();
+            loadTimelineVersion(currentVersion);
         });
         
         // DateTime range apply button
