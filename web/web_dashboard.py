@@ -7,8 +7,9 @@ Simple web interface to monitor camera statistics and recording history
 import os
 import sqlite3
 import base64
+import re
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from collections import defaultdict
 
 app = Flask(__name__)
@@ -287,7 +288,6 @@ def get_recent_activity():
 def get_timeline():
     """Get timeline data for all cameras showing recording blocks"""
     try:
-        from flask import request
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -306,7 +306,8 @@ def get_timeline():
             timeline_data[camera] = {
                 'camera': camera,
                 'records': [],
-                'timelapses': []
+                'timelapses': [],
+                'failures': []
             }
             
             # Get successful records for this camera in time range
@@ -365,6 +366,55 @@ def get_timeline():
                             'duration': parse_duration(duration)
                         })
                 except:
+                    pass
+            
+            # Get failed records from alert_history
+            cursor.execute("""
+                SELECT alert_text, created_at
+                FROM alert_history
+                WHERE camera = ? AND created_at >= ? AND created_at <= ?
+                ORDER BY created_at
+            """, (camera, start_ts, end_ts))
+            
+            for row in cursor.fetchall():
+                # Decode alert_text and extract slot time
+                alert_text = row['alert_text'] if row['alert_text'] else ''
+                try:
+                    decoded = base64.b64decode(alert_text).decode('utf-8')
+                    # Extract slot time from decoded text
+                    # Format: <b>Slot:</b> 2026-01-04 01:00 - 01:15
+                    slot_match = re.search(r'<b>Slot:</b>\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})', decoded)
+                    if slot_match:
+                        date_str = slot_match.group(1)
+                        start_time_str = slot_match.group(2)
+                        end_time_str = slot_match.group(3)
+                        
+                        # Parse to timestamps
+                        start_dt = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M")
+                        
+                        # Handle end time that might be on next day
+                        end_dt = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M")
+                        if end_dt < start_dt:
+                            end_dt += timedelta(days=1)
+                        
+                        fail_start = int(start_dt.timestamp())
+                        fail_end = int(end_dt.timestamp())
+                        
+                        # Only add if within time range
+                        if fail_start <= end_ts and fail_end >= start_ts:
+                            timeline_data[camera]['failures'].append({
+                                'start': fail_start,
+                                'end': fail_end,
+                                'status': 'failed',
+                                'created_at': row['created_at'],
+                                'type': 'Failed Record',
+                                'start_time': start_dt.strftime('%Y-%m-%d %H:%M:%S'),
+                                'end_time': end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+                                'duration': parse_duration(fail_end - fail_start),
+                                'error': decoded[:200] if decoded else 'Unknown error'
+                            })
+                except Exception as e:
+                    # If parsing fails, skip this alert
                     pass
         
         conn.close()

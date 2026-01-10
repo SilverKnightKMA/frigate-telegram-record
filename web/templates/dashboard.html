@@ -754,6 +754,12 @@
                     const recordRow = createTimelineRow('Record', cameraData.records, timeRange, totalDuration);
                     cameraDiv.appendChild(recordRow);
                     
+                    // Create Failures timeline (overlay on records or separate)
+                    if (cameraData.failures && cameraData.failures.length > 0) {
+                        const failureRow = createTimelineRow('Failed Records', cameraData.failures, timeRange, totalDuration);
+                        cameraDiv.appendChild(failureRow);
+                    }
+                    
                     // Create Timelapse timeline
                     const timelapseRow = createTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
                     cameraDiv.appendChild(timelapseRow);
@@ -781,7 +787,8 @@
             // Add blocks to the timeline
             blocks.forEach(block => {
                 const blockDiv = document.createElement('div');
-                blockDiv.className = 'timeline-block success';
+                const statusClass = block.status === 'failed' ? 'failed' : 'success';
+                blockDiv.className = `timeline-block ${statusClass}`;
                 
                 // Calculate position and width as percentage
                 const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
@@ -898,6 +905,15 @@
                     <div class="detail-row">
                         <div class="detail-label">Tạo lúc:</div>
                         <div class="detail-value">${block.created_time}</div>
+                    </div>
+                `;
+            }
+            
+            if (block.error) {
+                detailsHtml += `
+                    <div class="detail-row">
+                        <div class="detail-label">Lỗi:</div>
+                        <div class="detail-value" style="color: #f44336; white-space: pre-wrap;">${escapeHtml(block.error)}</div>
                     </div>
                 `;
             }
