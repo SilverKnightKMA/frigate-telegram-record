@@ -443,7 +443,7 @@ send_telegram_video() {
 # ==============================================================================
 
 # Checks if the downloaded video meets duration requirements.
-# Returns: "skip", "partial", or "success".
+# Sets global variables: _actual, _fmt_actual, _fmt_expected, _percent, _status
 check_duration_and_status() {
     local src="$1"
     local filepath="$2"
@@ -459,7 +459,7 @@ check_duration_and_status() {
     
     local threshold=$(( expected_sec * MIN_DURATION_PERCENT / 100 ))
     
-    # Store result variables for caller use
+    # Store result variables for caller use (GLOBAL VARIABLES)
     _actual=$actual
     _fmt_actual=$(format_duration "$actual")
     _fmt_expected=$(format_duration "$expected_sec")
@@ -478,17 +478,17 @@ check_duration_and_status() {
         # If current video is not better than previous attempt, skip it
         if [ "$actual" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
              log "[$src] 🚫 New video (${actual}s) not longer than previous fail (${prev_duration}s). Skipping."
-             echo "skip"
+             _status="skip"
              return
         fi
         
         # If improvement, mark as partial success
         log "[$src] 📈 Improvement (${actual}s > ${prev_duration}s). Sending video but marking as FAILURE."
-        echo "partial"
+        _status="partial"
         return
     fi
 
-    echo "success"
+    _status="success"
 }
 
 # Handles post-success cleanup: deletes alert from DB, replies to error msg, edits status.
@@ -643,9 +643,9 @@ execute_clip_pipeline() {
             
             # 3. CHECK DURATION & STATUS
             local expected_duration=$(( end_ts - start_ts ))
-            local status=$(check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id")
+            check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id"
             
-            if [ "$status" == "skip" ]; then
+            if [ "$_status" == "skip" ]; then
                 rm -f "$filepath"
                 return
             fi
@@ -660,7 +660,7 @@ execute_clip_pipeline() {
                 if [ "$run_mode" == "record" ]; then
                     
                     # 5a. FAILURE HANDLING (Partial)
-                    if [ "$status" == "partial" ]; then
+                    if [ "$_status" == "partial" ]; then
                         trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
@@ -783,9 +783,9 @@ execute_timelapse_pipeline() {
         local speed=${TIMELAPSE_SPEED:-60}
         local expected_duration=$(( total_real_seconds / speed ))
         
-        local status=$(check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id")
+        check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id"
 
-        if [ "$status" == "skip" ]; then
+        if [ "$_status" == "skip" ]; then
             rm -f "$filepath"
             return 1 # Fail status required for retry loop
         fi
@@ -803,7 +803,7 @@ execute_timelapse_pipeline() {
             if [ "$run_mode" == "timelapse" ]; then
                 
                 # 5a. FAILURE HANDLING (Partial)
-                if [ "$status" == "partial" ]; then
+                if [ "$_status" == "partial" ]; then
                      trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                      pipeline_success=0
                 else
