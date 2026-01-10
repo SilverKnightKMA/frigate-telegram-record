@@ -99,7 +99,7 @@ log() {
 
 log_debug() {
     if [ "${DEBUG}" == "true" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [DEBUG] $1"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [DEBUG] $1" >&2
     fi
 }
 
