@@ -241,7 +241,8 @@
             height: 40px;
             background: #e0e0e0;
             border-radius: 5px;
-            overflow: hidden;
+            overflow: visible;
+            margin: 10px 0;
         }
         
         .timeline-block {
@@ -252,16 +253,34 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.7em;
+            font-size: 0.65em;
             color: white;
             font-weight: bold;
             z-index: 1;
+            transform-origin: bottom center;
+            overflow: hidden;
         }
         
-        .timeline-block:hover {
-            transform: scaleY(1.3);
-            z-index: 10;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        .timeline-block.magnified {
+            transform: scaleY(2) translateY(-25%);
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            font-size: 0.8em;
+        }
+        
+        .timeline-block.magnified-neighbor {
+            transform: scaleY(1.5) translateY(-12.5%);
+            z-index: 50;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            font-size: 0.75em;
+        }
+        
+        .block-time-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 4px;
+            pointer-events: none;
         }
         
         /* Enhanced tooltip */
@@ -923,11 +942,15 @@
             const bar = document.createElement('div');
             bar.className = 'timeline-bar';
             
+            // Store blocks for magnifier effect
+            const blockElements = [];
+            
             // Add blocks to the timeline
-            blocks.forEach(block => {
+            blocks.forEach((block, index) => {
                 const blockDiv = document.createElement('div');
                 const statusClass = block.status === 'failed' ? 'failed' : 'success';
                 blockDiv.className = `timeline-block ${statusClass}`;
+                blockDiv.dataset.blockIndex = index;
                 
                 // Calculate position and width as percentage
                 const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
@@ -937,11 +960,17 @@
                 blockDiv.style.left = `${startPercent}%`;
                 blockDiv.style.width = `${widthPercent}%`;
                 
+                // Add time text inside block
+                const startDate = new Date(block.start * 1000);
+                const endDate = new Date(block.end * 1000);
+                const timeText = document.createElement('div');
+                timeText.className = 'block-time-text';
+                timeText.textContent = `${startDate.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})} - ${endDate.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})}`;
+                blockDiv.appendChild(timeText);
+                
                 // Create enhanced tooltip
                 const tooltip = document.createElement('div');
                 tooltip.className = 'block-tooltip';
-                const startDate = new Date(block.start * 1000);
-                const endDate = new Date(block.end * 1000);
                 tooltip.innerHTML = `
                     <div><strong>${block.type}</strong></div>
                     <div>Bắt đầu: ${startDate.toLocaleString('vi-VN')}</div>
@@ -950,10 +979,20 @@
                 `;
                 blockDiv.appendChild(tooltip);
                 
+                // Add magnifier effect on hover
+                blockDiv.addEventListener('mouseenter', function() {
+                    applyMagnifier(blockElements, index);
+                });
+                
+                blockDiv.addEventListener('mouseleave', function() {
+                    clearMagnifier(blockElements);
+                });
+                
                 // Add click handler to show modal
                 blockDiv.addEventListener('click', () => showBlockDetails(block));
                 
                 bar.appendChild(blockDiv);
+                blockElements.push(blockDiv);
             });
             
             row.appendChild(bar);
@@ -1003,6 +1042,33 @@
             } else {
                 return `${secs}s`;
             }
+        }
+        
+        function applyMagnifier(blockElements, centerIndex) {
+            // Clear previous magnification
+            clearMagnifier(blockElements);
+            
+            // Apply magnification to center block and 3 neighbors on each side
+            for (let i = centerIndex - 3; i <= centerIndex + 3; i++) {
+                if (i >= 0 && i < blockElements.length) {
+                    const distance = Math.abs(i - centerIndex);
+                    
+                    if (distance === 0) {
+                        // Center block - maximum magnification
+                        blockElements[i].classList.add('magnified');
+                    } else if (distance <= 3) {
+                        // Neighbor blocks - medium magnification
+                        blockElements[i].classList.add('magnified-neighbor');
+                    }
+                }
+            }
+        }
+        
+        function clearMagnifier(blockElements) {
+            blockElements.forEach(block => {
+                block.classList.remove('magnified');
+                block.classList.remove('magnified-neighbor');
+            });
         }
         
         function getOptimalTimeFormat(duration) {
