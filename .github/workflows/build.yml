@@ -2,6 +2,11 @@ name: Build and Push Docker Image
 
 on:
   pull_request:
+    paths-ignore:
+      - 'README.md'
+      - '.github/**'
+      - 'docker-compose.yml'
+      - 'config.env.example'
   release:
     types: [published]
   workflow_dispatch:
@@ -13,6 +18,8 @@ on:
     paths-ignore:
       - 'README.md'
       - '.github/**'
+      - 'docker-compose.yml'
+      - 'config.env.example'
 
 env:
   REGISTRY: ghcr.io
