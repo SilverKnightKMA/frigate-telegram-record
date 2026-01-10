@@ -73,7 +73,7 @@ TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"   # Speed multiplier
 TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"       # Output FPS
 TIMELAPSE_QUALITY="${TIMELAPSE_QUALITY:-24}" # Encoding Quality (QP)
 VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
-TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-6900}" # Process in chunks to maintain ffmpeg stability (default: 115 minutes)
+TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-3600}" # Process in chunks to maintain ffmpeg stability (default: 60 minutes)
 TIMELAPSE_LOOKBACK_HOURS="${TIMELAPSE_LOOKBACK_HOURS:-720}"
 TIMELAPSE_RETRY_SLEEP_SEC="${TIMELAPSE_RETRY_SLEEP_SEC:-3600}"
 
