@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   frigate-telegram-record:
     image: ghcr.io/silverknightkma/frigate-telegram-record:1.0.4
@@ -5,42 +6,29 @@ services:
     restart: unless-stopped
     tmpfs:
       - /dev/shm:rw,size=512m
+    volumes:
+      - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - BOT_TOKEN=your_telegram_bot_token_here
+      - CAMERAS=Readable_name|camera_id|thread_id|chat_id;Backyard|backyard|23|-100xxxxxxx
+      - ERROR_CHAT_ID=-100xxxxxxx
+      - FRIGATE_HOST=http://192.168.1.x:5000
+
+  frigate-telegram-timelapse:
+    image: ghcr.io/silverknightkma/frigate-telegram-record:1.0.4
+    container_name: frigate-telegram-timelapse
+    restart: unless-stopped
+    tmpfs:
+      - /dev/shm:rw,size=1G
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
     volumes:
       - ./data:/app/data
-      - ./config.env:/app/config/config.env:ro
       - /etc/localtime:/etc/localtime:ro
     environment:
-      - TZ=Asia/Ho_Chi_Minh
-      
-      - FRIGATE_HOST=http://your-frigate-host:5000
-      - TELEGRAM_API_URL=https://api.telegram.org
-      - BOT_TOKEN=YOUR_BOT_TOKEN_HERE
-
-      - CAMERAS=Cam1|cam1|THREAD_ID|CHAT_ID;Cam2|cam2|THREAD_ID|CHAT_ID
-      - ERROR_CHAT_ID=YOUR_ERROR_CHAT_ID
-      - ERROR_THREAD_ID=YOUR_ERROR_THREAD_ID
-
-      - RETENTION_DAYS=30
-      - ALERT_RETENTION_HOURS=72
-      - ALERT_REPEAT=false
-      - LOOKBACK_HOURS=24
-      
-      - MAX_CONCURRENT_TASKS=2
-      - PADDING_SEC=5
-      - MAX_RETRIES=5
-      
-      - REC_DURATION_MIN=15
-      - TEST_REC_DURATION_MIN=1
-      - MODE=record
-      - NOTIFY_ON_RECOVERY=true
-
-      - VAAPI_DEVICE=/dev/dri/renderD128
-      - TIMELAPSE_HOURS=6
-      - TIMELAPSE_SPEED=60
-      - TIMELAPSE_FPS=30
-      - TIMELAPSE_QUALITY=24
-      - TIMELAPSE_LOOKBACK_HOURS=24
-      - TIMELAPSE_STRICT_RETRY=true
-      - TIMELAPSE_RETRY_SLEEP_SEC=3600
+      - MODE=timelapse
+      - BOT_TOKEN=your_telegram_bot_token_here
+      - CAMERAS=Readable_name|camera_id|thread_id|chat_id;Backyard|backyard|23|-100xxxxxxx
+      - ERROR_CHAT_ID=-100xxxxxxx
+      - FRIGATE_HOST=http://192.168.1.x:5000
