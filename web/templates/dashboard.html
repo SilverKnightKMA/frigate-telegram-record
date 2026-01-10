@@ -242,45 +242,30 @@
             background: #e0e0e0;
             border-radius: 5px;
             overflow: visible;
-            margin: 10px 0;
+            margin: 30px 0;
         }
         
         .timeline-block {
             position: absolute;
             height: 100%;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.65em;
             color: white;
             font-weight: bold;
             z-index: 1;
             transform-origin: bottom center;
-            overflow: hidden;
         }
         
-        .timeline-block.magnified {
-            transform: scaleY(2) translateY(-25%);
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            font-size: 0.8em;
+        .timeline-block.in-magnifier {
+            transition: all 0.15s ease;
         }
         
-        .timeline-block.magnified-neighbor {
-            transform: scaleY(1.5) translateY(-12.5%);
-            z-index: 50;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            font-size: 0.75em;
-        }
-        
-        .block-time-text {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 0 4px;
-            pointer-events: none;
+        /* No text inside blocks by default */
+        .timeline-block .block-time-text {
+            display: none;
         }
         
         /* Enhanced tooltip */
@@ -942,8 +927,8 @@
             const bar = document.createElement('div');
             bar.className = 'timeline-bar';
             
-            // Store blocks for magnifier effect
-            const blockElements = [];
+            // Store all blocks for magnifier
+            const allBlocks = [];
             
             // Add blocks to the timeline
             blocks.forEach((block, index) => {
@@ -960,17 +945,14 @@
                 blockDiv.style.left = `${startPercent}%`;
                 blockDiv.style.width = `${widthPercent}%`;
                 
-                // Add time text inside block
-                const startDate = new Date(block.start * 1000);
-                const endDate = new Date(block.end * 1000);
-                const timeText = document.createElement('div');
-                timeText.className = 'block-time-text';
-                timeText.textContent = `${startDate.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})} - ${endDate.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'})}`;
-                blockDiv.appendChild(timeText);
+                // Store block data for magnifier
+                blockDiv.blockData = block;
                 
-                // Create enhanced tooltip
+                // Create tooltip (hidden by default, shown on hover)
                 const tooltip = document.createElement('div');
                 tooltip.className = 'block-tooltip';
+                const startDate = new Date(block.start * 1000);
+                const endDate = new Date(block.end * 1000);
                 tooltip.innerHTML = `
                     <div><strong>${block.type}</strong></div>
                     <div>Bắt đầu: ${startDate.toLocaleString('vi-VN')}</div>
@@ -979,20 +961,27 @@
                 `;
                 blockDiv.appendChild(tooltip);
                 
-                // Add magnifier effect on hover
-                blockDiv.addEventListener('mouseenter', function() {
-                    applyMagnifier(blockElements, index);
-                });
-                
-                blockDiv.addEventListener('mouseleave', function() {
-                    clearMagnifier(blockElements);
-                });
-                
                 // Add click handler to show modal
-                blockDiv.addEventListener('click', () => showBlockDetails(block));
+                blockDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showBlockDetails(block);
+                });
                 
                 bar.appendChild(blockDiv);
-                blockElements.push(blockDiv);
+                allBlocks.push(blockDiv);
+            });
+            
+            // Add magnifier effect on timeline bar mousemove
+            bar.addEventListener('mousemove', function(e) {
+                const rect = bar.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mousePercent = mouseX / rect.width;
+                
+                applyMagnifierAtPosition(allBlocks, mousePercent, timeRange, totalDuration);
+            });
+            
+            bar.addEventListener('mouseleave', function() {
+                clearMagnifier(allBlocks);
             });
             
             row.appendChild(bar);
@@ -1044,30 +1033,65 @@
             }
         }
         
-        function applyMagnifier(blockElements, centerIndex) {
-            // Clear previous magnification
-            clearMagnifier(blockElements);
+        function applyMagnifierAtPosition(blockElements, mousePercent, timeRange, totalDuration) {
+            // Magnifier covers 50% of timeline width
+            const magnifierWidth = 0.5;
+            const magnifierHalfWidth = magnifierWidth / 2;
             
-            // Apply magnification to center block and 3 neighbors on each side
-            for (let i = centerIndex - 3; i <= centerIndex + 3; i++) {
-                if (i >= 0 && i < blockElements.length) {
-                    const distance = Math.abs(i - centerIndex);
-                    
-                    if (distance === 0) {
-                        // Center block - maximum magnification
-                        blockElements[i].classList.add('magnified');
-                    } else if (distance <= 3) {
-                        // Neighbor blocks - medium magnification
-                        blockElements[i].classList.add('magnified-neighbor');
-                    }
-                }
+            // Calculate magnifier range (in percent)
+            let magnifierStart = mousePercent - magnifierHalfWidth;
+            let magnifierEnd = mousePercent + magnifierHalfWidth;
+            
+            // Clamp to timeline bounds
+            if (magnifierStart < 0) {
+                magnifierStart = 0;
+                magnifierEnd = magnifierWidth;
             }
+            if (magnifierEnd > 1) {
+                magnifierEnd = 1;
+                magnifierStart = 1 - magnifierWidth;
+            }
+            
+            const magnifierCenter = (magnifierStart + magnifierEnd) / 2;
+            
+            blockElements.forEach((blockDiv) => {
+                // Get block position in percent
+                const blockLeft = parseFloat(blockDiv.style.left) / 100;
+                const blockWidth = parseFloat(blockDiv.style.width) / 100;
+                const blockCenter = blockLeft + blockWidth / 2;
+                
+                // Check if block is within magnifier range
+                if (blockCenter >= magnifierStart && blockCenter <= magnifierEnd) {
+                    blockDiv.classList.add('in-magnifier');
+                    
+                    // Calculate distance from magnifier center (0 = center, 1 = edge)
+                    const distanceFromCenter = Math.abs(blockCenter - magnifierCenter) / magnifierHalfWidth;
+                    
+                    // Scale based on distance (center = 3x, edge = 1.2x)
+                    const maxScale = 3.0;
+                    const minScale = 1.2;
+                    const scale = maxScale - (distanceFromCenter * (maxScale - minScale));
+                    
+                    // Apply transform
+                    const translateY = -(scale - 1) * 50; // Move up as it scales
+                    blockDiv.style.transform = `scaleY(${scale}) translateY(${translateY}%)`;
+                    blockDiv.style.zIndex = Math.floor(100 * (2 - distanceFromCenter));
+                    blockDiv.style.boxShadow = `0 ${scale * 2}px ${scale * 6}px rgba(0,0,0,${0.2 + scale * 0.1})`;
+                } else {
+                    blockDiv.classList.remove('in-magnifier');
+                    blockDiv.style.transform = '';
+                    blockDiv.style.zIndex = '';
+                    blockDiv.style.boxShadow = '';
+                }
+            });
         }
         
         function clearMagnifier(blockElements) {
             blockElements.forEach(block => {
-                block.classList.remove('magnified');
-                block.classList.remove('magnified-neighbor');
+                block.classList.remove('in-magnifier');
+                block.style.transform = '';
+                block.style.zIndex = '';
+                block.style.boxShadow = '';
             });
         }
         
