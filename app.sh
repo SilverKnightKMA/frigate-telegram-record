@@ -781,6 +781,62 @@ generate_timelapse_video() {
 
     log "[$camera_name] Processing Timelapse: $(date -d @$start_ts '+%H:%M') -> $(date -d @$end_ts '+%H:%M') (Speed: x$TIMELAPSE_SPEED)"
 
+    # ========== PRE-CHECK: Download all playlists to calculate total source duration ==========
+    log_debug "[$camera_name] Pre-checking all HLS chunks..."
+    local pre_cursor=$start_ts
+    local pre_count=1
+    local total_source_duration=0
+    local failed_chunks=0
+    
+    while [ "$pre_cursor" -lt "$end_ts" ]; do
+        local pre_next_cursor=$(($pre_cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
+        if [ "$pre_next_cursor" -gt "$end_ts" ]; then pre_next_cursor=$end_ts; fi
+        
+        local pre_url="${FRIGATE_HOST}/vod/${camera_name}/start/${pre_cursor}/end/${pre_next_cursor}/index.m3u8"
+        local pre_playlist="$job_temp_dir/precheck_${pre_count}.m3u8"
+        local pre_response=$(curl -s -o "$pre_playlist" -w "%{http_code}" "$pre_url")
+        
+        if [ "$pre_response" == "200" ] && [ -s "$pre_playlist" ]; then
+            local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$pre_playlist" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
+            chunk_duration=${chunk_duration:-0}
+            total_source_duration=$((total_source_duration + chunk_duration))
+            log_debug "[$camera_name] Chunk $pre_count: ${chunk_duration}s"
+        else
+            log_debug "[$camera_name] Chunk $pre_count: Failed (HTTP $pre_response)"
+            failed_chunks=$((failed_chunks + 1))
+        fi
+        
+        pre_cursor=$pre_next_cursor
+        pre_count=$((pre_count + 1))
+    done
+    
+    # Calculate expected timelapse duration and check against threshold
+    if [ "$total_source_duration" -lt 60 ]; then
+        log "[$camera_name] ⚠️ Pre-check failed: Insufficient source data (${total_source_duration}s, ${failed_chunks} failed chunks)"
+        rm -rf "$job_temp_dir"
+        return 1
+    fi
+    
+    local speed=${TIMELAPSE_SPEED:-60}
+    local expected_timelapse_duration=$(( total_source_duration / speed ))
+    local requested_duration=$(( end_ts - start_ts ))
+    local ideal_timelapse_duration=$(( requested_duration / speed ))
+    local threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
+    
+    log "[$camera_name] Pre-check: Source ${total_source_duration}s → Timelapse ~${expected_timelapse_duration}s (threshold: >${threshold}s, ${MIN_DURATION_PERCENT}%)"
+    
+    if [ "$expected_timelapse_duration" -lt "$threshold" ]; then
+        log "[$camera_name] ⚠️ Pre-check failed: Expected timelapse (${expected_timelapse_duration}s) below threshold (${threshold}s)"
+        rm -rf "$job_temp_dir"
+        return 1
+    fi
+    
+    log "[$camera_name] ✓ Pre-check passed (${failed_chunks} failed chunks tolerated)"
+    
+    # ========== RENDER: Process and concatenate chunks ==========
+    cursor=$start_ts
+    count=1
+
     while [ "$cursor" -lt "$end_ts" ]; do
         local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
         if [ "$next_cursor" -gt "$end_ts" ]; then next_cursor=$end_ts; fi
