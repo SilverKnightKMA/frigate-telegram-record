@@ -1,0 +1,9 @@
+# Ignore git
+.git
+.github
+
+# Ignore documentation
+*.md
+
+# Build context is already ./web, so we only need to exclude docs
+# All other project files are already outside this context

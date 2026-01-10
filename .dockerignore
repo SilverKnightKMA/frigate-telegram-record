@@ -3,6 +3,9 @@ config.env
 .env
 config.env.*
 
+# Ignore web dashboard directory (separate build context)
+web/
+
 # Runtime data and caches
 data/
 data/**

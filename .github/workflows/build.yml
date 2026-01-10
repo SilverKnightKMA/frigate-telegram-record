@@ -1,12 +1,11 @@
-name: Build and Push Docker Image
+name: Build and Push Record/Timelapse Image
 
 on:
   pull_request:
-    paths-ignore:
-      - 'README.md'
-      - '.github/**'
-      - 'docker-compose.yml'
-      - 'config.env.example'
+    paths:
+      - 'app.sh'
+      - 'Dockerfile'
+      - '.github/workflows/build.yml'
   release:
     types: [published]
   workflow_dispatch:
@@ -14,12 +13,10 @@ on:
     branches:
       - 'main'
     tags:
-      - '*.*.*'
-    paths-ignore:
-      - 'README.md'
-      - '.github/**'
-      - 'docker-compose.yml'
-      - 'config.env.example'
+      - 'v*.*.*'
+    paths:
+      - 'app.sh'
+      - 'Dockerfile'
 
 env:
   REGISTRY: ghcr.io
@@ -65,12 +62,13 @@ jobs:
             type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}
             type=match,pattern=\d.\d.\d$,priority=901
 
-      - name: Build and push Docker image
+      - name: Build and push Record/Timelapse image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=record
+          cache-to: type=gha,mode=max,scope=record

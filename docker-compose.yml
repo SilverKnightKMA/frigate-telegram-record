@@ -32,3 +32,21 @@ services:
       - CAMERAS=Readable_name|camera_id|thread_id|chat_id;Backyard|backyard|23|-100xxxxxxx
       - ERROR_CHAT_ID=-100xxxxxxx
       - FRIGATE_HOST=http://192.168.1.x:5000
+
+  frigate-web-dashboard:
+    # Option 1: Build locally
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    # Option 2: Use pre-built image (uncomment and comment build section above)
+    # image: ghcr.io/silverknightkma/frigate-telegram-record-web:latest
+    container_name: frigate-web-dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_FILE=/app/data/video_history.sqlite
+      - WEB_PORT=8080
