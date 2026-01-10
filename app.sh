@@ -36,18 +36,18 @@ if [ -z "${DATA_DIR:-}" ]; then
     if [ -d "./data" ]; then DATA_DIR="./data"; else DATA_DIR="/app/data"; fi
 fi
 
-TEMP_DIR="/dev/shm/frigate_clips"
+TEMP_DIR="${TEMP_DIR:-/dev/shm/frigate_clips}"
 LOG_FILE="$DATA_DIR/execution.log"
 DB_FILE="$DATA_DIR/video_history.sqlite"
 
 # --- TUNING CONFIG ---
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
-ALERT_RETENTION_HOURS="${ALERT_RETENTION_HOURS:-72}"
+ALERT_RETENTION_HOURS="${ALERT_RETENTION_HOURS:-720}"
 # Controls if alerts are resent for the same time slot
 ALERT_REPEAT="${ALERT_REPEAT:-false}"
-LOOKBACK_HOURS="${LOOKBACK_HOURS:-24}"
+LOOKBACK_HOURS="${LOOKBACK_HOURS:-168}"
 # Limit concurrent background jobs to prevent DB locks
-MAX_CONCURRENT_TASKS="${MAX_CONCURRENT_TASKS:-2}" 
+MAX_CONCURRENT_TASKS="${MAX_CONCURRENT_TASKS:-5}" 
 PADDING_SEC="${PADDING_SEC:-5}"
 MAX_RETRIES="${MAX_RETRIES:-5}"
 
@@ -67,20 +67,20 @@ NOTIFY_ON_RECOVERY="${NOTIFY_ON_RECOVERY:-true}"
 MIN_DURATION_PERCENT="${MIN_DURATION_PERCENT:-90}"
 
 # --- TIMELAPSE SETTINGS ---
-TIMELAPSE_THREAD_ID="${TIMELAPSE_THREAD_ID:-}" 
+TIMELAPSE_THREAD_ID="${TIMELAPSE_THREAD_ID:-33}" 
 TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"    # Duration of one timelapse block in hours
-TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-60}"   # Speed multiplier
+TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"   # Speed multiplier
 TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"       # Output FPS
 TIMELAPSE_QUALITY="${TIMELAPSE_QUALITY:-24}" # Encoding Quality (QP)
 VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
-TIMELAPSE_CHUNK_SIZE_SEC=$((115 * 60)) # Process in chunks to maintain ffmpeg stability
-TIMELAPSE_LOOKBACK_HOURS="${TIMELAPSE_LOOKBACK_HOURS:-24}"
+TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-6900}" # Process in chunks to maintain ffmpeg stability (default: 115 minutes)
+TIMELAPSE_LOOKBACK_HOURS="${TIMELAPSE_LOOKBACK_HOURS:-720}"
 TIMELAPSE_RETRY_SLEEP_SEC="${TIMELAPSE_RETRY_SLEEP_SEC:-3600}"
 
 # Controls retry behavior for timelapse mode:
 # true: Enters a retry loop with short sleep (TIMELAPSE_RETRY_SLEEP_SEC) immediately after failure.
 # false: Logs the failure (with duration) to DB and proceeds to normal long sleep schedule.
-TIMELAPSE_STRICT_RETRY="${TIMELAPSE_STRICT_RETRY:-true}"
+TIMELAPSE_STRICT_RETRY="${TIMELAPSE_STRICT_RETRY:-false}"
 
 # Global variables to store Telegram Message IDs for recovery logic
 SENT_ERROR_MSG_ID=""
