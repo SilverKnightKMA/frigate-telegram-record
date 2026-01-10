@@ -62,6 +62,11 @@ MODE="${MODE:-record}"
 # false: Only Edit Message (Silent update)
 NOTIFY_ON_RECOVERY="${NOTIFY_ON_RECOVERY:-true}"
 
+# --- NEW CONFIG: Duration Threshold ---
+# Percentage of expected duration required to consider the video "Success"
+# If video is shorter than this %, it is considered a failure (or partial)
+MIN_DURATION_PERCENT="${MIN_DURATION_PERCENT:-90}"
+
 # Global vars to hold message IDs after sending
 SENT_ERROR_MSG_ID=""
 SENT_VIDEO_MSG_ID=""
@@ -101,6 +106,33 @@ get_json_value() {
     local key="$2"
     # Simple regex to extract integer values like "message_id":123
     echo "$json" | grep -oE "\"$key\":[0-9]+" | head -n 1 | awk -F':' '{print $2}'
+}
+
+# --- HELPER: GET VIDEO DURATION ---
+get_video_duration() {
+    local filepath="$1"
+    if command -v ffprobe &> /dev/null; then
+        # Returns duration in seconds (integer)
+        ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" | cut -d. -f1
+    else
+        echo "0"
+    fi
+}
+
+# --- HELPER: FORMAT DURATION (Seconds -> Human Readable) ---
+format_duration() {
+    local total_seconds=$1
+    local hours=$((total_seconds / 3600))
+    local minutes=$(( (total_seconds % 3600) / 60 ))
+    local seconds=$((total_seconds % 60))
+
+    if [ "$hours" -gt 0 ]; then
+        printf "%dh %02dm %02ds" "$hours" "$minutes" "$seconds"
+    elif [ "$minutes" -gt 0 ]; then
+        printf "%dm %02ds" "$minutes" "$seconds"
+    else
+        printf "%ds" "$seconds"
+    fi
 }
 
 # --- TELEGRAM ACTIONS ---
@@ -285,8 +317,10 @@ init_db() {
     # MIGRATION: Add columns silently if not exist
     db_exec "ALTER TABLE alert_history ADD COLUMN msg_id INTEGER;" 2>/dev/null
     db_exec "ALTER TABLE sent_ranges ADD COLUMN msg_id INTEGER;" 2>/dev/null
-    # NEW: Store original error text
     db_exec "ALTER TABLE alert_history ADD COLUMN alert_text TEXT;" 2>/dev/null
+    
+    # NEW MIGRATION: Add duration column for partial download tracking
+    db_exec "ALTER TABLE alert_history ADD COLUMN duration INTEGER;" 2>/dev/null
     
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
     db_exec "DELETE FROM sent_ranges WHERE created_at < $sent_cleanup_ts;"
@@ -384,6 +418,7 @@ trigger_failure_alert() {
     local end_ts="$3"
     local reason="$4"
     local run_mode="$5"
+    local duration="$6" # NEW: Capture duration for DB
 
     if [ "$run_mode" != "record" ]; then
         log "[$src] $reason (Test Mode - No Alert)"
@@ -392,10 +427,22 @@ trigger_failure_alert() {
 
     local record_id="${src}_${start_ts}_${end_ts}"
     local alerted=$(db_count "SELECT count(*) FROM alert_history WHERE id='$record_id';")
-    
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
 
+    # If already alerted, we only update DB if it's a "Partial Update" (meaning we sent a better video but still fail)
+    # or if ALERT_REPEAT is true.
     if [ "$alerted" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
+        # Check if we have a SENT_VIDEO_MSG_ID. If so, this is a "Partial Success but Fail Threshold" case.
+        # We need to update the entry with the new msg_id and duration, but NOT send a new text alert.
+        if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
+             local current_ts=$(date +%s)
+             local duration_val="${duration:-0}"
+             # Update the existing record with the new video message ID and new duration
+             db_exec "UPDATE alert_history SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, created_at=$current_ts WHERE id='$record_id';"
+             log "[$src] Partial improvement: Updated alert DB with new Video MsgID ($SENT_VIDEO_MSG_ID) and duration ($duration_val)."
+             return
+        fi
+
         log "[$src] Silent Fail (Already Alerted): $reason"
     else
         # 1. Prepare Full HTML Text
@@ -406,19 +453,30 @@ trigger_failure_alert() {
 <b>Reason:</b> $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
-        # 2. Send Alert (handle_error now detects HTML and uses it)
-        handle_error "$alert_text" "RECORDING|$src"
+        # 2. Send Alert (only if we haven't just sent a "Partial Video")
+        # If we just sent a video (SENT_VIDEO_MSG_ID is set), we treat THAT video as the alert.
+        # If SENT_VIDEO_MSG_ID is empty, it means we failed to download entirely, so we send text alert.
+        
+        local msg_id_to_save="0"
+        
+        if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
+            msg_id_to_save="$SENT_VIDEO_MSG_ID"
+            # We don't call handle_error here because the video IS the notification
+        else
+            handle_error "$alert_text" "RECORDING|$src"
+            msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
+        fi
         
         # 3. Save to DB (Base64 Encoded Text)
-        local msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
         local current_ts=$(date +%s)
         # base64 -w 0 ensures no newlines in the encoded string
         local b64_text=$(echo "$alert_text" | base64 -w 0)
-        
+        local duration_val="${duration:-0}"
+
         if [ "$alert_repeat" == "true" ]; then
-            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at, msg_id, alert_text) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text');"
+            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at, msg_id, alert_text, duration) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text', $duration_val);"
         else
-            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at, msg_id, alert_text) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text');"
+            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at, msg_id, alert_text, duration) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text', $duration_val);"
         fi
     fi
 }
@@ -456,13 +514,52 @@ execute_clip_pipeline() {
 
     if [ "$http_code" == "200" ]; then
         if validate_video "$filepath"; then
+            # --- NEW: DURATION CHECK LOGIC ---
+            local actual_duration=$(get_video_duration "$filepath")
+            local expected_duration=$(( end_ts - start_ts ))
+            local threshold_sec=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
+            local is_partial_failure="false"
+
+            # Check if duration is below threshold
+            if [ "$actual_duration" -lt "$threshold_sec" ]; then
+                log "[$src] ⚠️ Duration Mismatch: ${actual_duration}s (Expected > ${threshold_sec}s, ${MIN_DURATION_PERCENT}%)"
+                
+                # Check DB for previous duration
+                local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM alert_history WHERE id='$record_id' LIMIT 1;")
+                prev_duration=${prev_duration:-0}
+
+                # If new video is NOT longer than previous failure, skip sending
+                if [ "$actual_duration" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
+                    log "[$src] 🚫 New video (${actual_duration}s) not longer than previous fail (${prev_duration}s). Skipping."
+                    rm -f "$filepath"
+                    return
+                fi
+                
+                log "[$src] 📈 Improvement (${actual_duration}s > ${prev_duration}s). Sending video but marking as FAILURE."
+                is_partial_failure="true"
+            fi
+
+            # --- FORMAT DURATION FOR CAPTION ---
+            local fmt_actual=$(format_duration "$actual_duration")
+            local fmt_expected=$(format_duration "$expected_duration")
+
             local caption="📷 <b>$src</b>
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
-⏱️ Duration: $(( (end_ts - start_ts) / 60 ))m"
+⏱️ Duration: ${fmt_actual} / ${fmt_expected} ($(( actual_duration * 100 / expected_duration ))%)"
 
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
                 if [ "$run_mode" == "record" ]; then
+                    
+                    # IF PARTIAL FAILURE: We treat this as a failure alert update, NOT a success.
+                    if [ "$is_partial_failure" == "true" ]; then
+                        # Use formatted duration in logs/alerts too if desired, but sticking to readable text here
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Video (Duration: ${fmt_actual} < ${threshold_sec}s)" "$run_mode" "$actual_duration"
+                        rm -f "$filepath"
+                        return
+                    fi
+
+                    # --- STANDARD SUCCESS LOGIC BELOW ---
                     local current_ts=$(date +%s)
                     local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
                     
@@ -512,13 +609,13 @@ $body_text"
                 fi
             fi
         else
-            trigger_failure_alert "$src" "$start_ts" "$end_ts" "Validation failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode"
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "Validation failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
         fi
 
     elif [ "$http_code" == "404" ]; then
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Frigate 404 (Video Not Found)" "$run_mode"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Frigate 404 (Video Not Found)" "$run_mode" "0"
     else
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Download HTTP Error $http_code" "$run_mode"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Download HTTP Error $http_code" "$run_mode" "0"
     fi
     
     rm -f "$filepath"
