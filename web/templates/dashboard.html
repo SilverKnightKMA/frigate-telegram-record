@@ -100,6 +100,10 @@
         .camera-table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: auto;
+        }
+        
+        .camera-table-wrapper {
             overflow-x: auto;
             display: block;
         }
@@ -154,6 +158,70 @@
             color: #333;
             margin-bottom: 20px;
             font-size: 1.8em;
+        }
+        
+        .activity-filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-label {
+            font-size: 0.85em;
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .filter-select,
+        .filter-input {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            color: #333;
+            font-size: 0.95em;
+            min-width: 150px;
+        }
+        
+        .filter-select:focus,
+        .filter-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            margin-top: auto;
+        }
+        
+        .filter-btn:hover {
+            background: #764ba2;
+        }
+        
+        .filter-btn.clear {
+            background: #999;
+        }
+        
+        .filter-btn.clear:hover {
+            background: #777;
         }
         
         .activity-list {
@@ -1021,6 +1089,7 @@
             <!-- Cameras Table -->
             <div class="cameras-section">
                 <h2>📊 Thống kê theo Camera</h2>
+                <div class="camera-table-wrapper">
                 <table class="camera-table">
                     <thead>
                         <tr>
@@ -1037,6 +1106,7 @@
                         <!-- Will be populated by JavaScript -->
                     </tbody>
                 </table>
+                </div>
             </div>
             
             <!-- Timeline Visualization -->
@@ -1226,6 +1296,45 @@
             <!-- Recent Activity -->
             <div class="activity-section">
                 <h2>📝 Hoạt động gần đây</h2>
+                
+                <!-- Activity Filters -->
+                <div class="activity-filters">
+                    <div class="filter-group">
+                        <label class="filter-label">Chế độ:</label>
+                        <select id="filterMode" class="filter-select">
+                            <option value="all">Tất cả</option>
+                            <option value="record">Record</option>
+                            <option value="timelapse">Timelapse</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Camera:</label>
+                        <select id="filterCamera" class="filter-select">
+                            <option value="all">Tất cả</option>
+                            <!-- Will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Từ ngày:</label>
+                        <input type="date" id="filterStartDate" class="filter-input">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Đến ngày:</label>
+                        <input type="date" id="filterEndDate" class="filter-input">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Tìm kiếm:</label>
+                        <input type="text" id="filterSearch" class="filter-input" placeholder="Nhập từ khóa...">
+                    </div>
+                    
+                    <button id="applyFilters" class="filter-btn">Lọc</button>
+                    <button id="clearFilters" class="filter-btn clear">Xóa bộ lọc</button>
+                </div>
+                
                 <div class="activity-list" id="activityList">
                     <!-- Will be populated by JavaScript -->
                 </div>
@@ -1332,6 +1441,9 @@
             }
         }
         
+        let allActivities = []; // Store all activities for filtering
+        let availableCameras = new Set(); // Store unique camera names
+        
         async function loadActivity() {
             try {
                 const response = await fetch('/api/recent_activity');
@@ -1341,29 +1453,175 @@
                     return;
                 }
                 
-                const activityList = document.getElementById('activityList');
-                activityList.innerHTML = '';
+                // Store all activities
+                allActivities = data.activities;
                 
+                // Extract unique camera names
+                availableCameras.clear();
                 data.activities.forEach(activity => {
-                    const item = document.createElement('div');
-                    item.className = `activity-item ${activity.status === 'failed' ? 'failed' : ''}`;
-                    item.innerHTML = `
-                        <span class="timestamp">${activity.timestamp}</span>
-                        <div class="camera-name">${activity.camera} - ${activity.type}</div>
-                        <div class="details">${escapeHtml(activity.details)}</div>
-                    `;
-                    activityList.appendChild(item);
+                    availableCameras.add(activity.camera);
                 });
+                
+                // Populate camera filter dropdown
+                populateCameraFilter();
+                
+                // Display all activities initially
+                displayActivities(allActivities);
                 
             } catch (error) {
                 console.error('Error loading activity:', error);
             }
         }
         
+        function populateCameraFilter() {
+            const cameraSelect = document.getElementById('filterCamera');
+            // Keep the "All" option
+            cameraSelect.innerHTML = '<option value="all">Tất cả</option>';
+            
+            // Add camera options
+            Array.from(availableCameras).sort().forEach(camera => {
+                const option = document.createElement('option');
+                option.value = camera;
+                option.textContent = camera;
+                cameraSelect.appendChild(option);
+            });
+        }
+        
+        function displayActivities(activities) {
+            const activityList = document.getElementById('activityList');
+            activityList.innerHTML = '';
+            
+            if (activities.length === 0) {
+                activityList.innerHTML = '<div style="text-align: center; padding: 30px; color: #999;">Không tìm thấy hoạt động nào</div>';
+                return;
+            }
+            
+            activities.forEach(activity => {
+                const item = document.createElement('div');
+                item.className = `activity-item ${activity.status === 'failed' ? 'failed' : ''}`;
+                item.innerHTML = `
+                    <span class="timestamp">${activity.timestamp}</span>
+                    <div class="camera-name">${activity.camera} - ${activity.type}</div>
+                    <div class="details">${escapeHtml(activity.details)}</div>
+                `;
+                activityList.appendChild(item);
+            });
+        }
+        
+        function applyActivityFilters() {
+            const modeFilter = document.getElementById('filterMode').value;
+            const cameraFilter = document.getElementById('filterCamera').value;
+            const startDate = document.getElementById('filterStartDate').value;
+            const endDate = document.getElementById('filterEndDate').value;
+            const searchText = document.getElementById('filterSearch').value.toLowerCase();
+            
+            let filtered = allActivities.filter(activity => {
+                // Mode filter
+                if (modeFilter !== 'all' && activity.type.toLowerCase() !== modeFilter) {
+                    return false;
+                }
+                
+                // Camera filter
+                if (cameraFilter !== 'all' && activity.camera !== cameraFilter) {
+                    return false;
+                }
+                
+                // Date range filter
+                if (startDate || endDate) {
+                    // Parse activity timestamp (format: "DD/MM/YYYY HH:MM:SS")
+                    const activityDate = parseActivityDate(activity.timestamp);
+                    
+                    if (startDate) {
+                        const filterStart = new Date(startDate);
+                        filterStart.setHours(0, 0, 0, 0);
+                        if (activityDate < filterStart) {
+                            return false;
+                        }
+                    }
+                    
+                    if (endDate) {
+                        const filterEnd = new Date(endDate);
+                        filterEnd.setHours(23, 59, 59, 999);
+                        if (activityDate > filterEnd) {
+                            return false;
+                        }
+                    }
+                }
+                
+                // Search filter
+                if (searchText) {
+                    const searchableText = (
+                        activity.camera + ' ' + 
+                        activity.type + ' ' + 
+                        activity.details + ' ' + 
+                        activity.timestamp
+                    ).toLowerCase();
+                    
+                    if (!searchableText.includes(searchText)) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            
+            displayActivities(filtered);
+        }
+        
+        function parseActivityDate(timestamp) {
+            // Parse "DD/MM/YYYY HH:MM:SS" format
+            const parts = timestamp.match(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/);
+            if (parts) {
+                const day = parseInt(parts[1]);
+                const month = parseInt(parts[2]) - 1; // JS months are 0-indexed
+                const year = parseInt(parts[3]);
+                const hour = parseInt(parts[4]);
+                const minute = parseInt(parts[5]);
+                const second = parseInt(parts[6]);
+                return new Date(year, month, day, hour, minute, second);
+            }
+            return new Date();
+        }
+        
+        function clearActivityFilters() {
+            document.getElementById('filterMode').value = 'all';
+            document.getElementById('filterCamera').value = 'all';
+            document.getElementById('filterStartDate').value = '';
+            document.getElementById('filterEndDate').value = '';
+            document.getElementById('filterSearch').value = '';
+            displayActivities(allActivities);
+        }
+        
+        // Setup filter event listeners
+        document.getElementById('applyFilters').addEventListener('click', applyActivityFilters);
+        document.getElementById('clearFilters').addEventListener('click', clearActivityFilters);
+        
+        // Apply filters on Enter key in search box
+        document.getElementById('filterSearch').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyActivityFilters();
+            }
+        });
+        
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+        
+        // Helper function to format duration in seconds to human-readable string
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m ${secs}s`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            } else {
+                return `${secs}s`;
+            }
         }
         
         // Reuse existing functions (getOptimalTimeFormat, formatTimeLabel, etc.)
