@@ -306,8 +306,7 @@ def get_timeline():
             timeline_data[camera] = {
                 'camera': camera,
                 'records': [],
-                'timelapses': [],
-                'failures': []
+                'timelapses': []
             }
             
             # Get successful records for this camera in time range
@@ -368,7 +367,7 @@ def get_timeline():
                 except:
                     pass
             
-            # Get failed records from alert_history
+            # Get failed records from alert_history and categorize them
             cursor.execute("""
                 SELECT alert_text, created_at
                 FROM alert_history
@@ -381,6 +380,10 @@ def get_timeline():
                 alert_text = row['alert_text'] if row['alert_text'] else ''
                 try:
                     decoded = base64.b64decode(alert_text).decode('utf-8')
+                    
+                    # Check if it's RECORD or TIMELAPSE failure
+                    is_timelapse = 'TIMELAPSE' in decoded or 'Timelapse' in decoded
+                    
                     # Extract slot time from decoded text
                     # Format: <b>Slot:</b> 2026-01-04 01:00 - 01:15
                     slot_match = re.search(r'<b>Slot:</b>\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})', decoded)
@@ -402,17 +405,23 @@ def get_timeline():
                         
                         # Only add if within time range
                         if fail_start <= end_ts and fail_end >= start_ts:
-                            timeline_data[camera]['failures'].append({
+                            failure_block = {
                                 'start': fail_start,
                                 'end': fail_end,
                                 'status': 'failed',
                                 'created_at': row['created_at'],
-                                'type': 'Failed Record',
+                                'type': 'Timelapse' if is_timelapse else 'Record',
                                 'start_time': start_dt.strftime('%Y-%m-%d %H:%M:%S'),
                                 'end_time': end_dt.strftime('%Y-%m-%d %H:%M:%S'),
                                 'duration': parse_duration(fail_end - fail_start),
                                 'error': decoded[:200] if decoded else 'Unknown error'
-                            })
+                            }
+                            
+                            # Add to appropriate timeline
+                            if is_timelapse:
+                                timeline_data[camera]['timelapses'].append(failure_block)
+                            else:
+                                timeline_data[camera]['records'].append(failure_block)
                 except Exception as e:
                     # If parsing fails, skip this alert
                     pass

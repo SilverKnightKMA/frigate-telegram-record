@@ -754,12 +754,6 @@
                     const recordRow = createTimelineRow('Record', cameraData.records, timeRange, totalDuration);
                     cameraDiv.appendChild(recordRow);
                     
-                    // Create Failures timeline (overlay on records or separate)
-                    if (cameraData.failures && cameraData.failures.length > 0) {
-                        const failureRow = createTimelineRow('Failed Records', cameraData.failures, timeRange, totalDuration);
-                        cameraDiv.appendChild(failureRow);
-                    }
-                    
                     // Create Timelapse timeline
                     const timelapseRow = createTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
                     cameraDiv.appendChild(timelapseRow);
