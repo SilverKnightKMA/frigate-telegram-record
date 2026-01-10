@@ -55,6 +55,9 @@ REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
 TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
 MODE="${MODE:-record}"
 
+# Enable detailed debug logging
+DEBUG="${DEBUG:-false}"
+
 # Controls notification behavior upon recovery:
 # true: Sends a reply, adds a reaction, and edits the original error message.
 # false: Only edits the error message silently.
@@ -94,17 +97,27 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [INFO] $1"
 }
 
+log_debug() {
+    if [ "${DEBUG}" == "true" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [DEBUG] $1"
+    fi
+}
+
 # Executes SQL with a timeout to prevent 'database is locked' errors during concurrency
 db_exec() {
+    log_debug "DB_EXEC: $1"
     sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1"
 }
 
 # Returns a single numeric value from SQL, defaulting to 0 on failure
 db_count() {
+    log_debug "DB_COUNT: $1"
     local result=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1" 2>/dev/null)
     if [[ ! "$result" =~ ^[0-9]+$ ]]; then
+        log_debug "DB_COUNT result invalid: '$result', returning 0"
         echo "0"
     else
+        log_debug "DB_COUNT result: $result"
         echo "$result"
     fi
 }
@@ -119,15 +132,19 @@ get_json_value() {
 # Uses ffprobe to get the exact duration of a video file in seconds
 get_video_duration() {
     local filepath="$1"
+    log_debug "Getting video duration for: $filepath"
     if command -v ffprobe &> /dev/null; then
         local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" 2>/dev/null | cut -d. -f1)
         # Ensure we return a valid number
         if [[ "$duration" =~ ^[0-9]+$ ]]; then
+            log_debug "Video duration: ${duration}s"
             echo "$duration"
         else
+            log_debug "ffprobe returned invalid duration: '$duration'"
             echo "0"
         fi
     else
+        log_debug "ffprobe not available"
         echo "0"
     fi
 }
@@ -365,14 +382,37 @@ init_db
 
 validate_video() {
     local filepath="$1"
-    if [ ! -s "$filepath" ]; then return 1; fi
-    local filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
-    if [ "$filesize" -lt 1024 ]; then return 1; fi
-    local mime_type=$(file --brief --mime-type "$filepath")
-    if [ "$mime_type" != "video/mp4" ] && [ "$mime_type" != "application/octet-stream" ]; then return 1; fi
-    if command -v ffprobe &> /dev/null; then
-        if ! ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" >/dev/null 2>&1; then return 1; fi
+    log_debug "Validating video: $filepath"
+    
+    if [ ! -s "$filepath" ]; then 
+        log_debug "Validation failed: File does not exist or is empty"
+        return 1
     fi
+    
+    local filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
+    log_debug "File size: ${filesize} bytes"
+    
+    if [ "$filesize" -lt 1024 ]; then 
+        log_debug "Validation failed: File too small (< 1KB)"
+        return 1
+    fi
+    
+    local mime_type=$(file --brief --mime-type "$filepath")
+    log_debug "MIME type: $mime_type"
+    
+    if [ "$mime_type" != "video/mp4" ] && [ "$mime_type" != "application/octet-stream" ]; then 
+        log_debug "Validation failed: Invalid MIME type"
+        return 1
+    fi
+    
+    if command -v ffprobe &> /dev/null; then
+        if ! ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" >/dev/null 2>&1; then 
+            log_debug "Validation failed: ffprobe check failed"
+            return 1
+        fi
+    fi
+    
+    log_debug "Validation passed"
     return 0
 }
 
@@ -382,6 +422,8 @@ send_telegram_video() {
     local thread_id="$3"
     local caption="$4"
     local src="$5"
+
+    log_debug "[$src] send_telegram_video: chat_id=$chat_id, thread_id=$thread_id, file=$filepath"
 
     local attempt=1
     local response_body=$(mktemp)
@@ -401,9 +443,15 @@ send_telegram_video() {
         )
         if [ -n "$thread_id" ]; then args+=(-F "message_thread_id=${thread_id}"); fi
 
+        log_debug "[$src] Sending video (attempt $attempt)..."
         local http_code=$(curl "${args[@]}")
         local curl_exit=$?
         local response_content=$(cat "$response_body")
+        
+        log_debug "[$src] HTTP Code: $http_code, Curl Exit: $curl_exit"
+        if [ "${DEBUG}" == "true" ]; then
+            log_debug "[$src] Response: ${response_content:0:200}..."
+        fi
         
         if [ $curl_exit -ne 0 ]; then
             log "[$src] Curl failed (Exit Code: $curl_exit)."
@@ -450,10 +498,13 @@ check_duration_and_status() {
     local expected_sec="$3"
     local record_id="$4"
 
+    log_debug "[$src] check_duration_and_status: expected=${expected_sec}s, file=$filepath"
+
     local actual=$(get_video_duration "$filepath")
     
     # Ensure actual is a valid number, default to 0 if not
     if ! [[ "$actual" =~ ^[0-9]+$ ]]; then
+        log_debug "[$src] actual duration not a number: '$actual', defaulting to 0"
         actual=0
     fi
     
@@ -468,6 +519,9 @@ check_duration_and_status() {
         _percent=$(( actual * 100 / expected_sec ))
     fi
 
+    log_debug "[$src] Duration check: actual=${actual}s, threshold=${threshold}s, percent=${_percent}%"
+    log_debug "[$src] Formatted: ${_fmt_actual} / ${_fmt_expected}"
+
     if [ "$actual" -lt "$threshold" ]; then
         log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
         
@@ -479,16 +533,19 @@ check_duration_and_status() {
         if [ "$actual" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
              log "[$src] 🚫 New video (${actual}s) not longer than previous fail (${prev_duration}s). Skipping."
              _status="skip"
+             log_debug "[$src] Status set to: skip"
              return
         fi
         
         # If improvement, mark as partial success
         log "[$src] 📈 Improvement (${actual}s > ${prev_duration}s). Sending video but marking as FAILURE."
         _status="partial"
+        log_debug "[$src] Status set to: partial"
         return
     fi
 
     _status="success"
+    log_debug "[$src] Status set to: success"
 }
 
 # Handles post-success cleanup: deletes alert from DB, replies to error msg, edits status.
@@ -612,6 +669,9 @@ download_clip() {
     local dl_end_ts=$(( end_ts + PADDING_SEC ))
     local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
     
+    log_debug "[$src] Downloading clip from: $url"
+    log_debug "[$src] Saving to: $filepath"
+    
     curl -s -o "$filepath" -w "%{http_code}" "$url"
 }
 
@@ -624,6 +684,8 @@ execute_clip_pipeline() {
     local tid="$6"
     local chat_id="$7"
 
+    log_debug "[$src] execute_clip_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
+
     # 1. SETUP & IDENTIFICATION
     local record_id="${src}_${start_ts}_${end_ts}"
     local date_file=$(date -d @$start_ts '+%Y%m%d')
@@ -635,17 +697,27 @@ execute_clip_pipeline() {
     local display_start=$(date -d @$start_ts '+%H:%M')
     local display_end=$(date -d @$end_ts '+%H:%M')
 
+    log_debug "[$src] Record ID: $record_id"
+    log_debug "[$src] File path: $filepath"
+
     # 2. GENERATE VIDEO (Download)
     local http_code=$(download_clip "$src" "$start_ts" "$end_ts" "$filepath")
+    
+    log_debug "[$src] Download HTTP code: $http_code"
 
     if [ "$http_code" == "200" ]; then
         if validate_video "$filepath"; then
             
             # 3. CHECK DURATION & STATUS
             local expected_duration=$(( end_ts - start_ts ))
+            log_debug "[$src] Expected duration: ${expected_duration}s"
+            
             check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id"
             
+            log_debug "[$src] Status: $_status, actual: $_actual, formatted: ${_fmt_actual}/${_fmt_expected} (${_percent}%)"
+            
             if [ "$_status" == "skip" ]; then
+                log_debug "[$src] Skipping video due to status"
                 rm -f "$filepath"
                 return
             fi
@@ -656,7 +728,10 @@ execute_clip_pipeline() {
 ⏰ ${display_start} - ${display_end}
 ⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
 
+            log_debug "[$src] Caption prepared, sending to Telegram..."
+
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
+                log_debug "[$src] Video sent successfully, msg_id: $SENT_VIDEO_MSG_ID"
                 if [ "$run_mode" == "record" ]; then
                     
                     # 5a. FAILURE HANDLING (Partial)
