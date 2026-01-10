@@ -1309,6 +1309,15 @@
                     </div>
                     
                     <div class="filter-group">
+                        <label class="filter-label">Trạng thái:</label>
+                        <select id="filterStatus" class="filter-select">
+                            <option value="all">Tất cả</option>
+                            <option value="success">Thành công</option>
+                            <option value="failed">Thất bại</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
                         <label class="filter-label">Camera:</label>
                         <select id="filterCamera" class="filter-select">
                             <option value="all">Tất cả</option>
@@ -1510,15 +1519,30 @@
         
         function applyActivityFilters() {
             const modeFilter = document.getElementById('filterMode').value;
+            const statusFilter = document.getElementById('filterStatus').value;
             const cameraFilter = document.getElementById('filterCamera').value;
             const startDate = document.getElementById('filterStartDate').value;
             const endDate = document.getElementById('filterEndDate').value;
             const searchText = document.getElementById('filterSearch').value.toLowerCase();
             
             let filtered = allActivities.filter(activity => {
-                // Mode filter
-                if (modeFilter !== 'all' && activity.type.toLowerCase() !== modeFilter) {
-                    return false;
+                // Mode filter - search in Context field of details
+                if (modeFilter !== 'all') {
+                    const contextMatch = activity.details.match(/<b>Context:<\/b>\s*(\w+)/);
+                    if (!contextMatch) {
+                        return false;
+                    }
+                    const contextMode = contextMatch[1].toLowerCase();
+                    if (contextMode !== modeFilter) {
+                        return false;
+                    }
+                }
+                
+                // Status filter
+                if (statusFilter !== 'all') {
+                    if (activity.status !== statusFilter) {
+                        return false;
+                    }
                 }
                 
                 // Camera filter
@@ -1585,6 +1609,7 @@
         
         function clearActivityFilters() {
             document.getElementById('filterMode').value = 'all';
+            document.getElementById('filterStatus').value = 'all';
             document.getElementById('filterCamera').value = 'all';
             document.getElementById('filterStartDate').value = '';
             document.getElementById('filterEndDate').value = '';
