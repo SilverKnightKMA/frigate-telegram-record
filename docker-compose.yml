@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     tmpfs:
       - /dev/shm:rw,size=512m
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
     volumes:
       - ./data:/app/data
       - ./config.env:/app/config/config.env:ro
