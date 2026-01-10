@@ -672,7 +672,9 @@ download_clip() {
     log_debug "[$src] Downloading clip from: $url"
     log_debug "[$src] Saving to: $filepath"
     
-    curl -s -o "$filepath" -w "%{http_code}" "$url"
+    # Use --write-out to print status code to stdout while saving body to file
+    local http_code=$(curl -s -o "$filepath" --write-out "%{http_code}" "$url")
+    echo "$http_code"
 }
 
 execute_clip_pipeline() {
