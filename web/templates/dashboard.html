@@ -610,6 +610,217 @@
             margin-bottom: 10px;
         }
         
+        /* Version Selector */
+        .version-selector {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .version-selector h3 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 1.2em;
+        }
+        
+        .version-tabs {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .version-tab {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px 10px;
+            background: #f5f5f5;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            color: #666;
+            text-align: center;
+            line-height: 1.4;
+        }
+        
+        .version-tab:hover {
+            background: #e8e8e8;
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+        
+        .version-tab.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .tab-desc {
+            display: block;
+            font-size: 0.75em;
+            font-weight: normal;
+            margin-top: 5px;
+            opacity: 0.8;
+        }
+        
+        /* Timeline Versions Container */
+        .timeline-version {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .timeline-version.active {
+            display: block;
+        }
+        
+        /* Version 2: Zoom Controls */
+        .zoom-controls-v2 {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        /* Version 4: Context + Focus */
+        .focus-timeline {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
+        
+        .focus-timeline h4,
+        .context-timeline h4 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1em;
+        }
+        
+        .context-timeline {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+            position: relative;
+        }
+        
+        .brush-selector {
+            position: absolute;
+            top: 50px;
+            left: 20%;
+            width: 60%;
+            height: 60px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            cursor: move;
+            z-index: 10;
+        }
+        
+        .brush-selector::before,
+        .brush-selector::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 10px;
+            background: #667eea;
+            cursor: ew-resize;
+        }
+        
+        .brush-selector::before {
+            left: 0;
+            border-radius: 5px 0 0 5px;
+        }
+        
+        .brush-selector::after {
+            right: 0;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        /* Version 5: Semantic Zoom */
+        .semantic-zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .semantic-zoom-controls label {
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .zoom-select {
+            padding: 8px 15px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            color: #333;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .zoom-select:hover {
+            border-color: #667eea;
+        }
+        
+        .zoom-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        
+        .zoom-info {
+            color: #999;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+        
+        /* Aggregate blocks for semantic zoom */
+        .aggregate-block {
+            position: absolute;
+            height: 100%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .aggregate-block.has-failure {
+            background: linear-gradient(135deg, #ff9800, #f44336);
+            border: 2px solid #d32f2f;
+        }
+        
+        .aggregate-block.all-success {
+            background: linear-gradient(135deg, #4caf50, #66bb6a);
+        }
+        
+        .aggregate-block:hover {
+            transform: scaleY(1.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
         /* Modal styles */
         .modal {
             display: none;
@@ -891,23 +1102,112 @@
                     </div>
                 </div>
                 
-                <div class="timeline-layout">
-                    <div class="timeline-main">
-                        <div id="timelineContainer">
-                            <!-- Will be populated by JavaScript -->
-                        </div>
+                <!-- Timeline Version Selector -->
+                <div class="version-selector">
+                    <h3>Chọn phiên bản Timeline:</h3>
+                    <div class="version-tabs">
+                        <button class="version-tab active" data-version="v1">
+                            V1: Original<br>
+                            <span class="tab-desc">Không zoom, không panel</span>
+                        </button>
+                        <button class="version-tab" data-version="v2">
+                            V2: With Zoom<br>
+                            <span class="tab-desc">Có nút zoom +/-</span>
+                        </button>
+                        <button class="version-tab" data-version="v3">
+                            V3: Events Panel<br>
+                            <span class="tab-desc">Có panel sự cố</span>
+                        </button>
+                        <button class="version-tab" data-version="v4">
+                            V4: Context+Focus<br>
+                            <span class="tab-desc">Minimap + detail view</span>
+                        </button>
+                        <button class="version-tab" data-version="v5">
+                            V5: Semantic Zoom<br>
+                            <span class="tab-desc">Thay đổi detail theo zoom</span>
+                        </button>
                     </div>
-                    
-                    <div class="events-panel">
-                        <h3>
-                            ⚠️ Sự cố
-                            <span class="event-count" id="eventCount">0</span>
-                        </h3>
-                        <div id="eventsContainer">
-                            <!-- Will be populated by JavaScript -->
+                </div>
+                
+                <!-- Version 1: Original Timeline (No Zoom, No Events Panel) -->
+                <div id="timeline-v1" class="timeline-version active">
+                    <div id="timelineContainer-v1">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Version 2: Timeline with Zoom Controls -->
+                <div id="timeline-v2" class="timeline-version">
+                    <div class="zoom-controls-v2">
+                        <button class="zoom-btn" id="zoomOutBtn-v2">−</button>
+                        <span class="zoom-level" id="zoomLevel-v2">100%</span>
+                        <button class="zoom-btn" id="zoomInBtn-v2">+</button>
+                    </div>
+                    <div id="timelineContainer-v2">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Version 3: Timeline with Events Panel -->
+                <div id="timeline-v3" class="timeline-version">
+                    <div class="timeline-layout">
+                        <div class="timeline-main">
+                            <div id="timelineContainer-v3">
+                                <!-- Will be populated by JavaScript -->
+                            </div>
+                        </div>
+                        
+                        <div class="events-panel">
+                            <h3>
+                                ⚠️ Sự cố
+                                <span class="event-count" id="eventCount-v3">0</span>
+                            </h3>
+                            <div id="eventsContainer-v3">
+                                <!-- Will be populated by JavaScript -->
+                            </div>
                         </div>
                     </div>
                 </div>
+                
+                <!-- Version 4: Context + Focus Timeline -->
+                <div id="timeline-v4" class="timeline-version">
+                    <div class="focus-timeline">
+                        <h4>📍 Chi tiết (Focus View)</h4>
+                        <div id="focusContainer-v4">
+                            <!-- Detailed view of selected time range -->
+                        </div>
+                    </div>
+                    <div class="context-timeline">
+                        <h4>📊 Tổng quan (Context View)</h4>
+                        <div id="contextContainer-v4">
+                            <!-- Overview of entire time range with brush selector -->
+                        </div>
+                        <div id="brushSelector-v4" class="brush-selector">
+                            <!-- Draggable brush for selecting focus range -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Version 5: Semantic Zoom Timeline -->
+                <div id="timeline-v5" class="timeline-version">
+                    <div class="semantic-zoom-controls">
+                        <label>Mức độ chi tiết:</label>
+                        <select id="zoomLevel-v5" class="zoom-select">
+                            <option value="year">Năm (tổng quan)</option>
+                            <option value="month">Tháng</option>
+                            <option value="week">Tuần</option>
+                            <option value="day" selected>Ngày</option>
+                            <option value="hour">Giờ</option>
+                            <option value="block">Block (15 phút)</option>
+                        </select>
+                        <span class="zoom-info" id="zoomInfo-v5"></span>
+                    </div>
+                    <div id="timelineContainer-v5">
+                        <!-- Will be populated with aggregated or detailed data based on zoom level -->
+                    </div>
+                </div>
+                
+                <!-- Old controls removed, now in versions -->
             </div>
             
             <!-- Block Detail Modal -->
@@ -1066,295 +1366,7 @@
             return div.innerHTML;
         }
         
-        function populateEventsPanel(timelineData, timeRange) {
-            const eventsContainer = document.getElementById('eventsContainer');
-            eventsContainer.innerHTML = '';
-            
-            // Collect all failed blocks
-            const failedEvents = [];
-            
-            Object.keys(timelineData).forEach(camera => {
-                const cameraData = timelineData[camera];
-                
-                // Check records
-                cameraData.records.forEach(block => {
-                    if (block.status === 'failed') {
-                        failedEvents.push({
-                            camera: camera,
-                            type: 'Record',
-                            block: block
-                        });
-                    }
-                });
-                
-                // Check timelapses
-                cameraData.timelapses.forEach(block => {
-                    if (block.status === 'failed') {
-                        failedEvents.push({
-                            camera: camera,
-                            type: 'Timelapse',
-                            block: block
-                        });
-                    }
-                });
-            });
-            
-            // Sort by start time (most recent first)
-            failedEvents.sort((a, b) => b.block.start - a.block.start);
-            
-            // Update count
-            document.getElementById('eventCount').textContent = failedEvents.length;
-            
-            if (failedEvents.length === 0) {
-                eventsContainer.innerHTML = '<div class="events-empty">Không có sự cố nào trong khoảng thời gian này</div>';
-                return;
-            }
-            
-            // Create event items
-            failedEvents.forEach((event, index) => {
-                const eventDiv = document.createElement('div');
-                eventDiv.className = 'event-item';
-                eventDiv.dataset.eventId = index;
-                
-                const startDate = new Date(event.block.start * 1000);
-                const endDate = new Date(event.block.end * 1000);
-                const duration = event.block.end - event.block.start;
-                
-                eventDiv.innerHTML = `
-                    <div class="event-camera">📹 ${event.camera}</div>
-                    <div class="event-type">${event.type}</div>
-                    <div class="event-time">${startDate.toLocaleString('vi-VN')}</div>
-                    <div class="event-duration">⏱️ ${formatDuration(duration)}</div>
-                `;
-                
-                // Click event to highlight on timeline and show modal
-                eventDiv.addEventListener('click', () => {
-                    // Remove active class from all events
-                    document.querySelectorAll('.event-item').forEach(item => {
-                        item.classList.remove('active');
-                    });
-                    eventDiv.classList.add('active');
-                    
-                    // Show block details modal
-                    showBlockDetails(event.block);
-                    
-                    // Scroll timeline to block (if possible)
-                    scrollToBlock(event.camera, event.type, event.block);
-                });
-                
-                eventsContainer.appendChild(eventDiv);
-            });
-        }
-        
-        function scrollToBlock(camera, type, block) {
-            // Find the timeline row for this camera and type
-            const cameraHeaders = Array.from(document.querySelectorAll('.camera-timeline-header'));
-            const cameraDiv = cameraHeaders.find(h => h.textContent.includes(camera))?.parentElement;
-            
-            if (cameraDiv) {
-                // Scroll camera into view
-                cameraDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
-                // Flash the specific block (optional visual feedback)
-                setTimeout(() => {
-                    const timelineRows = cameraDiv.querySelectorAll('.timeline-row');
-                    timelineRows.forEach(row => {
-                        const label = row.querySelector('.timeline-label').textContent;
-                        if (label === type) {
-                            // Flash effect on the row
-                            row.style.animation = 'flash 1s ease';
-                            setTimeout(() => {
-                                row.style.animation = '';
-                            }, 1000);
-                        }
-                    });
-                }, 500);
-            }
-        }
-        
-        async function loadTimeline() {
-            try {
-                // Reset zoom when loading new timeline
-                currentZoom = 1.0;
-                document.getElementById('zoomLevel').textContent = '100%';
-                document.getElementById('zoomOutBtn').disabled = true;
-                document.getElementById('zoomInBtn').disabled = false;
-                
-                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
-                const data = await response.json();
-                
-                if (!data.success) {
-                    return;
-                }
-                
-                const container = document.getElementById('timelineContainer');
-                container.innerHTML = '';
-                
-                const timeRange = data.time_range;
-                const totalDuration = timeRange.end - timeRange.start;
-                
-                // Store timeline data for modal
-                timelineData = data.timeline;
-                
-                // Update current time range display
-                updateTimeRangeDisplay(timeRange);
-                
-                // Update navigation buttons
-                updateNavButtons();
-                
-                // Sort cameras alphabetically
-                const cameras = Object.keys(data.timeline).sort();
-                
-                cameras.forEach(cameraName => {
-                    const cameraData = data.timeline[cameraName];
-                    
-                    // Create camera timeline container
-                    const cameraDiv = document.createElement('div');
-                    cameraDiv.className = 'camera-timeline';
-                    
-                    const header = document.createElement('div');
-                    header.className = 'camera-timeline-header';
-                    header.textContent = `📹 ${cameraName}`;
-                    cameraDiv.appendChild(header);
-                    
-                    // Create Records timeline
-                    const recordRow = createTimelineRow('Record', cameraData.records, timeRange, totalDuration);
-                    cameraDiv.appendChild(recordRow);
-                    
-                    // Create Timelapse timeline
-                    const timelapseRow = createTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
-                    cameraDiv.appendChild(timelapseRow);
-                    
-                    container.appendChild(cameraDiv);
-                });
-                
-                // Populate events panel with failed blocks
-                populateEventsPanel(data.timeline, timeRange);
-                
-            } catch (error) {
-                console.error('Error loading timeline:', error);
-            }
-        }
-        
-        function createTimelineRow(label, blocks, timeRange, totalDuration) {
-            const row = document.createElement('div');
-            row.className = 'timeline-row';
-            
-            const labelDiv = document.createElement('div');
-            labelDiv.className = 'timeline-label';
-            labelDiv.textContent = label;
-            row.appendChild(labelDiv);
-            
-            // Create wrapper for scrollable timeline
-            const wrapper = document.createElement('div');
-            wrapper.className = 'timeline-bar-wrapper';
-            
-            const bar = document.createElement('div');
-            bar.className = 'timeline-bar';
-            bar.dataset.label = label; // Store label for zoom reference
-            
-            // Add blocks to the timeline
-            blocks.forEach((block, index) => {
-                const blockDiv = document.createElement('div');
-                const statusClass = block.status === 'failed' ? 'failed' : 'success';
-                blockDiv.className = `timeline-block ${statusClass}`;
-                
-                // Calculate position and width as percentage
-                const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
-                const duration = block.end - block.start;
-                const widthPercent = (duration / totalDuration) * 100;
-                
-                blockDiv.style.left = `${startPercent}%`;
-                blockDiv.style.width = `${widthPercent}%`;
-                
-                // Create tooltip
-                const tooltip = document.createElement('div');
-                tooltip.className = 'block-tooltip';
-                const startDate = new Date(block.start * 1000);
-                const endDate = new Date(block.end * 1000);
-                tooltip.innerHTML = `
-                    <div><strong>${block.type}</strong></div>
-                    <div>Bắt đầu: ${startDate.toLocaleString('vi-VN')}</div>
-                    <div>Kết thúc: ${endDate.toLocaleString('vi-VN')}</div>
-                    <div>Thời lượng: ${formatDuration(block.end - block.start)}</div>
-                `;
-                blockDiv.appendChild(tooltip);
-                
-                // Add click handler
-                blockDiv.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    showBlockDetails(block);
-                });
-                
-                bar.appendChild(blockDiv);
-            });
-            
-            wrapper.appendChild(bar);
-            row.appendChild(wrapper);
-            
-            // Add time labels with smart formatting
-            const timeLabels = document.createElement('div');
-            timeLabels.className = 'timeline-time-labels';
-            
-            const durationHours = totalDuration / 3600;
-            const formatInfo = getOptimalTimeFormat(durationHours);
-            
-            // Calculate number of markers based on duration
-            let numMarkers;
-            if (durationHours <= 1) {
-                numMarkers = 7;  // Every 10 minutes for 1 hour
-            } else if (durationHours <= 6) {
-                numMarkers = 7;  // Every hour for 6 hours
-            } else if (durationHours <= 24) {
-                numMarkers = 9;  // Every 3 hours for 24 hours
-            } else if (durationHours <= 168) {
-                numMarkers = 8;  // Every day for 7 days
-            } else {
-                numMarkers = 6;  // Fewer markers for very long durations
-            }
-            
-            for (let i = 0; i < numMarkers; i++) {
-                const time = timeRange.start + Math.floor((totalDuration * i / (numMarkers - 1)));
-                const span = document.createElement('span');
-                span.textContent = formatTimeLabel(time, formatInfo.format);
-                timeLabels.appendChild(span);
-            }
-            
-            row.appendChild(timeLabels);
-            
-            return row;
-        }
-        
-        function formatDuration(seconds) {
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            const secs = seconds % 60;
-            
-            if (hours > 0) {
-                return `${hours}h ${minutes}m`;
-            } else if (minutes > 0) {
-                return `${minutes}m ${secs}s`;
-            } else {
-                return `${secs}s`;
-            }
-        }
-        
-        function applyZoom(zoomLevel) {
-            currentZoom = zoomLevel;
-            
-            // Apply zoom to all timeline bars
-            document.querySelectorAll('.timeline-bar').forEach(bar => {
-                bar.style.transform = `scaleX(${zoomLevel})`;
-                bar.style.width = `${100 * zoomLevel}%`;
-            });
-            
-            // Update zoom level display
-            document.getElementById('zoomLevel').textContent = `${Math.round(zoomLevel * 100)}%`;
-            
-            // Update button states
-            document.getElementById('zoomOutBtn').disabled = zoomLevel <= 1.0;
-            document.getElementById('zoomInBtn').disabled = zoomLevel >= 10.0;
-        }
+        // Reuse existing functions (getOptimalTimeFormat, formatTimeLabel, etc.)
         
         function getOptimalTimeFormat(duration) {
             // duration in hours
@@ -1552,13 +1564,13 @@
             // Update custom inputs to reflect the duration
             updateCustomInputs(currentDuration);
             
-            loadTimeline();
+            loadTimelineVersion(currentVersion);
         });
         
         // Navigation buttons
         document.getElementById('prevBtn').addEventListener('click', () => {
             currentEndTs -= currentDuration * 3600;
-            loadTimeline();
+            loadTimelineVersion(currentVersion);
         });
         
         document.getElementById('nextBtn').addEventListener('click', () => {
@@ -1567,7 +1579,7 @@
             if (currentEndTs > now) {
                 currentEndTs = now;
             }
-            loadTimeline();
+            loadTimelineVersion(currentVersion);
         });
         
         // Modal close handlers
@@ -1597,28 +1609,646 @@
                 if (countdownTimer <= 0) {
                     loadStats();
                     loadActivity();
-                    loadTimeline();
+                    loadTimelineVersion(currentVersion);
                     startCountdown();
                 }
             }, 1000);
         }
         
-        // Setup zoom button event listeners
-        document.getElementById('zoomInBtn').addEventListener('click', () => {
-            const newZoom = Math.min(currentZoom + 0.5, 10.0);
-            applyZoom(newZoom);
+        // ========================================
+        // HELPER FUNCTIONS FOR TIMELINE RENDERING
+        // ========================================
+        
+        // Simple timeline row (V1, V3)
+        function createSimpleTimelineRow(label, blocks, timeRange, totalDuration) {
+            const row = document.createElement('div');
+            row.className = 'timeline-row';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'timeline-label';
+            labelDiv.textContent = label;
+            row.appendChild(labelDiv);
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'timeline-bar-wrapper';
+            
+            const bar = document.createElement('div');
+            bar.className = 'timeline-bar';
+            
+            blocks.forEach(block => {
+                const blockDiv = document.createElement('div');
+                const statusClass = block.status === 'failed' ? 'failed' : 'success';
+                blockDiv.className = `timeline-block ${statusClass}`;
+                
+                const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
+                const widthPercent = ((block.end - block.start) / totalDuration) * 100;
+                
+                blockDiv.style.left = `${startPercent}%`;
+                blockDiv.style.width = `${Math.max(widthPercent, 0.1)}%`; // min 0.1%
+                
+                const tooltip = document.createElement('div');
+                tooltip.className = 'block-tooltip';
+                const startDate = new Date(block.start * 1000);
+                const endDate = new Date(block.end * 1000);
+                tooltip.innerHTML = `
+                    <div><strong>${block.type}</strong></div>
+                    <div>Bắt đầu: ${startDate.toLocaleString('vi-VN')}</div>
+                    <div>Kết thúc: ${endDate.toLocaleString('vi-VN')}</div>
+                    <div>Thời lượng: ${formatDuration(block.end - block.start)}</div>
+                `;
+                blockDiv.appendChild(tooltip);
+                
+                blockDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showBlockDetails(block);
+                });
+                
+                bar.appendChild(blockDiv);
+            });
+            
+            wrapper.appendChild(bar);
+            row.appendChild(wrapper);
+            
+            // Add time labels
+            const timeLabels = document.createElement('div');
+            timeLabels.className = 'timeline-time-labels';
+            const durationHours = totalDuration / 3600;
+            const formatInfo = getOptimalTimeFormat(durationHours);
+            const numMarkers = Math.min(10, Math.max(5, Math.floor(durationHours / 2)));
+            
+            for (let i = 0; i < numMarkers; i++) {
+                const time = timeRange.start + Math.floor((totalDuration * i / (numMarkers - 1)));
+                const span = document.createElement('span');
+                span.textContent = formatTimeLabel(time, formatInfo.format);
+                timeLabels.appendChild(span);
+            }
+            
+            row.appendChild(timeLabels);
+            return row;
+        }
+        
+        // Zoomable timeline row (V2)
+        function createZoomableTimelineRow(label, blocks, timeRange, totalDuration) {
+            const row = createSimpleTimelineRow(label, blocks, timeRange, totalDuration);
+            const bar = row.querySelector('.timeline-bar');
+            bar.dataset.zoomable = 'true';
+            return row;
+        }
+        
+        // Apply zoom to V2
+        function applyZoom_V2(zoomLevel) {
+            document.querySelectorAll('#timelineContainer-v2 .timeline-bar[data-zoomable="true"]').forEach(bar => {
+                bar.style.transform = `scaleX(${zoomLevel})`;
+                bar.style.transformOrigin = 'left center';
+            });
+            
+            document.getElementById('zoomLevel-v2').textContent = `${Math.round(zoomLevel * 100)}%`;
+            document.getElementById('zoomOutBtn-v2').disabled = zoomLevel <= 1.0;
+            document.getElementById('zoomInBtn-v2').disabled = zoomLevel >= 10.0;
+        }
+        
+        // Populate events panel for V3
+        function populateEventsPanel_V3(timelineData, timeRange) {
+            const eventsContainer = document.getElementById('eventsContainer-v3');
+            eventsContainer.innerHTML = '';
+            
+            const failedEvents = [];
+            
+            Object.keys(timelineData).forEach(camera => {
+                const cameraData = timelineData[camera];
+                
+                cameraData.records.forEach(block => {
+                    if (block.status === 'failed') {
+                        failedEvents.push({ camera, type: 'Record', block });
+                    }
+                });
+                
+                cameraData.timelapses.forEach(block => {
+                    if (block.status === 'failed') {
+                        failedEvents.push({ camera, type: 'Timelapse', block });
+                    }
+                });
+            });
+            
+            failedEvents.sort((a, b) => b.block.start - a.block.start);
+            document.getElementById('eventCount-v3').textContent = failedEvents.length;
+            
+            if (failedEvents.length === 0) {
+                eventsContainer.innerHTML = '<div class="events-empty">Không có sự cố nào</div>';
+                return;
+            }
+            
+            failedEvents.forEach(event => {
+                const eventDiv = document.createElement('div');
+                eventDiv.className = 'event-item';
+                
+                const startDate = new Date(event.block.start * 1000);
+                const duration = event.block.end - event.block.start;
+                
+                eventDiv.innerHTML = `
+                    <div class="event-camera">📹 ${event.camera}</div>
+                    <div class="event-type">${event.type}</div>
+                    <div class="event-time">${startDate.toLocaleString('vi-VN')}</div>
+                    <div class="event-duration">⏱️ ${formatDuration(duration)}</div>
+                `;
+                
+                eventDiv.addEventListener('click', () => {
+                    document.querySelectorAll('.event-item').forEach(item => item.classList.remove('active'));
+                    eventDiv.classList.add('active');
+                    showBlockDetails(event.block);
+                });
+                
+                eventsContainer.appendChild(eventDiv);
+            });
+        }
+        
+        // Context view for V4
+        function renderContextView_V4(data, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            const timeRange = data.time_range;
+            const totalDuration = timeRange.end - timeRange.start;
+            const cameras = Object.keys(data.timeline).sort();
+            
+            cameras.forEach(cameraName => {
+                const cameraData = data.timeline[cameraName];
+                const cameraDiv = document.createElement('div');
+                cameraDiv.className = 'camera-timeline';
+                cameraDiv.style.height = '60px';
+                
+                const header = document.createElement('div');
+                header.className = 'camera-timeline-header';
+                header.textContent = cameraName;
+                header.style.fontSize = '0.9em';
+                cameraDiv.appendChild(header);
+                
+                // Simplified bars (just show if there's any activity)
+                const bar = document.createElement('div');
+                bar.className = 'timeline-bar';
+                bar.style.height = '30px';
+                bar.style.background = '#e0e0e0';
+                
+                // Mark periods with activity
+                [...cameraData.records, ...cameraData.timelapses].forEach(block => {
+                    const blockDiv = document.createElement('div');
+                    blockDiv.className = block.status === 'failed' ? 'timeline-block failed' : 'timeline-block success';
+                    blockDiv.style.opacity = '0.6';
+                    
+                    const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
+                    const widthPercent = ((block.end - block.start) / totalDuration) * 100;
+                    
+                    blockDiv.style.left = `${startPercent}%`;
+                    blockDiv.style.width = `${Math.max(widthPercent, 0.2)}%`;
+                    blockDiv.style.height = '100%';
+                    
+                    bar.appendChild(blockDiv);
+                });
+                
+                cameraDiv.appendChild(bar);
+                container.appendChild(cameraDiv);
+            });
+        }
+        
+        // Focus view for V4
+        function renderFocusView_V4(data, focusStart, focusEnd, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            const focusRange = { start: focusStart, end: focusEnd };
+            const totalDuration = focusEnd - focusStart;
+            const cameras = Object.keys(data.timeline).sort();
+            
+            cameras.forEach(cameraName => {
+                const cameraData = data.timeline[cameraName];
+                
+                const cameraDiv = document.createElement('div');
+                cameraDiv.className = 'camera-timeline';
+                
+                const header = document.createElement('div');
+                header.className = 'camera-timeline-header';
+                header.textContent = `📹 ${cameraName}`;
+                cameraDiv.appendChild(header);
+                
+                // Filter blocks within focus range
+                const recordsInRange = cameraData.records.filter(b => 
+                    b.start < focusEnd && b.end > focusStart
+                );
+                const timelapsesInRange = cameraData.timelapses.filter(b => 
+                    b.start < focusEnd && b.end > focusStart
+                );
+                
+                const recordRow = createSimpleTimelineRow('Record', recordsInRange, focusRange, totalDuration);
+                const timelapseRow = createSimpleTimelineRow('Timelapse', timelapsesInRange, focusRange, totalDuration);
+                
+                cameraDiv.appendChild(recordRow);
+                cameraDiv.appendChild(timelapseRow);
+                container.appendChild(cameraDiv);
+            });
+        }
+        
+        // Brush interaction for V4
+        function setupBrushInteraction_V4(data) {
+            const brush = document.getElementById('brushSelector-v4');
+            const contextContainer = document.getElementById('contextContainer-v4');
+            
+            let isDragging = false;
+            let startX = 0;
+            
+            brush.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX - brush.offsetLeft;
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                const containerRect = contextContainer.getBoundingClientRect();
+                const newLeft = e.clientX - containerRect.left - startX;
+                const maxLeft = containerRect.width - brush.offsetWidth;
+                
+                brush.style.left = `${Math.max(0, Math.min(newLeft, maxLeft))}px`;
+                
+                // Update focus view based on brush position
+                const leftPercent = parseFloat(brush.style.left) / containerRect.width;
+                const widthPercent = brush.offsetWidth / containerRect.width;
+                
+                const timeRange = data.time_range;
+                const totalDuration = timeRange.end - timeRange.start;
+                const focusStart = timeRange.start + (totalDuration * leftPercent);
+                const focusEnd = focusStart + (totalDuration * widthPercent);
+                
+                renderFocusView_V4(data, focusStart, focusEnd, 'focusContainer-v4');
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+        }
+        
+        // Semantic zoom rendering for V5
+        function renderSemanticTimeline_V5(data, zoomLevel) {
+            const container = document.getElementById('timelineContainer-v5');
+            container.innerHTML = '';
+            
+            const timeRange = data.time_range;
+            const totalDuration = timeRange.end - timeRange.start;
+            const cameras = Object.keys(data.timeline).sort();
+            
+            // Update info
+            const info = {
+                'year': 'Hiển thị tổng quan theo năm',
+                'month': 'Hiển thị tổng quan theo tháng',
+                'week': 'Hiển thị theo tuần',
+                'day': 'Hiển thị theo ngày',
+                'hour': 'Hiển thị theo giờ',
+                'block': 'Hiển thị chi tiết từng block 15 phút'
+            };
+            document.getElementById('zoomInfo-v5').textContent = info[zoomLevel] || '';
+            
+            cameras.forEach(cameraName => {
+                const cameraData = data.timeline[cameraName];
+                const cameraDiv = document.createElement('div');
+                cameraDiv.className = 'camera-timeline';
+                
+                const header = document.createElement('div');
+                header.className = 'camera-timeline-header';
+                header.textContent = `📹 ${cameraName}`;
+                cameraDiv.appendChild(header);
+                
+                if (zoomLevel === 'block') {
+                    // Show individual blocks
+                    const recordRow = createSimpleTimelineRow('Record', cameraData.records, timeRange, totalDuration);
+                    const timelapseRow = createSimpleTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
+                    cameraDiv.appendChild(recordRow);
+                    cameraDiv.appendChild(timelapseRow);
+                } else {
+                    // Show aggregated view
+                    const aggregateRow = createAggregateTimelineRow_V5(cameraData, timeRange, totalDuration, zoomLevel);
+                    cameraDiv.appendChild(aggregateRow);
+                }
+                
+                container.appendChild(cameraDiv);
+            });
+        }
+        
+        // Aggregate timeline row for V5
+        function createAggregateTimelineRow_V5(cameraData, timeRange, totalDuration, zoomLevel) {
+            const row = document.createElement('div');
+            row.className = 'timeline-row';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'timeline-label';
+            labelDiv.textContent = 'Activity';
+            row.appendChild(labelDiv);
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'timeline-bar-wrapper';
+            
+            const bar = document.createElement('div');
+            bar.className = 'timeline-bar';
+            
+            // Determine aggregation interval
+            const intervals = {
+                'year': 365 * 24 * 3600,
+                'month': 30 * 24 * 3600,
+                'week': 7 * 24 * 3600,
+                'day': 24 * 3600,
+                'hour': 3600
+            };
+            
+            const intervalDuration = intervals[zoomLevel] || 3600;
+            const numIntervals = Math.ceil(totalDuration / intervalDuration);
+            
+            for (let i = 0; i < numIntervals; i++) {
+                const intervalStart = timeRange.start + (i * intervalDuration);
+                const intervalEnd = Math.min(intervalStart + intervalDuration, timeRange.end);
+                
+                // Check if there are any blocks in this interval
+                const blocksInInterval = [
+                    ...cameraData.records,
+                    ...cameraData.timelapses
+                ].filter(b => b.start < intervalEnd && b.end > intervalStart);
+                
+                if (blocksInInterval.length === 0) continue;
+                
+                // Check if any failed
+                const hasFailure = blocksInInterval.some(b => b.status === 'failed');
+                
+                const blockDiv = document.createElement('div');
+                blockDiv.className = hasFailure ? 'aggregate-block has-failure' : 'aggregate-block all-success';
+                
+                const startPercent = ((intervalStart - timeRange.start) / totalDuration) * 100;
+                const widthPercent = ((intervalEnd - intervalStart) / totalDuration) * 100;
+                
+                blockDiv.style.left = `${startPercent}%`;
+                blockDiv.style.width = `${widthPercent}%`;
+                
+                // Tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'block-tooltip';
+                tooltip.innerHTML = `
+                    <div><strong>${new Date(intervalStart * 1000).toLocaleDateString('vi-VN')}</strong></div>
+                    <div>Blocks: ${blocksInInterval.length}</div>
+                    <div>${hasFailure ? '⚠️ Có sự cố' : '✓ Hoạt động tốt'}</div>
+                `;
+                blockDiv.appendChild(tooltip);
+                
+                bar.appendChild(blockDiv);
+            }
+            
+            wrapper.appendChild(bar);
+            row.appendChild(wrapper);
+            
+            return row;
+        }
+        
+        // ========================================
+        // VERSION-SPECIFIC TIMELINE LOADERS
+        // ========================================
+        
+        // Current active version
+        let currentVersion = 'v1';
+        let currentZoom_v2 = 1.0;
+        let currentZoom_v5 = 'day';
+        
+        // Version switching
+        document.querySelectorAll('.version-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const version = tab.dataset.version;
+                
+                // Update active tab
+                document.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active timeline
+                document.querySelectorAll('.timeline-version').forEach(tv => tv.classList.remove('active'));
+                document.getElementById(`timeline-${version}`).classList.add('active');
+                
+                // Update current version
+                currentVersion = version;
+                
+                // Reload timeline for new version
+                loadTimelineVersion(version);
+            });
         });
         
-        document.getElementById('zoomOutBtn').addEventListener('click', () => {
-            const newZoom = Math.max(currentZoom - 0.5, 1.0);
-            applyZoom(newZoom);
+        // Load timeline based on version
+        async function loadTimelineVersion(version) {
+            switch(version) {
+                case 'v1':
+                    await loadTimeline_V1();
+                    break;
+                case 'v2':
+                    await loadTimeline_V2();
+                    break;
+                case 'v3':
+                    await loadTimeline_V3();
+                    break;
+                case 'v4':
+                    await loadTimeline_V4();
+                    break;
+                case 'v5':
+                    await loadTimeline_V5();
+                    break;
+            }
+        }
+        
+        // V1: Original Timeline (No Zoom, No Events)
+        async function loadTimeline_V1() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) return;
+                
+                const container = document.getElementById('timelineContainer-v1');
+                container.innerHTML = '';
+                
+                const timeRange = data.time_range;
+                const totalDuration = timeRange.end - timeRange.start;
+                
+                updateTimeRangeDisplay(timeRange);
+                updateNavButtons();
+                
+                const cameras = Object.keys(data.timeline).sort();
+                
+                cameras.forEach(cameraName => {
+                    const cameraData = data.timeline[cameraName];
+                    
+                    const cameraDiv = document.createElement('div');
+                    cameraDiv.className = 'camera-timeline';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'camera-timeline-header';
+                    header.textContent = `📹 ${cameraName}`;
+                    cameraDiv.appendChild(header);
+                    
+                    const recordRow = createSimpleTimelineRow('Record', cameraData.records, timeRange, totalDuration);
+                    cameraDiv.appendChild(recordRow);
+                    
+                    const timelapseRow = createSimpleTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
+                    cameraDiv.appendChild(timelapseRow);
+                    
+                    container.appendChild(cameraDiv);
+                });
+                
+            } catch (error) {
+                console.error('Error loading V1 timeline:', error);
+            }
+        }
+        
+        // V2: Timeline with Zoom
+        async function loadTimeline_V2() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) return;
+                
+                const container = document.getElementById('timelineContainer-v2');
+                container.innerHTML = '';
+                
+                const timeRange = data.time_range;
+                const totalDuration = timeRange.end - timeRange.start;
+                
+                const cameras = Object.keys(data.timeline).sort();
+                
+                cameras.forEach(cameraName => {
+                    const cameraData = data.timeline[cameraName];
+                    
+                    const cameraDiv = document.createElement('div');
+                    cameraDiv.className = 'camera-timeline';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'camera-timeline-header';
+                    header.textContent = `📹 ${cameraName}`;
+                    cameraDiv.appendChild(header);
+                    
+                    const recordRow = createZoomableTimelineRow('Record', cameraData.records, timeRange, totalDuration);
+                    cameraDiv.appendChild(recordRow);
+                    
+                    const timelapseRow = createZoomableTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
+                    cameraDiv.appendChild(timelapseRow);
+                    
+                    container.appendChild(cameraDiv);
+                });
+                
+                applyZoom_V2(currentZoom_v2);
+                
+            } catch (error) {
+                console.error('Error loading V2 timeline:', error);
+            }
+        }
+        
+        // V3: Timeline with Events Panel
+        async function loadTimeline_V3() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) return;
+                
+                const container = document.getElementById('timelineContainer-v3');
+                container.innerHTML = '';
+                
+                const timeRange = data.time_range;
+                const totalDuration = timeRange.end - timeRange.start;
+                
+                const cameras = Object.keys(data.timeline).sort();
+                
+                cameras.forEach(cameraName => {
+                    const cameraData = data.timeline[cameraName];
+                    
+                    const cameraDiv = document.createElement('div');
+                    cameraDiv.className = 'camera-timeline';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'camera-timeline-header';
+                    header.textContent = `📹 ${cameraName}`;
+                    cameraDiv.appendChild(header);
+                    
+                    const recordRow = createSimpleTimelineRow('Record', cameraData.records, timeRange, totalDuration);
+                    cameraDiv.appendChild(recordRow);
+                    
+                    const timelapseRow = createSimpleTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
+                    cameraDiv.appendChild(timelapseRow);
+                    
+                    container.appendChild(cameraDiv);
+                });
+                
+                populateEventsPanel_V3(data.timeline, timeRange);
+                
+            } catch (error) {
+                console.error('Error loading V3 timeline:', error);
+            }
+        }
+        
+        // V4: Context + Focus Timeline
+        async function loadTimeline_V4() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) return;
+                
+                // Render context (full range, simplified)
+                renderContextView_V4(data, 'contextContainer-v4');
+                
+                // Render focus (default: middle 20% of range)
+                const timeRange = data.time_range;
+                const focusStart = timeRange.start + (timeRange.end - timeRange.start) * 0.4;
+                const focusEnd = timeRange.start + (timeRange.end - timeRange.start) * 0.6;
+                renderFocusView_V4(data, focusStart, focusEnd, 'focusContainer-v4');
+                
+                // Setup brush interaction
+                setupBrushInteraction_V4(data);
+                
+            } catch (error) {
+                console.error('Error loading V4 timeline:', error);
+            }
+        }
+        
+        // V5: Semantic Zoom Timeline
+        async function loadTimeline_V5() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) return;
+                
+                const zoomLevel = document.getElementById('zoomLevel-v5').value;
+                renderSemanticTimeline_V5(data, zoomLevel);
+                
+            } catch (error) {
+                console.error('Error loading V5 timeline:', error);
+            }
+        }
+        
+        // Setup zoom button event listeners for V2
+        document.getElementById('zoomInBtn-v2').addEventListener('click', () => {
+            currentZoom_v2 = Math.min(currentZoom_v2 + 0.5, 10.0);
+            applyZoom_V2(currentZoom_v2);
+        });
+        
+        document.getElementById('zoomOutBtn-v2').addEventListener('click', () => {
+            currentZoom_v2 = Math.max(currentZoom_v2 - 0.5, 1.0);
+            applyZoom_V2(currentZoom_v2);
+        });
+        
+        // Setup semantic zoom selector for V5
+        document.getElementById('zoomLevel-v5').addEventListener('change', () => {
+            if (currentVersion === 'v5') {
+                loadTimeline_V5();
+            }
         });
         
         // Initial load
         initializeDateTimeInputs();
         loadStats();
         loadActivity();
-        loadTimeline();
+        loadTimelineVersion('v1'); // Load default version
         startCountdown();
     </script>
 </body>
