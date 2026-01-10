@@ -6,6 +6,7 @@ Simple web interface to monitor camera statistics and recording history
 
 import os
 import sqlite3
+import base64
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify
 from collections import defaultdict
@@ -247,12 +248,23 @@ def get_recent_activity():
         
         for row in cursor.fetchall():
             duration_str = parse_duration(row['duration']) if row['duration'] else 'N/A'
+            
+            # Decode alert_text from base64 if it's encoded
+            alert_text = row['alert_text'] if row['alert_text'] else 'Error'
+            try:
+                # Try to decode from base64
+                decoded = base64.b64decode(alert_text).decode('utf-8')
+                alert_text = decoded
+            except:
+                # If decoding fails, use the original text
+                pass
+            
             activities.append({
                 'camera': row['camera'],
                 'type': 'Alert',
                 'status': 'failed',
                 'timestamp': datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S'),
-                'details': f"{row['alert_text'][:100] if row['alert_text'] else 'Error'} (Duration: {duration_str})"
+                'details': f"{alert_text[:200] if alert_text else 'Error'} (Duration: {duration_str})"
             })
         
         # Sort all activities by timestamp
@@ -263,6 +275,109 @@ def get_recent_activity():
         return jsonify({
             'success': True,
             'activities': activities[:100]  # Limit to 100 most recent
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/timeline')
+def get_timeline():
+    """Get timeline data for all cameras showing recording blocks"""
+    try:
+        from flask import request
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get parameters from request
+        duration_hours = int(request.args.get('duration', 24))  # Default 24 hours
+        end_ts = int(request.args.get('end_ts', datetime.now().timestamp()))  # Default to now
+        start_ts = end_ts - (duration_hours * 3600)
+        
+        timeline_data = {}
+        
+        # Get all cameras
+        cursor.execute("SELECT DISTINCT camera FROM sent_ranges UNION SELECT DISTINCT camera FROM timelapse_history UNION SELECT DISTINCT camera FROM alert_history")
+        cameras = [row['camera'] for row in cursor.fetchall()]
+        
+        for camera in cameras:
+            timeline_data[camera] = {
+                'camera': camera,
+                'records': [],
+                'timelapses': []
+            }
+            
+            # Get successful records for this camera in time range
+            cursor.execute("""
+                SELECT start_ts, end_ts, created_at, id
+                FROM sent_ranges
+                WHERE camera = ? AND start_ts >= ? AND start_ts <= ?
+                ORDER BY start_ts
+            """, (camera, start_ts, end_ts))
+            
+            for row in cursor.fetchall():
+                start_time = datetime.fromtimestamp(row['start_ts']).strftime('%Y-%m-%d %H:%M:%S')
+                end_time = datetime.fromtimestamp(row['end_ts']).strftime('%Y-%m-%d %H:%M:%S')
+                duration = row['end_ts'] - row['start_ts']
+                timeline_data[camera]['records'].append({
+                    'start': row['start_ts'],
+                    'end': row['end_ts'],
+                    'status': 'success',
+                    'created_at': row['created_at'],
+                    'id': row['id'],
+                    'type': 'Record',
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'duration': parse_duration(duration)
+                })
+            
+            # Get timelapses for this camera in time range
+            cursor.execute("""
+                SELECT range_id, created_at, id
+                FROM timelapse_history
+                WHERE camera = ? AND created_at >= ? AND created_at <= ?
+                ORDER BY created_at
+            """, (camera, start_ts, end_ts))
+            
+            for row in cursor.fetchall():
+                # Parse range_id to get start and end timestamps
+                # Format: camera_startts_endts
+                try:
+                    parts = row['range_id'].split('_')
+                    if len(parts) >= 3:
+                        tl_start = int(parts[-2])
+                        tl_end = int(parts[-1])
+                        created_time = datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')
+                        start_time = datetime.fromtimestamp(tl_start).strftime('%Y-%m-%d %H:%M:%S')
+                        end_time = datetime.fromtimestamp(tl_end).strftime('%Y-%m-%d %H:%M:%S')
+                        duration = tl_end - tl_start
+                        timeline_data[camera]['timelapses'].append({
+                            'start': tl_start,
+                            'end': tl_end,
+                            'status': 'success',
+                            'range_id': row['range_id'],
+                            'created_at': row['created_at'],
+                            'id': row['id'],
+                            'type': 'Timelapse',
+                            'created_time': created_time,
+                            'start_time': start_time,
+                            'end_time': end_time,
+                            'duration': parse_duration(duration)
+                        })
+                except:
+                    pass
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'timeline': timeline_data,
+            'time_range': {
+                'start': start_ts,
+                'end': end_ts
+            }
         })
         
     except Exception as e:

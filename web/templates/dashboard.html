@@ -188,6 +188,280 @@
             font-size: 0.9em;
             color: #666;
             margin-top: 5px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        
+        /* Timeline styles */
+        .timeline-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        
+        .timeline-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .camera-timeline {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
+        
+        .camera-timeline-header {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .timeline-row {
+            margin-bottom: 15px;
+        }
+        
+        .timeline-label {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .timeline-bar {
+            position: relative;
+            height: 40px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .timeline-block {
+            position: absolute;
+            height: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .timeline-block:hover {
+            opacity: 0.8;
+        }
+        
+        .timeline-block.success {
+            background: #4caf50;
+        }
+        
+        .timeline-block.failed {
+            background: #f44336;
+        }
+        
+        .timeline-block.pending {
+            background: #9e9e9e;
+        }
+        
+        .timeline-time-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.75em;
+            color: #999;
+        }
+        
+        /* Timeline Controls */
+        .timeline-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .time-range-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .time-range-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .time-range-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .time-range-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .timeline-nav {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .nav-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .nav-btn:hover {
+            background: #764ba2;
+        }
+        
+        .nav-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .current-time-range {
+            font-size: 0.9em;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            animation: slideDown 0.3s;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #333;
+            font-size: 1.5em;
+        }
+        
+        .close-btn {
+            font-size: 28px;
+            font-weight: bold;
+            color: #999;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .close-btn:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            font-size: 1em;
+        }
+        
+        .detail-row {
+            display: flex;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: bold;
+            color: #667eea;
+            width: 150px;
+            flex-shrink: 0;
+        }
+        
+        .detail-value {
+            color: #333;
+            flex-grow: 1;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .status-badge.success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .status-badge.failed {
+            background: #f44336;
+            color: white;
         }
         
         .loading {
@@ -292,6 +566,46 @@
                 </table>
             </div>
             
+            <!-- Timeline Visualization -->
+            <div class="timeline-section">
+                <h2>⏱️ Timeline ghi hình</h2>
+                
+                <!-- Timeline Controls -->
+                <div class="timeline-controls">
+                    <div class="time-range-selector">
+                        <span style="font-weight: bold; color: #666;">Khoảng thời gian:</span>
+                        <button class="time-range-btn" data-hours="1">1 giờ</button>
+                        <button class="time-range-btn" data-hours="6">6 giờ</button>
+                        <button class="time-range-btn" data-hours="12">12 giờ</button>
+                        <button class="time-range-btn active" data-hours="24">24 giờ</button>
+                        <button class="time-range-btn" data-hours="168">7 ngày</button>
+                    </div>
+                    
+                    <div class="timeline-nav">
+                        <button class="nav-btn" id="prevBtn">◀ Trước</button>
+                        <span class="current-time-range" id="currentTimeRange"></span>
+                        <button class="nav-btn" id="nextBtn" disabled>Sau ▶</button>
+                    </div>
+                </div>
+                
+                <div id="timelineContainer">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Block Detail Modal -->
+            <div id="blockModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modalTitle">Chi tiết Block</h3>
+                        <span class="close-btn" id="closeModal">&times;</span>
+                    </div>
+                    <div class="modal-body" id="modalBody">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            
             <!-- Recent Activity -->
             <div class="activity-section">
                 <h2>📝 Hoạt động gần đây</h2>
@@ -309,6 +623,11 @@
     <script>
         let countdownTimer = 30;
         let countdownInterval;
+        
+        // Timeline state
+        let currentDuration = 24; // hours
+        let currentEndTs = Math.floor(Date.now() / 1000); // current time
+        let timelineData = {};
         
         async function loadStats() {
             try {
@@ -376,7 +695,7 @@
                     item.innerHTML = `
                         <span class="timestamp">${activity.timestamp}</span>
                         <div class="camera-name">${activity.camera} - ${activity.type}</div>
-                        <div class="details">${activity.details}</div>
+                        <div class="details">${escapeHtml(activity.details)}</div>
                     `;
                     activityList.appendChild(item);
                 });
@@ -385,6 +704,259 @@
                 console.error('Error loading activity:', error);
             }
         }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function loadTimeline() {
+            try {
+                const response = await fetch(`/api/timeline?duration=${currentDuration}&end_ts=${currentEndTs}`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    return;
+                }
+                
+                const container = document.getElementById('timelineContainer');
+                container.innerHTML = '';
+                
+                const timeRange = data.time_range;
+                const totalDuration = timeRange.end - timeRange.start;
+                
+                // Store timeline data for modal
+                timelineData = data.timeline;
+                
+                // Update current time range display
+                updateTimeRangeDisplay(timeRange);
+                
+                // Update navigation buttons
+                updateNavButtons();
+                
+                // Sort cameras alphabetically
+                const cameras = Object.keys(data.timeline).sort();
+                
+                cameras.forEach(cameraName => {
+                    const cameraData = data.timeline[cameraName];
+                    
+                    // Create camera timeline container
+                    const cameraDiv = document.createElement('div');
+                    cameraDiv.className = 'camera-timeline';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'camera-timeline-header';
+                    header.textContent = `📹 ${cameraName}`;
+                    cameraDiv.appendChild(header);
+                    
+                    // Create Records timeline
+                    const recordRow = createTimelineRow('Record', cameraData.records, timeRange, totalDuration);
+                    cameraDiv.appendChild(recordRow);
+                    
+                    // Create Timelapse timeline
+                    const timelapseRow = createTimelineRow('Timelapse', cameraData.timelapses, timeRange, totalDuration);
+                    cameraDiv.appendChild(timelapseRow);
+                    
+                    container.appendChild(cameraDiv);
+                });
+                
+            } catch (error) {
+                console.error('Error loading timeline:', error);
+            }
+        }
+        
+        function createTimelineRow(label, blocks, timeRange, totalDuration) {
+            const row = document.createElement('div');
+            row.className = 'timeline-row';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'timeline-label';
+            labelDiv.textContent = label;
+            row.appendChild(labelDiv);
+            
+            const bar = document.createElement('div');
+            bar.className = 'timeline-bar';
+            
+            // Add blocks to the timeline
+            blocks.forEach(block => {
+                const blockDiv = document.createElement('div');
+                blockDiv.className = 'timeline-block success';
+                
+                // Calculate position and width as percentage
+                const startPercent = ((block.start - timeRange.start) / totalDuration) * 100;
+                const duration = block.end - block.start;
+                const widthPercent = (duration / totalDuration) * 100;
+                
+                blockDiv.style.left = `${startPercent}%`;
+                blockDiv.style.width = `${widthPercent}%`;
+                
+                // Add tooltip
+                const startTime = new Date(block.start * 1000).toLocaleTimeString('vi-VN');
+                const endTime = new Date(block.end * 1000).toLocaleTimeString('vi-VN');
+                blockDiv.title = `${startTime} - ${endTime}`;
+                
+                // Add click handler to show modal
+                blockDiv.addEventListener('click', () => showBlockDetails(block));
+                
+                bar.appendChild(blockDiv);
+            });
+            
+            row.appendChild(bar);
+            
+            // Add time labels
+            const timeLabels = document.createElement('div');
+            timeLabels.className = 'timeline-time-labels';
+            
+            const startDate = new Date(timeRange.start * 1000);
+            const endDate = new Date(timeRange.end * 1000);
+            
+            // Create 6 time markers
+            for (let i = 0; i <= 5; i++) {
+                const time = new Date(timeRange.start * 1000 + (totalDuration * 1000 * i / 5));
+                const span = document.createElement('span');
+                span.textContent = time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                timeLabels.appendChild(span);
+            }
+            
+            row.appendChild(timeLabels);
+            
+            return row;
+        }
+        
+        function updateTimeRangeDisplay(timeRange) {
+            const start = new Date(timeRange.start * 1000);
+            const end = new Date(timeRange.end * 1000);
+            const display = document.getElementById('currentTimeRange');
+            
+            const formatDate = (date) => {
+                const day = date.getDate().toString().padStart(2, '0');
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                return `${day}/${month} ${hours}:${minutes}`;
+            };
+            
+            display.textContent = `${formatDate(start)} - ${formatDate(end)}`;
+        }
+        
+        function updateNavButtons() {
+            const nextBtn = document.getElementById('nextBtn');
+            const now = Math.floor(Date.now() / 1000);
+            
+            // Disable next button if we're viewing current time
+            if (currentEndTs >= now - 300) { // Within 5 minutes of now
+                nextBtn.disabled = true;
+            } else {
+                nextBtn.disabled = false;
+            }
+        }
+        
+        function showBlockDetails(block) {
+            const modal = document.getElementById('blockModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            
+            modalTitle.textContent = `${block.type} - Chi tiết`;
+            
+            let detailsHtml = `
+                <div class="detail-row">
+                    <div class="detail-label">Trạng thái:</div>
+                    <div class="detail-value">
+                        <span class="status-badge ${block.status}">${block.status === 'success' ? 'Thành công' : 'Thất bại'}</span>
+                    </div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Loại:</div>
+                    <div class="detail-value">${block.type}</div>
+                </div>
+            `;
+            
+            if (block.start_time) {
+                detailsHtml += `
+                    <div class="detail-row">
+                        <div class="detail-label">Bắt đầu:</div>
+                        <div class="detail-value">${block.start_time}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Kết thúc:</div>
+                        <div class="detail-value">${block.end_time}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Thời lượng:</div>
+                        <div class="detail-value">${block.duration}</div>
+                    </div>
+                `;
+            }
+            
+            if (block.range_id) {
+                detailsHtml += `
+                    <div class="detail-row">
+                        <div class="detail-label">Range ID:</div>
+                        <div class="detail-value">${block.range_id}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Tạo lúc:</div>
+                        <div class="detail-value">${block.created_time}</div>
+                    </div>
+                `;
+            }
+            
+            if (block.id) {
+                detailsHtml += `
+                    <div class="detail-row">
+                        <div class="detail-label">ID:</div>
+                        <div class="detail-value">${block.id}</div>
+                    </div>
+                `;
+            }
+            
+            modalBody.innerHTML = detailsHtml;
+            modal.style.display = 'block';
+        }
+        
+        // Time range selector
+        document.querySelectorAll('.time-range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Update active state
+                document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update duration and reset to current time
+                currentDuration = parseInt(btn.dataset.hours);
+                currentEndTs = Math.floor(Date.now() / 1000);
+                
+                // Reload timeline
+                loadTimeline();
+            });
+        });
+        
+        // Navigation buttons
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            currentEndTs -= currentDuration * 3600;
+            loadTimeline();
+        });
+        
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            currentEndTs += currentDuration * 3600;
+            const now = Math.floor(Date.now() / 1000);
+            if (currentEndTs > now) {
+                currentEndTs = now;
+            }
+            loadTimeline();
+        });
+        
+        // Modal close handlers
+        document.getElementById('closeModal').addEventListener('click', () => {
+            document.getElementById('blockModal').style.display = 'none';
+        });
+        
+        window.addEventListener('click', (event) => {
+            const modal = document.getElementById('blockModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
         
         function startCountdown() {
             countdownTimer = 30;
@@ -401,6 +973,7 @@
                 if (countdownTimer <= 0) {
                     loadStats();
                     loadActivity();
+                    loadTimeline();
                     startCountdown();
                 }
             }, 1000);
@@ -409,6 +982,7 @@
         // Initial load
         loadStats();
         loadActivity();
+        loadTimeline();
         startCountdown();
     </script>
 </body>
