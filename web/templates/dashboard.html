@@ -298,6 +298,34 @@
             display: flex;
             gap: 10px;
             align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .time-input-group {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .time-input {
+            width: 50px;
+            padding: 5px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .time-input-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .datetime-input {
+            padding: 8px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            font-weight: bold;
         }
         
         .time-range-btn {
@@ -574,14 +602,48 @@
                 <div class="timeline-controls">
                     <div class="time-range-selector">
                         <span style="font-weight: bold; color: #666;">Khoảng thời gian:</span>
-                        <button class="time-range-btn" data-hours="1">1 giờ</button>
-                        <button class="time-range-btn" data-hours="6">6 giờ</button>
-                        <button class="time-range-btn" data-hours="12">12 giờ</button>
-                        <button class="time-range-btn active" data-hours="24">24 giờ</button>
-                        <button class="time-range-btn" data-hours="168">7 ngày</button>
+                        
+                        <!-- Quick presets -->
+                        <button class="time-range-btn" data-hours="1">1h</button>
+                        <button class="time-range-btn" data-hours="6">6h</button>
+                        <button class="time-range-btn" data-hours="12">12h</button>
+                        <button class="time-range-btn active" data-hours="24">24h</button>
+                        <button class="time-range-btn" data-hours="168">7d</button>
+                        
+                        <span style="margin: 0 10px; color: #999;">|</span>
+                        
+                        <!-- Custom time inputs -->
+                        <div class="time-input-group">
+                            <input type="number" id="inputYears" class="time-input" value="0" min="0" max="10">
+                            <span class="time-input-label">năm</span>
+                        </div>
+                        <div class="time-input-group">
+                            <input type="number" id="inputMonths" class="time-input" value="0" min="0" max="11">
+                            <span class="time-input-label">tháng</span>
+                        </div>
+                        <div class="time-input-group">
+                            <input type="number" id="inputDays" class="time-input" value="0" min="0" max="31">
+                            <span class="time-input-label">ngày</span>
+                        </div>
+                        <div class="time-input-group">
+                            <input type="number" id="inputHours" class="time-input" value="24" min="0" max="999">
+                            <span class="time-input-label">giờ</span>
+                        </div>
+                        
+                        <button class="nav-btn" id="applyCustomRange">Áp dụng</button>
                     </div>
                     
-                    <div class="timeline-nav">
+                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap; width: 100%; margin-top: 10px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span style="font-weight: bold; color: #666;">Hoặc chọn khoảng:</span>
+                            <input type="datetime-local" id="startDateTime" class="datetime-input">
+                            <span style="color: #666;">đến</span>
+                            <input type="datetime-local" id="endDateTime" class="datetime-input">
+                            <button class="nav-btn" id="applyDateTimeRange">Áp dụng</button>
+                        </div>
+                    </div>
+                    
+                    <div class="timeline-nav" style="width: 100%; justify-content: center; margin-top: 10px;">
                         <button class="nav-btn" id="prevBtn">◀ Trước</button>
                         <span class="current-time-range" id="currentTimeRange"></span>
                         <button class="nav-btn" id="nextBtn" disabled>Sau ▶</button>
@@ -628,6 +690,43 @@
         let currentDuration = 24; // hours
         let currentEndTs = Math.floor(Date.now() / 1000); // current time
         let timelineData = {};
+        
+        // Initialize datetime inputs
+        function initializeDateTimeInputs() {
+            const now = new Date();
+            const end = new Date(now);
+            const start = new Date(now.getTime() - (24 * 60 * 60 * 1000)); // 24 hours ago
+            
+            document.getElementById('endDateTime').value = formatDateTimeLocal(end);
+            document.getElementById('startDateTime').value = formatDateTimeLocal(start);
+        }
+        
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        
+        function calculateCustomDuration() {
+            const years = parseInt(document.getElementById('inputYears').value) || 0;
+            const months = parseInt(document.getElementById('inputMonths').value) || 0;
+            const days = parseInt(document.getElementById('inputDays').value) || 0;
+            const hours = parseInt(document.getElementById('inputHours').value) || 0;
+            
+            // Convert to hours (approximate)
+            return (years * 365 * 24) + (months * 30 * 24) + (days * 24) + hours;
+        }
+        
+        function updateCustomInputs(hours) {
+            // Clear all inputs first
+            document.getElementById('inputYears').value = 0;
+            document.getElementById('inputMonths').value = 0;
+            document.getElementById('inputDays').value = 0;
+            document.getElementById('inputHours').value = hours;
+        }
         
         async function loadStats() {
             try {
@@ -927,9 +1026,60 @@
                 currentDuration = parseInt(btn.dataset.hours);
                 currentEndTs = Math.floor(Date.now() / 1000);
                 
+                // Update custom inputs
+                updateCustomInputs(currentDuration);
+                
                 // Reload timeline
                 loadTimeline();
             });
+        });
+        
+        // Custom range apply button
+        document.getElementById('applyCustomRange').addEventListener('click', () => {
+            // Clear preset buttons
+            document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+            
+            // Calculate custom duration
+            currentDuration = calculateCustomDuration();
+            if (currentDuration <= 0) {
+                alert('Vui lòng nhập khoảng thời gian hợp lệ!');
+                return;
+            }
+            
+            currentEndTs = Math.floor(Date.now() / 1000);
+            loadTimeline();
+        });
+        
+        // DateTime range apply button
+        document.getElementById('applyDateTimeRange').addEventListener('click', () => {
+            const startInput = document.getElementById('startDateTime').value;
+            const endInput = document.getElementById('endDateTime').value;
+            
+            if (!startInput || !endInput) {
+                alert('Vui lòng chọn cả thời gian bắt đầu và kết thúc!');
+                return;
+            }
+            
+            const startDate = new Date(startInput);
+            const endDate = new Date(endInput);
+            
+            if (endDate <= startDate) {
+                alert('Thời gian kết thúc phải sau thời gian bắt đầu!');
+                return;
+            }
+            
+            // Clear preset buttons
+            document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+            
+            // Calculate duration in hours
+            const durationMs = endDate.getTime() - startDate.getTime();
+            currentDuration = Math.ceil(durationMs / (1000 * 60 * 60));
+            currentEndTs = Math.floor(endDate.getTime() / 1000);
+            
+            // Update custom inputs to reflect the duration
+            updateCustomInputs(currentDuration);
+            
+            loadTimeline();
         });
         
         // Navigation buttons
@@ -981,6 +1131,7 @@
         }
         
         // Initial load
+        initializeDateTimeInputs();
         loadStats();
         loadActivity();
         loadTimeline();
