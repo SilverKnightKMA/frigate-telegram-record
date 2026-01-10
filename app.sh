@@ -4,6 +4,7 @@
 # CONFIGURATION LOADER
 # ==============================================================================
 
+# Load environment variables from config file if not already set
 CONFIG_FILE="${CONFIG_FILE:-}"
 if [ -z "$CONFIG_FILE" ]; then
     if [ -f "./config/config.env" ]; then
@@ -20,15 +21,12 @@ load_config() {
             if [[ $key =~ ^# ]] || [[ -z $key ]]; then continue; fi
             key=$(echo "$key" | xargs)
             value=$(echo "$value" | xargs)
+            # Only export if not already set in environment
             if [ -z "${!key}" ]; then export "$key=$value"; fi
         done < "$CONFIG_FILE"
     fi
 }
 load_config
-
-# --- NOTE:
-# `load_config` reads a simple KEY=VALUE file (ignores comments/blank lines)
-# and only exports variables that are not already set in the environment.
 
 export TZ="${TZ:-Asia/Ho_Chi_Minh}"
 FRIGATE_HOST="${FRIGATE_HOST:-http://127.0.0.1:5000}"
@@ -45,10 +43,10 @@ DB_FILE="$DATA_DIR/video_history.sqlite"
 # --- TUNING CONFIG ---
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 ALERT_RETENTION_HOURS="${ALERT_RETENTION_HOURS:-72}"
-# Whether to resend alerts for the same slot (true/false)
+# Controls if alerts are resent for the same time slot
 ALERT_REPEAT="${ALERT_REPEAT:-false}"
 LOOKBACK_HOURS="${LOOKBACK_HOURS:-24}"
-# Keep low to avoid database locks
+# Limit concurrent background jobs to prevent DB locks
 MAX_CONCURRENT_TASKS="${MAX_CONCURRENT_TASKS:-2}" 
 PADDING_SEC="${PADDING_SEC:-5}"
 MAX_RETRIES="${MAX_RETRIES:-5}"
@@ -57,17 +55,31 @@ REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
 TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
 MODE="${MODE:-record}"
 
-# --- NEW CONFIG: Control Recovery Notification ---
-# true: Send Reply + Reaction + Edit Message
-# false: Only Edit Message (Silent update)
+# Controls notification behavior upon recovery:
+# true: Sends a reply, adds a reaction, and edits the original error message.
+# false: Only edits the error message silently.
 NOTIFY_ON_RECOVERY="${NOTIFY_ON_RECOVERY:-true}"
 
-# --- NEW CONFIG: Duration Threshold ---
-# Percentage of expected duration required to consider the video "Success"
-# If video is shorter than this %, it is considered a failure (or partial)
+# Threshold to determine if a video is considered successful (percentage of expected duration).
 MIN_DURATION_PERCENT="${MIN_DURATION_PERCENT:-90}"
 
-# Global vars to hold message IDs after sending
+# --- TIMELAPSE SETTINGS ---
+TIMELAPSE_THREAD_ID="${TIMELAPSE_THREAD_ID:-}" 
+TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"    # Duration of one timelapse block in hours
+TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-60}"   # Speed multiplier
+TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"       # Output FPS
+TIMELAPSE_QUALITY="${TIMELAPSE_QUALITY:-24}" # Encoding Quality (QP)
+VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
+TIMELAPSE_CHUNK_SIZE_SEC=$((115 * 60)) # Process in chunks to maintain ffmpeg stability
+TIMELAPSE_LOOKBACK_HOURS="${TIMELAPSE_LOOKBACK_HOURS:-24}"
+TIMELAPSE_RETRY_SLEEP_SEC="${TIMELAPSE_RETRY_SLEEP_SEC:-3600}"
+
+# Controls retry behavior for timelapse mode:
+# true: Enters a retry loop with short sleep (TIMELAPSE_RETRY_SLEEP_SEC) immediately after failure.
+# false: Logs the failure (with duration) to DB and proceeds to normal long sleep schedule.
+TIMELAPSE_STRICT_RETRY="${TIMELAPSE_STRICT_RETRY:-true}"
+
+# Global variables to store Telegram Message IDs for recovery logic
 SENT_ERROR_MSG_ID=""
 SENT_VIDEO_MSG_ID=""
 
@@ -82,12 +94,12 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [INFO] $1"
 }
 
-# --- HELPER: SAFE DATABASE QUERY ---
-# Timeout 30s to prevent 'database is locked' errors
+# Executes SQL with a timeout to prevent 'database is locked' errors during concurrency
 db_exec() {
     sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1"
 }
 
+# Returns a single numeric value from SQL, defaulting to 0 on failure
 db_count() {
     local result=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1" 2>/dev/null)
     if [[ ! "$result" =~ ^[0-9]+$ ]]; then
@@ -97,29 +109,23 @@ db_count() {
     fi
 }
 
-# db_count: run a SQL query expected to return a single numeric value
-# and normalise non-numeric responses to 0 to avoid shell errors.
-
-# --- HELPER: EXTRACT JSON VALUE (Minimal grep/awk to avoid jq dependency) ---
+# Extracts a specific key from a flat JSON string using grep/awk
 get_json_value() {
     local json="$1"
     local key="$2"
-    # Simple regex to extract integer values like "message_id":123
     echo "$json" | grep -oE "\"$key\":[0-9]+" | head -n 1 | awk -F':' '{print $2}'
 }
 
-# --- HELPER: GET VIDEO DURATION ---
+# Uses ffprobe to get the exact duration of a video file in seconds
 get_video_duration() {
     local filepath="$1"
     if command -v ffprobe &> /dev/null; then
-        # Returns duration in seconds (integer)
         ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" | cut -d. -f1
     else
         echo "0"
     fi
 }
 
-# --- HELPER: FORMAT DURATION (Seconds -> Human Readable) ---
 format_duration() {
     local total_seconds=$1
     local hours=$((total_seconds / 3600))
@@ -135,6 +141,26 @@ format_duration() {
     fi
 }
 
+# Calculates a master timestamp aligned to the nearest time block based on timezone.
+# Ensures that all cameras process the same time slots regardless of when the script starts.
+get_aligned_master_ts() {
+    local duration_sec=$1
+    local current_ts=$(date +%s)
+    local tz_str=$(date +%z)
+    local tz_sign=${tz_str:0:1}
+    local tz_hour=${tz_str:1:2}
+    local tz_min=${tz_str:3:2}
+    local tz_offset_sec=$(( (tz_hour * 3600) + (tz_min * 60) ))
+    
+    if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
+    
+    local local_ts=$((current_ts + tz_offset_sec))
+    local aligned_local_end=$(( local_ts - (local_ts % duration_sec) ))
+    local master_end_ts=$(( aligned_local_end - tz_offset_sec ))
+    
+    echo "$master_end_ts"
+}
+
 # --- TELEGRAM ACTIONS ---
 
 send_reaction() {
@@ -142,7 +168,6 @@ send_reaction() {
     local msg_id="$2"
     local emoji="$3"
     
-    # Don't react if no msg_id
     if [ -z "$msg_id" ] || [ "$msg_id" == "0" ]; then return; fi
 
     curl -s -X POST "${TELEGRAM_API_URL}/bot${BOT_TOKEN}/setMessageReaction" \
@@ -157,8 +182,6 @@ send_reaction() {
             \"is_big\": true
         }" > /dev/null
 }
-
-# send_reaction: add an emoji reaction to an existing message (if bot permitted).
 
 send_reply() {
     local chat_id="$1"
@@ -177,16 +200,13 @@ send_reply() {
         -H "Content-Type: application/json" \
         -d "{
             \"chat_id\": $chat_id,
-            $extra_params
+            \" $extra_params
             \"text\": \"$text\",
             \"reply_parameters\": {
                 \"message_id\": $msg_id
             }
         }" > /dev/null
 }
-
-# send_reply: send a message that is a reply to an existing message id.
-# Supports optional thread (message_thread_id) when provided.
 
 edit_message_text() {
     local chat_id="$1"
@@ -208,26 +228,24 @@ edit_message_text() {
     curl "${args[@]}" > /dev/null
 }
 
-# edit_message_text: update the text of an existing message using HTML parse mode.
-# Uses --data-urlencode to safely transmit multi-line content.
-
 # --- ERROR HANDLER ---
+# Logs errors locally and sends a notification to Telegram if configured.
+# Handles rate limiting and updates the global SENT_ERROR_MSG_ID.
 handle_error() {
     local msg="$1"
     local context="$2"
     local ts=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Reset global ID
     SENT_ERROR_MSG_ID=""
 
-    # Clean HTML tags for log file
+    # Clean HTML tags for local log file
     local clean_msg=$(echo "$msg" | sed 's/<[^>]*>//g')
     echo "[$ts] [ERROR] [$context] $clean_msg" | tee -a "$LOG_FILE"
     
     if [ -n "$ERROR_CHAT_ID" ]; then
         local alert_text=""
         
-        # Smart Check: If input has HTML tags, use it as is. Else use default template.
+        # Use message as-is if it contains HTML tags, otherwise apply template
         if [[ "$msg" == *"<b>"* ]]; then
             alert_text="$msg"
         else
@@ -257,7 +275,7 @@ handle_error() {
             if [ "$http_code" == "200" ] && echo "$response_content" | grep -q '"ok":true'; then
                 SENT_ERROR_MSG_ID=$(get_json_value "$response_content" "message_id")
                 
-                # Panic Reaction
+                # Add visual reaction to indicate critical error
                 if [ -n "$SENT_ERROR_MSG_ID" ]; then
                     send_reaction "$ERROR_CHAT_ID" "$SENT_ERROR_MSG_ID" "🔥"
                 fi
@@ -285,7 +303,6 @@ handle_error() {
     fi
 }
 
-# Parse Cameras
 IFS=';' read -ra CAMERA_ARRAY <<< "$CAMERAS"
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
     log "CRITICAL: No cameras configured."
@@ -299,7 +316,7 @@ echo "[INFO] System Timezone: $TZ"
 # ==============================================================================
 
 init_db() {
-    # Basic tables
+    # Initialize tables for tracking sent videos and errors
     db_exec "CREATE TABLE IF NOT EXISTS sent_ranges (
         camera TEXT,
         start_ts INTEGER,
@@ -314,16 +331,26 @@ init_db() {
         created_at INTEGER
     );"
 
-    # MIGRATION: Add columns silently if not exist
+    # Initialize table for timelapse tracking
+    db_exec "CREATE TABLE IF NOT EXISTS timelapse_history (
+        camera TEXT,
+        range_id TEXT,
+        created_at INTEGER,
+        PRIMARY KEY (camera, range_id)
+    );"
+
+    # Schema updates (idempotent)
     db_exec "ALTER TABLE alert_history ADD COLUMN msg_id INTEGER;" 2>/dev/null
     db_exec "ALTER TABLE sent_ranges ADD COLUMN msg_id INTEGER;" 2>/dev/null
     db_exec "ALTER TABLE alert_history ADD COLUMN alert_text TEXT;" 2>/dev/null
     
-    # NEW MIGRATION: Add duration column for partial download tracking
+    # Add duration column to track partial download improvements
     db_exec "ALTER TABLE alert_history ADD COLUMN duration INTEGER;" 2>/dev/null
     
+    # Cleanup old records
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
     db_exec "DELETE FROM sent_ranges WHERE created_at < $sent_cleanup_ts;"
+    db_exec "DELETE FROM timelapse_history WHERE created_at < $sent_cleanup_ts;"
 
     local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
     db_exec "DELETE FROM alert_history WHERE created_at < $alert_cleanup_ts;"
@@ -385,6 +412,7 @@ send_telegram_video() {
             return 0
         fi
 
+        # Handle rate limiting
         if echo "$response_content" | grep -iq "retry after"; then
             local wait_sec=$(echo "$response_content" | grep -oE 'retry after [0-9]+' | awk '{print $3}')
             if [ -z "$wait_sec" ]; then wait_sec=10; fi
@@ -404,13 +432,85 @@ send_telegram_video() {
     return 1
 }
 
-# send_telegram_video: upload a local MP4 file to Telegram using `sendVideo`.
-# Retries on network failures or Telegram "retry after" responses and sets
-# `SENT_VIDEO_MSG_ID` on success for downstream recovery logic.
+# ==============================================================================
+# SHARED LOGIC (RECOVERY & CHECKS)
+# ==============================================================================
 
-# ==============================================================================
-# PIPELINE LOGIC
-# ==============================================================================
+# Checks if the downloaded video meets duration requirements.
+# Returns: "skip", "partial", or "success".
+check_duration_and_status() {
+    local src="$1"
+    local filepath="$2"
+    local expected_sec="$3"
+    local record_id="$4"
+
+    local actual=$(get_video_duration "$filepath")
+    local threshold=$(( expected_sec * MIN_DURATION_PERCENT / 100 ))
+    
+    # Store result variables for caller use
+    _actual=$actual
+    _fmt_actual=$(format_duration "$actual")
+    _fmt_expected=$(format_duration "$expected_sec")
+    _percent=0
+    if [ "$expected_sec" -gt 0 ]; then _percent=$(( actual * 100 / expected_sec )); fi
+
+    if [ "$actual" -lt "$threshold" ]; then
+        log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
+        
+        # Check against previous failure in DB
+        local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM alert_history WHERE id='$record_id' LIMIT 1;")
+        prev_duration=${prev_duration:-0}
+
+        # If current video is not better than previous attempt, skip it
+        if [ "$actual" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
+             log "[$src] 🚫 New video (${actual}s) not longer than previous fail (${prev_duration}s). Skipping."
+             echo "skip"
+             return
+        fi
+        
+        # If improvement, mark as partial success
+        log "[$src] 📈 Improvement (${actual}s > ${prev_duration}s). Sending video but marking as FAILURE."
+        echo "partial"
+        return
+    fi
+
+    echo "success"
+}
+
+# Handles post-success cleanup: deletes alert from DB, replies to error msg, edits status.
+handle_recovery_actions() {
+    local src="$1"
+    local record_id="$2"
+    
+    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, alert_text FROM alert_history WHERE id='$record_id' LIMIT 1;")
+    local alert_msg_id=$(echo "$db_row" | awk -F'|' '{print $1}')
+    local b64_alert_text=$(echo "$db_row" | awk -F'|' '{print $2}')
+    
+    if [ -n "$alert_msg_id" ] && [ "$alert_msg_id" -ne 0 ] && [ -n "$ERROR_CHAT_ID" ]; then
+        log "[$src] Recovery detected. Updating alert $alert_msg_id..."
+        
+        local notify_rec=$(echo "${NOTIFY_ON_RECOVERY:-true}" | tr '[:upper:]' '[:lower:]')
+        
+        if [ "$notify_rec" == "true" ]; then
+            send_reply "$ERROR_CHAT_ID" "$alert_msg_id" "✅ Retry successful! Video has been sent." "$ERROR_THREAD_ID"
+            send_reaction "$ERROR_CHAT_ID" "$alert_msg_id" "❤"
+        else
+             log "[$src] NOTIFY_ON_RECOVERY=false. Skipping reply/reaction."
+        fi
+
+        if [ -n "$b64_alert_text" ]; then
+            local original_text=$(echo "$b64_alert_text" | base64 -d)
+            local body_text=$(echo "$original_text" | sed '1d')
+            local updated_text="✅ <b>RESOLVED</b>
+$body_text"
+            edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "$updated_text" "$ERROR_THREAD_ID"
+        else
+             edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "✅ <b>RESOLVED</b> (Metadata unavailable)" "$ERROR_THREAD_ID"
+        fi
+    fi
+
+    db_exec "DELETE FROM alert_history WHERE id='$record_id';"
+}
 
 trigger_failure_alert() {
     local src="$1"
@@ -418,9 +518,9 @@ trigger_failure_alert() {
     local end_ts="$3"
     local reason="$4"
     local run_mode="$5"
-    local duration="$6" # NEW: Capture duration for DB
+    local duration="$6"
 
-    if [ "$run_mode" != "record" ]; then
+    if [ "$run_mode" != "record" ] && [ "$run_mode" != "timelapse" ]; then
         log "[$src] $reason (Test Mode - No Alert)"
         return
     fi
@@ -429,15 +529,12 @@ trigger_failure_alert() {
     local alerted=$(db_count "SELECT count(*) FROM alert_history WHERE id='$record_id';")
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
 
-    # If already alerted, we only update DB if it's a "Partial Update" (meaning we sent a better video but still fail)
-    # or if ALERT_REPEAT is true.
+    # Logic: Only update if it's a "Partial Update" or if repeat alerts are enabled.
     if [ "$alerted" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
-        # Check if we have a SENT_VIDEO_MSG_ID. If so, this is a "Partial Success but Fail Threshold" case.
-        # We need to update the entry with the new msg_id and duration, but NOT send a new text alert.
+        # If we sent a video (Partial Success), update the DB with new msg_id but don't re-alert.
         if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
              local current_ts=$(date +%s)
              local duration_val="${duration:-0}"
-             # Update the existing record with the new video message ID and new duration
              db_exec "UPDATE alert_history SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, created_at=$current_ts WHERE id='$record_id';"
              log "[$src] Partial improvement: Updated alert DB with new Video MsgID ($SENT_VIDEO_MSG_ID) and duration ($duration_val)."
              return
@@ -445,31 +542,29 @@ trigger_failure_alert() {
 
         log "[$src] Silent Fail (Already Alerted): $reason"
     else
-        # 1. Prepare Full HTML Text
+        # Prepare Alert Text
+        local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
+        
         local alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
-<b>Context:</b> RECORDING|$src
-<b>Error:</b> Failed to record/download video.
+<b>Context:</b> $mode_upper|$src
+<b>Error:</b> Failed to process video/timelapse.
 <b>Reason:</b> $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
-        # 2. Send Alert (only if we haven't just sent a "Partial Video")
-        # If we just sent a video (SENT_VIDEO_MSG_ID is set), we treat THAT video as the alert.
-        # If SENT_VIDEO_MSG_ID is empty, it means we failed to download entirely, so we send text alert.
-        
+        # Send Alert
         local msg_id_to_save="0"
         
         if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
             msg_id_to_save="$SENT_VIDEO_MSG_ID"
-            # We don't call handle_error here because the video IS the notification
+            # No text alert needed as the video itself acts as the notification
         else
-            handle_error "$alert_text" "RECORDING|$src"
+            handle_error "$alert_text" "$mode_upper|$src"
             msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
         fi
         
-        # 3. Save to DB (Base64 Encoded Text)
+        # Save to DB
         local current_ts=$(date +%s)
-        # base64 -w 0 ensures no newlines in the encoded string
         local b64_text=$(echo "$alert_text" | base64 -w 0)
         local duration_val="${duration:-0}"
 
@@ -481,10 +576,22 @@ trigger_failure_alert() {
     fi
 }
 
-# trigger_failure_alert: create and send a formatted HTML alert when a
-# recording/download fails. The function records the alert (base64-encoded)
-# and the Telegram message id into `alert_history` so the pipeline can later
-# detect recovery and edit the original alert message.
+# ==============================================================================
+# PIPELINE LOGIC (Unified Structure)
+# ==============================================================================
+
+download_clip() {
+    local src="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    local filepath="$4"
+    
+    local dl_start_ts=$(( start_ts - PADDING_SEC ))
+    local dl_end_ts=$(( end_ts + PADDING_SEC ))
+    local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
+    
+    curl -s -o "$filepath" -w "%{http_code}" "$url"
+}
 
 execute_clip_pipeline() {
     local src="$1"
@@ -494,116 +601,54 @@ execute_clip_pipeline() {
     local tid="$5"
     local chat_id="$6"
 
+    # 1. SETUP & IDENTIFICATION
     local record_id="${src}_${start_ts}_${end_ts}"
-
-    local display_date=$(date -d @$start_ts '+%Y-%m-%d')
-    local display_start=$(date -d @$start_ts '+%H:%M')
-    local display_end=$(date -d @$end_ts '+%H:%M')
-    
     local date_file=$(date -d @$start_ts '+%Y%m%d')
     local start_file=$(date -d @$start_ts '+%H%M')
     local end_file=$(date -d @$end_ts '+%H%M')
     local filename="${src}_${date_file}_${start_file}_${end_file}_${run_mode}.mp4"
     local filepath="$TEMP_DIR/$filename"
-    
-    local dl_start_ts=$(( start_ts - PADDING_SEC ))
-    local dl_end_ts=$(( end_ts + PADDING_SEC ))
-    local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
+    local display_date=$(date -d @$start_ts '+%Y-%m-%d')
+    local display_start=$(date -d @$start_ts '+%H:%M')
+    local display_end=$(date -d @$end_ts '+%H:%M')
 
-    local http_code=$(curl -s -o "$filepath" -w "%{http_code}" "$url")
+    # 2. GENERATE VIDEO (Download)
+    local http_code=$(download_clip "$src" "$start_ts" "$end_ts" "$filepath")
 
     if [ "$http_code" == "200" ]; then
         if validate_video "$filepath"; then
-            # --- NEW: DURATION CHECK LOGIC ---
-            local actual_duration=$(get_video_duration "$filepath")
+            
+            # 3. CHECK DURATION & STATUS
             local expected_duration=$(( end_ts - start_ts ))
-            local threshold_sec=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
-            local is_partial_failure="false"
-
-            # Check if duration is below threshold
-            if [ "$actual_duration" -lt "$threshold_sec" ]; then
-                log "[$src] ⚠️ Duration Mismatch: ${actual_duration}s (Expected > ${threshold_sec}s, ${MIN_DURATION_PERCENT}%)"
-                
-                # Check DB for previous duration
-                local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM alert_history WHERE id='$record_id' LIMIT 1;")
-                prev_duration=${prev_duration:-0}
-
-                # If new video is NOT longer than previous failure, skip sending
-                if [ "$actual_duration" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
-                    log "[$src] 🚫 New video (${actual_duration}s) not longer than previous fail (${prev_duration}s). Skipping."
-                    rm -f "$filepath"
-                    return
-                fi
-                
-                log "[$src] 📈 Improvement (${actual_duration}s > ${prev_duration}s). Sending video but marking as FAILURE."
-                is_partial_failure="true"
+            local status=$(check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id")
+            
+            if [ "$status" == "skip" ]; then
+                rm -f "$filepath"
+                return
             fi
 
-            # --- FORMAT DURATION FOR CAPTION ---
-            local fmt_actual=$(format_duration "$actual_duration")
-            local fmt_expected=$(format_duration "$expected_duration")
-
+            # 4. SEND TELEGRAM
             local caption="📷 <b>$src</b>
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
-⏱️ Duration: ${fmt_actual} / ${fmt_expected} ($(( actual_duration * 100 / expected_duration ))%)"
+⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
 
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
                 if [ "$run_mode" == "record" ]; then
                     
-                    # IF PARTIAL FAILURE: We treat this as a failure alert update, NOT a success.
-                    if [ "$is_partial_failure" == "true" ]; then
-                        # Use formatted duration in logs/alerts too if desired, but sticking to readable text here
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Video (Duration: ${fmt_actual} < ${threshold_sec}s)" "$run_mode" "$actual_duration"
-                        rm -f "$filepath"
-                        return
-                    fi
-
-                    # --- STANDARD SUCCESS LOGIC BELOW ---
-                    local current_ts=$(date +%s)
-                    local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
-                    
-                    # --- RECOVERY LOGIC ---
-                    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, alert_text FROM alert_history WHERE id='$record_id' LIMIT 1;")
-                    local alert_msg_id=$(echo "$db_row" | awk -F'|' '{print $1}')
-                    local b64_alert_text=$(echo "$db_row" | awk -F'|' '{print $2}')
-                    
-                    if [ -n "$alert_msg_id" ] && [ "$alert_msg_id" -ne 0 ] && [ -n "$ERROR_CHAT_ID" ]; then
-                        log "[$src] Recovery detected. Updating alert $alert_msg_id..."
+                    # 5a. FAILURE HANDLING (Partial)
+                    if [ "$status" == "partial" ]; then
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                    else
+                        # 5b. SUCCESS HANDLING & RECOVERY
+                        local current_ts=$(date +%s)
+                        local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
                         
-                        # --- CHECK: NOTIFY_ON_RECOVERY ---
-                        local notify_rec=$(echo "${NOTIFY_ON_RECOVERY:-true}" | tr '[:upper:]' '[:lower:]')
-                        
-                        if [ "$notify_rec" == "true" ]; then
-                            send_reply "$ERROR_CHAT_ID" "$alert_msg_id" "✅ Retry successful! Video has been sent." "$ERROR_THREAD_ID"
-                            send_reaction "$ERROR_CHAT_ID" "$alert_msg_id" "❤"
-                        else
-                             log "[$src] NOTIFY_ON_RECOVERY=false. Skipping reply/reaction."
-                        fi
+                        handle_recovery_actions "$src" "$record_id"
 
-                        # --- FIX: SAFE TEXT REPLACEMENT ---
-                        if [ -n "$b64_alert_text" ]; then
-                            local original_text=$(echo "$b64_alert_text" | base64 -d)
-                            
-                            # Drop the first line (old error header) and keep the rest
-                            # (Time, Context, Reason, etc.) so we can reuse it in the
-                            # resolved message.
-                            local body_text=$(echo "$original_text" | sed '1d')
-                            
-                            # Prepend a resolved header to the original body text
-                            local updated_text="✅ <b>RESOLVED</b>
-$body_text"
-                            
-                            edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "$updated_text" "$ERROR_THREAD_ID"
-                        else
-                             edit_message_text "$ERROR_CHAT_ID" "$alert_msg_id" "✅ <b>RESOLVED</b> (Metadata unavailable)" "$ERROR_THREAD_ID"
-                        fi
+                        db_exec "INSERT OR IGNORE INTO sent_ranges (camera, start_ts, end_ts, created_at, msg_id) VALUES ('$src', $start_ts, $end_ts, $current_ts, $sent_msg_id);"
+                        log "[$src] ✅ Success (MsgID: $sent_msg_id)."
                     fi
-
-                    db_exec "INSERT OR IGNORE INTO sent_ranges (camera, start_ts, end_ts, created_at, msg_id) VALUES ('$src', $start_ts, $end_ts, $current_ts, $sent_msg_id);"
-                    db_exec "DELETE FROM alert_history WHERE id='$record_id';"
-                    
-                    log "[$src] ✅ Success (MsgID: $sent_msg_id)."
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
@@ -611,7 +656,6 @@ $body_text"
         else
             trigger_failure_alert "$src" "$start_ts" "$end_ts" "Validation failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
         fi
-
     elif [ "$http_code" == "404" ]; then
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "Frigate 404 (Video Not Found)" "$run_mode" "0"
     else
@@ -621,12 +665,154 @@ $body_text"
     rm -f "$filepath"
 }
 
-# execute_clip_pipeline: main per-slot pipeline
-# - downloads clip from Frigate
-# - validates the file
-# - sends to Telegram
-# - on success: records `sent_ranges`, checks for existing alert to mark as resolved
-# - on failure: triggers `trigger_failure_alert`
+# Generates timelapse using VAAPI hardware acceleration by concatenating HLS chunks
+generate_timelapse_video() {
+    local camera_name="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    local output_file="$4"
+
+    # Create a unique temporary directory to avoid file collisions
+    local job_temp_dir="${TEMP_DIR}/timelapse_${camera_name}_${start_ts}"
+    mkdir -p "$job_temp_dir"
+    
+    local concat_list="$job_temp_dir/concat_list.txt"
+    local cursor=$start_ts
+    local count=1
+    local success=0
+
+    log "[$camera_name] Processing Timelapse: $(date -d @$start_ts '+%H:%M') -> $(date -d @$end_ts '+%H:%M') (Speed: x$TIMELAPSE_SPEED)"
+
+    while [ "$cursor" -lt "$end_ts" ]; do
+        local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
+        if [ "$next_cursor" -gt "$end_ts" ]; then next_cursor=$end_ts; fi
+        
+        local chunk_file="$job_temp_dir/part_${count}.mp4"
+        local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
+
+        # FFMPEG Command: VAAPI HW Accel, scaling, and timestamp modification
+        ffmpeg -y -v error \
+            -hwaccel vaapi \
+            -hwaccel_device "$VAAPI_DEVICE" \
+            -hwaccel_output_format vaapi \
+            -i "$url" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=nv12" \
+            -r "$TIMELAPSE_FPS" \
+            -c:v h264_vaapi \
+            -qp "$TIMELAPSE_QUALITY" \
+            -an \
+            "$chunk_file"
+
+        if [ $? -eq 0 ] && [ -s "$chunk_file" ]; then
+            echo "file '$chunk_file'" >> "$concat_list"
+        else
+            log "[$camera_name] Warning: Chunk $count failed or empty."
+        fi
+
+        cursor=$next_cursor
+        count=$((count + 1))
+    done
+
+    # Concatenate all processed chunks into final file
+    if [ -f "$concat_list" ]; then
+        log "[$camera_name] Concatenating timelapse parts..."
+        ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file"
+        if [ $? -eq 0 ]; then success=1; fi
+    fi
+
+    rm -rf "$job_temp_dir"
+    
+    if [ $success -eq 1 ]; then return 0; else return 1; fi
+}
+
+execute_timelapse_pipeline() {
+    local src="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    local run_mode="$4"
+    local original_tid="$5"
+    local chat_id="$6"
+
+    # 1. SETUP & IDENTIFICATION
+    local target_tid="${TIMELAPSE_THREAD_ID:-$original_tid}"
+    local record_id="${src}_${start_ts}_${end_ts}"
+    
+    # DB Check #1: Prevent duplicate processing if already successful
+    if [ "$run_mode" == "timelapse" ]; then
+        local exists=$(db_count "SELECT count(*) FROM timelapse_history WHERE camera='$src' AND range_id='$record_id';")
+        if [ "$exists" -gt 0 ]; then return 0; fi
+    fi
+
+    local date_str=$(date -d @$start_ts '+%Y%m%d_%H%M')
+    local filename="timelapse_${src}_${date_str}.mp4"
+    local filepath="$TEMP_DIR/$filename"
+    local display_date=$(date -d @$start_ts '+%Y-%m-%d')
+    local display_start=$(date -d @$start_ts '+%H:%M')
+    local display_end=$(date -d @$end_ts '+%H:%M')
+    local pipeline_success=0
+
+    # 2. GENERATE VIDEO (Render)
+    if generate_timelapse_video "$src" "$start_ts" "$end_ts" "$filepath"; then
+        
+        # 3. CHECK DURATION & STATUS
+        local total_real_seconds=$(( end_ts - start_ts ))
+        local speed=${TIMELAPSE_SPEED:-60}
+        local expected_duration=$(( total_real_seconds / speed ))
+        
+        local status=$(check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id")
+
+        if [ "$status" == "skip" ]; then
+            rm -f "$filepath"
+            return 1 # Fail status required for retry loop
+        fi
+
+        # 4. SEND TELEGRAM
+        local total_hours=$(( total_real_seconds / 3600 ))
+        local caption="🎞 <b>TIMELAPSE ($total_hours h)</b>
+📷 $src
+📅 $display_date
+⏰ $display_start - $display_end
+⏩ Speed: x$speed
+⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
+
+        if send_telegram_video "$filepath" "$chat_id" "$target_tid" "$caption" "$src"; then
+            if [ "$run_mode" == "timelapse" ]; then
+                
+                # 5a. FAILURE HANDLING (Partial)
+                if [ "$status" == "partial" ]; then
+                     trigger_failure_alert "$src" "$start_ts" "$end_ts" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                     pipeline_success=0
+                else
+                    # 5b. SUCCESS HANDLING & RECOVERY
+                    local current_ts=$(date +%s)
+                    
+                    handle_recovery_actions "$src" "$record_id"
+
+                    db_exec "INSERT OR IGNORE INTO timelapse_history (camera, range_id, created_at) VALUES ('$src', '$record_id', $current_ts);"
+                    log "[$src] Timelapse saved to history."
+                    pipeline_success=1
+                fi
+            else
+                log "[$src] Timelapse Sent (Test Mode)."
+                pipeline_success=1
+            fi
+        else
+             trigger_failure_alert "$src" "$start_ts" "$end_ts" "Failed to send Timelapse" "$run_mode" "$_actual"
+             pipeline_success=0
+        fi
+    else
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "Failed to generate Timelapse" "$run_mode" "0"
+        pipeline_success=0
+    fi
+
+    rm -f "$filepath"
+
+    if [ $pipeline_success -eq 1 ]; then return 0; else return 1; fi
+}
+
+# ==============================================================================
+# CYCLE MANAGEMENT
+# ==============================================================================
 
 process_time_window() {
     local src="$1"
@@ -641,7 +827,7 @@ process_time_window() {
         return
     fi
 
-    # Timeout added to SELECT via -cmd
+    # Query DB to find gaps in coverage within the master window
     local existing_clips=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "SELECT start_ts, end_ts FROM sent_ranges WHERE camera='$src' AND end_ts > $master_start_ts AND start_ts < $master_end_ts ORDER BY start_ts ASC;")
     
     local cursor=$master_start_ts
@@ -657,6 +843,7 @@ process_time_window() {
         if [ "$ex_end" -gt "$cursor" ]; then cursor=$ex_end; fi
     done
 
+    # Check for tail gap
     if [ "$cursor" -lt "$master_end_ts" ]; then
          if [ $((master_end_ts - cursor)) -gt 10 ]; then
             log "[$src] 💡 Tail Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$master_end_ts '+%H:%M')"
@@ -664,42 +851,6 @@ process_time_window() {
          fi
     fi
 }
-
-# process_time_window: for a given camera and time window, determine gaps
-# (using `sent_ranges`) and invoke `execute_clip_pipeline` for missing segments.
-
-execute_cycle() {
-    local duration_min=$1
-    local run_mode=$2
-    local duration_sec=$((duration_min * 60))
-    
-    local current_ts=$(date +%s)
-    local tz_str=$(date +%z)
-    local tz_sign=${tz_str:0:1}
-    local tz_hour=${tz_str:1:2}
-    local tz_min=${tz_str:3:2}
-    local tz_offset_sec=$(( (tz_hour * 3600) + (tz_min * 60) ))
-    if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
-
-    local local_ts=$((current_ts + tz_offset_sec))
-    local aligned_local_end=$(( local_ts - (local_ts % duration_sec) ))
-    local master_end_ts=$(( aligned_local_end - tz_offset_sec ))
-    
-    log "--- CYCLE START ($run_mode) ---"
-
-    for cam_info in "${CAMERA_ARRAY[@]}"; do
-        cam_info=$(echo "$cam_info" | xargs)
-        while [ "$(jobs -r | wc -l)" -ge "$MAX_CONCURRENT_TASKS" ]; do sleep 1; done
-        process_camera_batch "$cam_info" "$master_end_ts" "$duration_min" "$run_mode" &
-        sleep 1
-    done
-    wait
-    log "--- CYCLE END ---"
-}
-
-# execute_cycle: computes aligned slot boundaries for the current time and
-# iterates cameras, spawning `process_camera_batch` jobs while respecting
-# `MAX_CONCURRENT_TASKS`.
 
 process_camera_batch() {
     local cam_info="$1"
@@ -725,25 +876,159 @@ process_camera_batch() {
     fi
 }
 
-# process_camera_batch: for a camera entry parses camera metadata and either
-# runs a single test slot or iterates historic slots according to `LOOKBACK_HOURS`.
+execute_cycle() {
+    local duration_min=$1
+    local run_mode=$2
+    local duration_sec=$((duration_min * 60))
+    
+    local master_end_ts=$(get_aligned_master_ts "$duration_sec")
+    
+    log "--- CYCLE START ($run_mode) ---"
+
+    for cam_info in "${CAMERA_ARRAY[@]}"; do
+        cam_info=$(echo "$cam_info" | xargs)
+        # Limit background jobs
+        while [ "$(jobs -r | wc -l)" -ge "$MAX_CONCURRENT_TASKS" ]; do sleep 1; done
+        process_camera_batch "$cam_info" "$master_end_ts" "$duration_min" "$run_mode" &
+        sleep 1
+    done
+    wait
+    log "--- CYCLE END ---"
+}
+
+execute_timelapse_cycle() {
+    local run_mode="$1"
+    local hours_to_process="$2"
+    local duration_sec=$((hours_to_process * 3600))
+    local cycle_has_error=0
+
+    local master_end_ts=$(get_aligned_master_ts "$duration_sec")
+
+    log "--- TIMELAPSE CYCLE START ($run_mode) ---"
+
+    for cam_info in "${CAMERA_ARRAY[@]}"; do
+        cam_info=$(echo "$cam_info" | xargs)
+        IFS='|' read -r name src tid chat_id <<< "$cam_info"
+        
+        local current_ts=$(date +%s)
+        
+        if [ "$run_mode" == "test_timelapse" ]; then
+            local end_ts=$current_ts
+            local start_ts=$((end_ts - duration_sec))
+            execute_timelapse_pipeline "$src" "$start_ts" "$end_ts" "$run_mode" "$tid" "$chat_id"
+            continue
+        fi
+
+        local total_slots=$(( TIMELAPSE_LOOKBACK_HOURS / hours_to_process ))
+        
+        log "[$src] Checking missing timelapses..."
+
+        for (( i=0; i<total_slots; i++ )); do
+            local offset=$(( i * duration_sec ))
+            local slot_end_ts=$(( master_end_ts - offset ))
+            local slot_start_ts=$(( slot_end_ts - duration_sec ))
+            local range_id="${src}_${slot_start_ts}_${slot_end_ts}"
+
+            # DB Check #2 - redundancy check before attempting generation
+            local exists=$(db_count "SELECT count(*) FROM timelapse_history WHERE camera='$src' AND range_id='$range_id';")
+            
+            if [ "$exists" -eq 0 ]; then
+                log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
+                
+                if ! execute_timelapse_pipeline "$src" "$slot_start_ts" "$slot_end_ts" "timelapse" "$tid" "$chat_id"; then
+                    log "[$src] ❌ Failed to process slot. Will retry later."
+                    cycle_has_error=1
+                fi
+            fi
+        done
+    done
+    
+    log "--- TIMELAPSE CYCLE END ---"
+    
+    return $cycle_has_error
+}
+
+# ==============================================================================
+# MAIN EXECUTION SWITCH
+# ==============================================================================
 
 if [ "$MODE" == "test" ]; then
     log ">>> STARTING TEST MODE <<<"
     execute_cycle "$TEST_REC_DURATION_MIN" "test"
     exit 0
+
 elif [ "$MODE" == "record" ]; then
     log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
     while true; do
         execute_cycle "$REC_DURATION_MIN" "record"
         current_ts=$(date +%s)
         duration_sec=$((REC_DURATION_MIN * 60))
+        # Calculate sleep time to align with next interval
         seconds_into_cycle=$(( current_ts % duration_sec ))
         seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
         final_sleep=$(( seconds_to_sleep + 20 ))
         log "Sleeping ${final_sleep}s..."
         sleep "$final_sleep"
     done
+
+# --- TIMELAPSE MODES ---
+
+elif [ "$MODE" == "test_timelapse" ]; then
+    log ">>> STARTING TIMELAPSE TEST MODE (Last $TIMELAPSE_HOURS hours) <<<"
+    execute_timelapse_cycle "test_timelapse" "$TIMELAPSE_HOURS"
+    exit 0
+
+elif [ "$MODE" == "timelapse" ]; then
+    log ">>> STARTING TIMELAPSE DAEMON (Block: ${TIMELAPSE_HOURS}h) <<<"
+
+    while true; do
+        # Run cycle and capture exit status
+        execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
+        CYCLE_STATUS=$?
+
+        # === RETRY LOGIC ===
+        if [ $CYCLE_STATUS -ne 0 ]; then
+            if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
+                log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
+                log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
+                sleep "$TIMELAPSE_RETRY_SLEEP_SEC"
+                continue # Skip long sleep and retry immediately
+            else
+                log "⚠️ Cycle completed with ERRORS. Strict retry disabled. Continuing to schedule..."
+            fi
+        fi
+
+        # === SLEEP LOGIC (SUCCESS) ===
+        # Only reached if CYCLE_STATUS = 0 (Success) or TIMELAPSE_STRICT_RETRY = false
+        
+        current_ts=$(date +%s)
+        
+        # Recalculate TZ offset dynamically
+        tz_str=$(date +%z)
+        tz_sign=${tz_str:0:1}
+        tz_hour=${tz_str:1:2}
+        tz_min=${tz_str:3:2}
+        tz_offset_sec=$(( (tz_hour * 3600) + (tz_min * 60) ))
+        if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
+        
+        local_ts=$((current_ts + tz_offset_sec))
+        duration_sec=$((TIMELAPSE_HOURS * 3600))
+        
+        # Calculate sleep to wake up 30s after the next block finishes
+        seconds_into_cycle=$(( local_ts % duration_sec ))
+        seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
+        final_sleep=$(( seconds_to_sleep + 30 ))
+        
+        if [ "$final_sleep" -gt 43200 ]; then final_sleep=3600; fi
+
+        sleep_h=$((final_sleep / 3600))
+        sleep_m=$(( (final_sleep % 3600) / 60 ))
+        sleep_s=$((final_sleep % 60))
+        
+        log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
+        sleep "$final_sleep"
+    done
+
 else
     log "Invalid MODE: $MODE"
     exit 1
