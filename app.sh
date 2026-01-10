@@ -482,7 +482,15 @@ handle_recovery_actions() {
     local src="$1"
     local record_id="$2"
     
+    # Check if the alert record actually exists first
+    # This prevents executing recovery logic/deletion on slots that were never broken.
     local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, alert_text FROM alert_history WHERE id='$record_id' LIMIT 1;")
+    
+    # If no record exists, exit immediately (No-op)
+    if [ -z "$db_row" ]; then
+        return
+    fi
+
     local alert_msg_id=$(echo "$db_row" | awk -F'|' '{print $1}')
     local b64_alert_text=$(echo "$db_row" | awk -F'|' '{print $2}')
     
@@ -594,12 +602,13 @@ download_clip() {
 }
 
 execute_clip_pipeline() {
-    local src="$1"
-    local start_ts="$2"
-    local end_ts="$3"
-    local run_mode="$4"
-    local tid="$5"
-    local chat_id="$6"
+    local cam_name="$1"
+    local src="$2"
+    local start_ts="$3"
+    local end_ts="$4"
+    local run_mode="$5"
+    local tid="$6"
+    local chat_id="$7"
 
     # 1. SETUP & IDENTIFICATION
     local record_id="${src}_${start_ts}_${end_ts}"
@@ -628,7 +637,7 @@ execute_clip_pipeline() {
             fi
 
             # 4. SEND TELEGRAM
-            local caption="📷 <b>$src</b>
+            local caption="📷 <b>$cam_name</b>
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
 ⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
@@ -726,12 +735,13 @@ generate_timelapse_video() {
 }
 
 execute_timelapse_pipeline() {
-    local src="$1"
-    local start_ts="$2"
-    local end_ts="$3"
-    local run_mode="$4"
-    local original_tid="$5"
-    local chat_id="$6"
+    local cam_name="$1"
+    local src="$2"
+    local start_ts="$3"
+    local end_ts="$4"
+    local run_mode="$5"
+    local original_tid="$6"
+    local chat_id="$7"
 
     # 1. SETUP & IDENTIFICATION
     local target_tid="${TIMELAPSE_THREAD_ID:-$original_tid}"
@@ -769,7 +779,7 @@ execute_timelapse_pipeline() {
         # 4. SEND TELEGRAM
         local total_hours=$(( total_real_seconds / 3600 ))
         local caption="🎞 <b>TIMELAPSE ($total_hours h)</b>
-📷 $src
+📷 $cam_name
 📅 $display_date
 ⏰ $display_start - $display_end
 ⏩ Speed: x$speed
@@ -815,15 +825,16 @@ execute_timelapse_pipeline() {
 # ==============================================================================
 
 process_time_window() {
-    local src="$1"
-    local master_start_ts="$2"
-    local master_end_ts="$3"
-    local run_mode="$4"
-    local tid="$5"
-    local chat_id="$6"
+    local cam_name="$1"
+    local src="$2"
+    local master_start_ts="$3"
+    local master_end_ts="$4"
+    local run_mode="$5"
+    local tid="$6"
+    local chat_id="$7"
 
     if [ "$run_mode" == "test" ]; then
-        execute_clip_pipeline "$src" "$master_start_ts" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
+        execute_clip_pipeline "$cam_name" "$src" "$master_start_ts" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
         return
     fi
 
@@ -837,7 +848,7 @@ process_time_window() {
         if [ "$ex_start" -gt "$cursor" ]; then
             if [ $((ex_start - cursor)) -gt 10 ]; then
                 log "[$src] 💡 Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$ex_start '+%H:%M')"
-                execute_clip_pipeline "$src" "$cursor" "$ex_start" "$run_mode" "$tid" "$chat_id"
+                execute_clip_pipeline "$cam_name" "$src" "$cursor" "$ex_start" "$run_mode" "$tid" "$chat_id"
             fi
         fi
         if [ "$ex_end" -gt "$cursor" ]; then cursor=$ex_end; fi
@@ -847,7 +858,7 @@ process_time_window() {
     if [ "$cursor" -lt "$master_end_ts" ]; then
          if [ $((master_end_ts - cursor)) -gt 10 ]; then
             log "[$src] 💡 Tail Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$master_end_ts '+%H:%M')"
-            execute_clip_pipeline "$src" "$cursor" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
+            execute_clip_pipeline "$cam_name" "$src" "$cursor" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
          fi
     fi
 }
@@ -862,7 +873,7 @@ process_camera_batch() {
 
     if [ "$run_mode" == "test" ]; then
         local start_ts=$(( master_end_ts - duration_sec ))
-        process_time_window "$src" "$start_ts" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
+        process_time_window "$name" "$src" "$start_ts" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
     else
         local total_slots=$(( (LOOKBACK_HOURS * 60) / duration_min ))
         log "[$src] Checking status..."
@@ -870,7 +881,7 @@ process_camera_batch() {
             local offset=$(( i * duration_sec ))
             local slot_end_ts=$(( master_end_ts - offset ))
             local slot_start_ts=$(( slot_end_ts - duration_sec ))
-            process_time_window "$src" "$slot_start_ts" "$slot_end_ts" "$run_mode" "$tid" "$chat_id"
+            process_time_window "$name" "$src" "$slot_start_ts" "$slot_end_ts" "$run_mode" "$tid" "$chat_id"
         done
         log "[$src] Check complete."
     fi
@@ -915,7 +926,7 @@ execute_timelapse_cycle() {
         if [ "$run_mode" == "test_timelapse" ]; then
             local end_ts=$current_ts
             local start_ts=$((end_ts - duration_sec))
-            execute_timelapse_pipeline "$src" "$start_ts" "$end_ts" "$run_mode" "$tid" "$chat_id"
+            execute_timelapse_pipeline "$name" "$src" "$start_ts" "$end_ts" "$run_mode" "$tid" "$chat_id"
             continue
         fi
 
@@ -935,7 +946,7 @@ execute_timelapse_cycle() {
             if [ "$exists" -eq 0 ]; then
                 log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
                 
-                if ! execute_timelapse_pipeline "$src" "$slot_start_ts" "$slot_end_ts" "timelapse" "$tid" "$chat_id"; then
+                if ! execute_timelapse_pipeline "$name" "$src" "$slot_start_ts" "$slot_end_ts" "timelapse" "$tid" "$chat_id"; then
                     log "[$src] ❌ Failed to process slot. Will retry later."
                     cycle_has_error=1
                 fi
