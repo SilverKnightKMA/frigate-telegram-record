@@ -78,7 +78,7 @@ docker-compose up -d
 Check logs:
 
 ```bash
-docker-compose logs -f frigate-telegram
+docker-compose logs -f frigate-telegram-record
 ```
 
 Manual build & run

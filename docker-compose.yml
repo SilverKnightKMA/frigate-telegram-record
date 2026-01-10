@@ -25,7 +25,7 @@ services:
       - ALERT_REPEAT=false
       - LOOKBACK_HOURS=24
       
-      - MAX_CONCURRENT_TASKS=5
+      - MAX_CONCURRENT_TASKS=2
       - PADDING_SEC=5
       - MAX_RETRIES=5
       
@@ -33,3 +33,12 @@ services:
       - TEST_REC_DURATION_MIN=1
       - MODE=record
       - NOTIFY_ON_RECOVERY=true
+
+      - VAAPI_DEVICE=/dev/dri/renderD128
+      - TIMELAPSE_HOURS=6
+      - TIMELAPSE_SPEED=60
+      - TIMELAPSE_FPS=30
+      - TIMELAPSE_QUALITY=24
+      - TIMELAPSE_LOOKBACK_HOURS=24
+      - TIMELAPSE_STRICT_RETRY=true
+      - TIMELAPSE_RETRY_SLEEP_SEC=3600

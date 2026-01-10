@@ -8,6 +8,7 @@ RUN apk add --no-cache \
     file \
     sqlite \
     tzdata \
+    ca-certificates \
     coreutils \
     jq
 
