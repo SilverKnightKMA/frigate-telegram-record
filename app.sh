@@ -120,7 +120,13 @@ get_json_value() {
 get_video_duration() {
     local filepath="$1"
     if command -v ffprobe &> /dev/null; then
-        ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" | cut -d. -f1
+        local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filepath" 2>/dev/null | cut -d. -f1)
+        # Ensure we return a valid number
+        if [[ "$duration" =~ ^[0-9]+$ ]]; then
+            echo "$duration"
+        else
+            echo "0"
+        fi
     else
         echo "0"
     fi
@@ -445,6 +451,12 @@ check_duration_and_status() {
     local record_id="$4"
 
     local actual=$(get_video_duration "$filepath")
+    
+    # Ensure actual is a valid number, default to 0 if not
+    if ! [[ "$actual" =~ ^[0-9]+$ ]]; then
+        actual=0
+    fi
+    
     local threshold=$(( expected_sec * MIN_DURATION_PERCENT / 100 ))
     
     # Store result variables for caller use
@@ -452,7 +464,9 @@ check_duration_and_status() {
     _fmt_actual=$(format_duration "$actual")
     _fmt_expected=$(format_duration "$expected_sec")
     _percent=0
-    if [ "$expected_sec" -gt 0 ]; then _percent=$(( actual * 100 / expected_sec )); fi
+    if [ "$expected_sec" -gt 0 ] && [ "$actual" -gt 0 ]; then
+        _percent=$(( actual * 100 / expected_sec ))
+    fi
 
     if [ "$actual" -lt "$threshold" ]; then
         log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
