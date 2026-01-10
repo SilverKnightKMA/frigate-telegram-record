@@ -10,7 +10,10 @@ RUN apk add --no-cache \
     tzdata \
     ca-certificates \
     coreutils \
-    jq
+    jq \
+    libva-utils \
+    intel-media-driver \
+    intel-gmmlib
 
 # Setup Application Directory
 WORKDIR /app
