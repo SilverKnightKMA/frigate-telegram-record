@@ -311,7 +311,7 @@ def get_timeline():
             
             # Get successful records for this camera in time range
             cursor.execute("""
-                SELECT start_ts, end_ts, created_at, id
+                SELECT start_ts, end_ts, created_at
                 FROM sent_ranges
                 WHERE camera = ? AND start_ts >= ? AND start_ts <= ?
                 ORDER BY start_ts
@@ -326,7 +326,6 @@ def get_timeline():
                     'end': row['end_ts'],
                     'status': 'success',
                     'created_at': row['created_at'],
-                    'id': row['id'],
                     'type': 'Record',
                     'start_time': start_time,
                     'end_time': end_time,
@@ -335,7 +334,7 @@ def get_timeline():
             
             # Get timelapses for this camera in time range
             cursor.execute("""
-                SELECT range_id, created_at, id
+                SELECT range_id, created_at
                 FROM timelapse_history
                 WHERE camera = ? AND created_at >= ? AND created_at <= ?
                 ORDER BY created_at
@@ -359,7 +358,6 @@ def get_timeline():
                             'status': 'success',
                             'range_id': row['range_id'],
                             'created_at': row['created_at'],
-                            'id': row['id'],
                             'type': 'Timelapse',
                             'created_time': created_time,
                             'start_time': start_time,

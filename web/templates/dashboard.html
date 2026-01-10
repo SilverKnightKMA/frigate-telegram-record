@@ -902,15 +902,6 @@
                 `;
             }
             
-            if (block.id) {
-                detailsHtml += `
-                    <div class="detail-row">
-                        <div class="detail-label">ID:</div>
-                        <div class="detail-value">${block.id}</div>
-                    </div>
-                `;
-            }
-            
             modalBody.innerHTML = detailsHtml;
             modal.style.display = 'block';
         }
