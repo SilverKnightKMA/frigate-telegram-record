@@ -28,5 +28,11 @@ RUN chmod +x /app/app.sh && \
     chmod +x /app/lib/*.sh && \
     mkdir -p /app/data /app/config
 
+# [Ops] Healthcheck Configuration
+# Purpose: Monitor application liveness by checking the heartbeat file age.
+# Fails if heartbeat file is older than 300 seconds (5 minutes).
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
+  CMD [ $(($(date +%s) - $(stat -c %Y /app/data/.heartbeat))) -lt 300 ] || exit 1
+
 # Define Entrypoint
 ENTRYPOINT ["/bin/bash", "/app/app.sh"]

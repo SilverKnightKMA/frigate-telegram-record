@@ -13,6 +13,16 @@ source /app/lib/05-core.sh
 source /app/lib/06-pipelines.sh
 source /app/lib/07-scheduler.sh
 
+# [Ops] Signal Trap for Graceful Shutdown
+# Purpose: Ensures temporary files are cleaned up and logic terminates safely upon Docker stop.
+cleanup_on_exit() {
+    log "Received termination signal. Cleaning up resources..."
+    rm -rf "$TEMP_DIR"/*
+    log "Shutdown complete."
+    exit 0
+}
+trap cleanup_on_exit SIGTERM SIGINT
+
 # 2. Validation
 log_debug "Starting validation process..."
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
@@ -40,6 +50,10 @@ elif [ "$MODE" == "record" ]; then
         log_debug "--- NEW RECORDING LOOP START ---"
         execute_cycle "$REC_DURATION_MIN" "record"
         
+        # [Ops] Update Heartbeat
+        # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
+        touch "$DATA_DIR/.heartbeat"
+
         current_ts=$(date +%s)
         duration_sec=$((REC_DURATION_MIN * 60))
         
@@ -50,7 +64,10 @@ elif [ "$MODE" == "record" ]; then
         
         log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
         log "Sleeping ${final_sleep}s..."
-        sleep "$final_sleep"
+        
+        # Wait with background signal processing
+        sleep "$final_sleep" &
+        wait $!
     done
 
 # --- TIMELAPSE MODES ---
@@ -70,12 +87,17 @@ elif [ "$MODE" == "timelapse" ]; then
         CYCLE_STATUS=$?
         log_debug "Timelapse cycle finished with exit status: $CYCLE_STATUS"
 
+        # [Ops] Update Heartbeat
+        # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
+        touch "$DATA_DIR/.heartbeat"
+
         # === RETRY LOGIC ===
         if [ $CYCLE_STATUS -ne 0 ]; then
             if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
                 log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
                 log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
-                sleep "$TIMELAPSE_RETRY_SLEEP_SEC"
+                sleep "$TIMELAPSE_RETRY_SLEEP_SEC" &
+                wait $!
                 continue # Skip long sleep and retry immediately
             else
                 log "⚠️ Cycle completed with ERRORS. Strict retry disabled. Continuing to schedule..."
@@ -115,7 +137,10 @@ elif [ "$MODE" == "timelapse" ]; then
         sleep_s=$((final_sleep % 60))
         
         log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
-        sleep "$final_sleep"
+        
+        # Wait with background signal processing
+        sleep "$final_sleep" &
+        wait $!
     done
 
 else

@@ -20,9 +20,18 @@ download_clip() {
     log_debug "[$src] Downloading clip from: $url"
     log_debug "[$src] Saving to: $filepath"
     
-    # Use --write-out to print status code to stdout while saving body to file
-    local http_code=$(curl -s -L -o "$filepath" --write-out "%{http_code}" "$url")
-    echo "$http_code"
+    # [Ops] Network Timeout Enforcement
+    # Reason: Prevents indefinite hangs if the connection stalls but stays open.
+    # Uses --max-time 600 (10 minutes) as a safety net.
+    local http_code=$(curl -s -L --max-time 600 -o "$filepath" --write-out "%{http_code}" "$url")
+    
+    # Check if curl timed out (exit code 28)
+    if [ $? -eq 28 ]; then
+        log "[$src] ⚠️ Download timed out after 600s"
+        echo "408" # Return Request Timeout code explicitly
+    else
+        echo "$http_code"
+    fi
 }
 
 execute_clip_pipeline() {
@@ -59,7 +68,8 @@ execute_clip_pipeline() {
 
     # === OPTIMIZATION: Check Remote Size Before Download ===
     # Attempt to get Content-Length via HEAD request. Added -L to follow redirects.
-    local header_dump=$(curl -sI -L "$url")
+    # [Ops] Added Timeout to HEAD request
+    local header_dump=$(curl -sI -L --max-time 10 "$url")
     local remote_size=$(echo "$header_dump" | grep -i "Content-Length" | awk '{print $2}' | tr -d '\r')
     local header_status=$(echo "$header_dump" | head -n 1 | awk '{print $2}')
 
@@ -158,6 +168,8 @@ execute_clip_pipeline() {
         fi
     elif [ "$http_code" == "404" ]; then
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0" "0" "$pipe_duration"
+    elif [ "$http_code" == "408" ]; then
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Timeout (Frigate Slow/Down)" "$run_mode" "0" "0" "$pipe_duration"
     else
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0" "0" "$pipe_duration"
     fi
@@ -178,9 +190,14 @@ generate_timelapse_video() {
     mkdir -p "$job_temp_dir"
     
     local concat_list="$job_temp_dir/concat_list.txt"
+    # [Ops] Capture FFmpeg stderr for monitoring and debugging
+    local ffmpeg_log="$job_temp_dir/ffmpeg_err.log"
     local cursor=$start_ts
     local count=1
     local success=0
+
+    # Initialize error message buffer
+    _gen_error=""
 
     log "[$camera_name] Processing Timelapse: $(date -d @$start_ts '+%H:%M') -> $(date -d @$end_ts '+%H:%M') (Speed: x$TIMELAPSE_SPEED)"
 
@@ -195,10 +212,10 @@ generate_timelapse_video() {
         local chunk_file="$job_temp_dir/part_${count}.mp4"
         local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
 
-        # FFMPEG Command: VAAPI HW Accel, scaling, and timestamp modification
-        # [CHANGE] Replaced hardcoded 'h264_vaapi' with TIMELAPSE_CODEC env var
-        # [CHANGE] Replaced hardcoded 'nv12' with TIMELAPSE_PIXEL_FORMAT env var
-        ffmpeg -y -v error \
+        # [Ops] Execution Timeout & Log Capture
+        # Reason: FFmpeg can hang on GPU locks or corrupt streams. 'timeout' kills it after 1h (3600s).
+        # We also capture stderr to analyze WHY it failed (OOM, Invalid Data, etc).
+        timeout 3600 ffmpeg -y -v error \
             -hwaccel vaapi \
             -hwaccel_device "$VAAPI_DEVICE" \
             -hwaccel_output_format vaapi \
@@ -208,12 +225,22 @@ generate_timelapse_video() {
             -c:v "$TIMELAPSE_CODEC" \
             -qp "$TIMELAPSE_QUALITY" \
             -an \
-            "$chunk_file"
+            "$chunk_file" > "$ffmpeg_log" 2>&1
 
-        if [ $? -eq 0 ] && [ -s "$chunk_file" ]; then
+        local exit_code=$?
+
+        if [ $exit_code -eq 0 ] && [ -s "$chunk_file" ]; then
             echo "file '$chunk_file'" >> "$concat_list"
         else
-            log "[$camera_name] Warning: Chunk $count failed or empty."
+            if [ $exit_code -eq 124 ]; then
+                 log "[$camera_name] ❌ Chunk $count Timed Out (killed after 3600s)."
+                 _gen_error="FFmpeg Timeout (Process Hung)"
+            else
+                 # Read last 2 lines of ffmpeg log to get the actual error
+                 local log_tail=$(tail -n 2 "$ffmpeg_log" | tr '\n' ' ')
+                 log "[$camera_name] Warning: Chunk $count failed. FFmpeg Log: $log_tail"
+                 if [ -z "$_gen_error" ]; then _gen_error="FFmpeg: ${log_tail:0:100}"; fi
+            fi
         fi
 
         cursor=$next_cursor
@@ -221,10 +248,18 @@ generate_timelapse_video() {
     done
 
     # Concatenate all processed chunks into final file
-    if [ -f "$concat_list" ]; then
+    if [ -f "$concat_list" ] && [ -s "$concat_list" ]; then
         log "[$camera_name] Concatenating timelapse parts..."
-        ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file"
-        if [ $? -eq 0 ]; then success=1; fi
+        # Wrap concatenation in timeout as well
+        timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" > "$ffmpeg_log" 2>&1
+        if [ $? -eq 0 ]; then 
+            success=1
+        else
+             local log_tail=$(tail -n 2 "$ffmpeg_log" | tr '\n' ' ')
+             _gen_error="Concat Fail: ${log_tail:0:100}"
+        fi
+    else
+         if [ -z "$_gen_error" ]; then _gen_error="No valid chunks generated"; fi
     fi
 
     rm -rf "$job_temp_dir"
@@ -268,6 +303,7 @@ execute_timelapse_pipeline() {
     local pipeline_success=0
 
     # 3. GENERATE VIDEO (Render)
+    # _gen_error variable is populated inside this function on failure
     generate_timelapse_video "$src" "$start_ts" "$end_ts" "$filepath"
     local gen_status=$?
 
@@ -333,7 +369,9 @@ execute_timelapse_pipeline() {
     else
         # Handle FAIL code (1) or others
         local pipe_duration=$(( $(date +%s) - pipe_start ))
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0" "0" "$pipe_duration"
+        # [Ops] Use the captured error detail from _gen_error instead of generic message
+        local fail_reason="${_gen_error:-Failed to generate Timelapse}"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "$fail_reason" "$run_mode" "0" "0" "$pipe_duration"
         pipeline_success=0
     fi
 
