@@ -33,6 +33,10 @@ fi
 log_debug "Environment check: MODE=$MODE, TZ=$TZ, DATA_DIR=$DATA_DIR"
 echo "[INFO] System Timezone: $TZ"
 
+# [Ops] Startup Log Maintenance
+# Purpose: Perform an initial log rotation check when the container starts.
+rotate_log_file
+
 # 3. Init Database
 log_debug "Initializing database schema..."
 init_db
@@ -48,6 +52,16 @@ elif [ "$MODE" == "record" ]; then
     log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
     while true; do
         log_debug "--- NEW RECORDING LOOP START ---"
+        
+        # [Ops] Pre-Flight System Checks
+        # Purpose: Validate resources (log size, disk space) before starting a new cycle to prevent crashes.
+        rotate_log_file
+        if ! check_disk_space; then
+            log "⚠️ Pausing cycle due to insufficient disk space. Retrying in 5 minutes..."
+            sleep 300
+            continue
+        fi
+
         execute_cycle "$REC_DURATION_MIN" "record"
         
         # [Ops] Update Heartbeat
@@ -82,6 +96,16 @@ elif [ "$MODE" == "timelapse" ]; then
 
     while true; do
         log_debug "--- NEW TIMELAPSE LOOP START ---"
+
+        # [Ops] Pre-Flight System Checks
+        # Purpose: Validate resources (log size, disk space) before starting intensive rendering tasks.
+        rotate_log_file
+        if ! check_disk_space; then
+            log "⚠️ Pausing timelapse cycle due to insufficient disk space. Retrying in 5 minutes..."
+            sleep 300
+            continue
+        fi
+
         # Run cycle and capture exit status
         execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
         CYCLE_STATUS=$?
