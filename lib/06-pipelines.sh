@@ -44,6 +44,31 @@ execute_clip_pipeline() {
     local display_start=$(date -d @$start_ts '+%H:%M')
     local display_end=$(date -d @$end_ts '+%H:%M')
 
+    local dl_start_ts=$(( start_ts - PADDING_SEC ))
+    local dl_end_ts=$(( end_ts + PADDING_SEC ))
+    local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
+
+    # === OPTIMIZATION: Check Remote Size Before Download ===
+    # Attempt to get Content-Length via HEAD request
+    local remote_size=$(curl -sI "$url" | grep -i "Content-Length" | awk '{print $2}' | tr -d '\r')
+    
+    # Check if we got a valid size (some servers might use chunked encoding where size is null)
+    if [[ "$remote_size" =~ ^[0-9]+$ ]] && [ "$remote_size" -gt 0 ]; then
+        # Retrieve the maximum filesize recorded in DB for this slot (including failed attempts)
+        local db_max_size=$(sqlite3 "$DB_FILE" "SELECT MAX(filesize) FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts;")
+        db_max_size=${db_max_size:-0}
+
+        if [ "$remote_size" -le "$db_max_size" ]; then
+            log "[$src] ⏩ Skipping Download: Remote size ($remote_size bytes) <= DB record ($db_max_size bytes)."
+            return
+        else
+            log_debug "[$src] Remote size ($remote_size) > DB record ($db_max_size). Proceeding with download."
+        fi
+    else
+        log_debug "[$src] Could not determine remote size (Chunked or No Header). Forcing download."
+    fi
+    # =======================================================
+
     log_debug "[$src] File path: $filepath"
 
     # 2. GENERATE VIDEO (Download)
@@ -52,6 +77,8 @@ execute_clip_pipeline() {
     log_debug "[$src] Download HTTP code: $http_code"
 
     if [ "$http_code" == "200" ]; then
+        local current_filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
+
         if validate_video "$filepath"; then
             
             # 3. CHECK DURATION & STATUS
@@ -82,7 +109,8 @@ execute_clip_pipeline() {
                     
                     # 5a. FAILURE HANDLING (Partial)
                     if [ "$_status" == "partial" ]; then
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                        # Pass filesize to alert logic
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
                         local current_ts=$(date +%s)
@@ -91,24 +119,24 @@ execute_clip_pipeline() {
                         
                         handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                        # Insert record into 'events' with type='RECORD'
-                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual);"
-                        log "[$src] ✅ Success (MsgID: $sent_msg_id)."
+                        # Insert record into 'events' with type='RECORD' and filesize
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize);"
+                        log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize)."
                     fi
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
             else
                 # Handle Telegram Failure in Record Mode
-                trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual"
+                trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual" "$current_filesize"
             fi
         else
-            trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $current_filesize)" "$run_mode" "0" "$current_filesize"
         fi
     elif [ "$http_code" == "404" ]; then
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0" "0"
     else
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0" "0"
     fi
     
     rm -f "$filepath"
@@ -259,6 +287,8 @@ execute_timelapse_pipeline() {
     # 2. GENERATE VIDEO (Render)
     if generate_timelapse_video "$src" "$start_ts" "$end_ts" "$filepath"; then
         
+        local current_filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
+
         # 3. CHECK DURATION & STATUS
         local total_real_seconds=$(( end_ts - start_ts ))
         local speed=${TIMELAPSE_SPEED:-60}
@@ -285,7 +315,7 @@ execute_timelapse_pipeline() {
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                      trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                      trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
                       pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
@@ -294,8 +324,8 @@ execute_timelapse_pipeline() {
                     
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                    # Insert record into 'events' with type='TIMELAPSE'
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual);"
+                    # Insert record into 'events' with type='TIMELAPSE' and filesize
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize);"
                     log "[$src] Timelapse saved to history."
                     pipeline_success=1
                 fi
@@ -304,11 +334,11 @@ execute_timelapse_pipeline() {
                 pipeline_success=1
             fi
         else
-             trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual"
+             trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual" "$current_filesize"
              pipeline_success=0
         fi
     else
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0" "0"
         pipeline_success=0
     fi
 

@@ -28,3 +28,5 @@ docker-compose.override.yml
 .idea/
 .DS_Store
 Thumbs.db
+all_scripts.txt
+export.ps1

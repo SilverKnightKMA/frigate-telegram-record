@@ -152,6 +152,7 @@ trigger_failure_alert() {
     local reason="$5"
     local run_mode="$6"
     local duration="$7"
+    local filesize="$8"
 
     # Determine Type based on run_mode
     local type_code="RECORD"
@@ -164,16 +165,17 @@ trigger_failure_alert() {
 
     local existing_id=$(db_count "SELECT id FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='$type_code' AND status='FAILED' LIMIT 1;")
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
+    local duration_val="${duration:-0}"
+    local filesize_val="${filesize:-0}"
 
     # Logic: Only update if it's a "Partial Update" or if repeat alerts are enabled.
     if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
         # If we sent a video (Partial Success), update the DB with new msg_id but don't re-alert.
         if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
              local current_ts=$(date +%s)
-             local duration_val="${duration:-0}"
-             # Update the existing record with new message ID and improved duration
-             db_exec "UPDATE events SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, created_at=$current_ts WHERE id=$existing_id;"
-             log "[$src] Partial improvement: Updated event DB with new Video MsgID ($SENT_VIDEO_MSG_ID) and duration ($duration_val)."
+             # Update the existing record with new message ID, duration, and filesize
+             db_exec "UPDATE events SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, filesize=$filesize_val, created_at=$current_ts WHERE id=$existing_id;"
+             log "[$src] Partial improvement: Updated event DB with new Video MsgID ($SENT_VIDEO_MSG_ID), duration ($duration_val), size ($filesize_val)."
              return
         fi
 
@@ -202,14 +204,13 @@ trigger_failure_alert() {
         # Save to DB (Insert new failure record)
         local current_ts=$(date +%s)
         local b64_text=$(echo "$alert_text" | base64 -w 0)
-        local duration_val="${duration:-0}"
 
         if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" == "true" ]; then
-             # If repeat is on, we update timestamp and Msg ID (fail_type might change on retry)
-             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type' WHERE id=$existing_id;"
+             # If repeat is on, we update timestamp, Msg ID, and filesize
+             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val WHERE id=$existing_id;"
         else
-             # Insert into 'events' with separate fail_type column
-             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type');"
+             # Insert into 'events' with separate fail_type and filesize columns
+             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val);"
         fi
     fi
 }

@@ -7,6 +7,7 @@
 
 init_db() {
     # Added 'fail_type' column for structured error categorization
+    # Added 'filesize' column to store file size in bytes for optimization checks
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -18,11 +19,13 @@ init_db() {
         message TEXT,     -- Base64 Encoded
         msg_id INTEGER,
         duration INTEGER DEFAULT 0,
-        fail_type TEXT    -- New column: DOWNLOAD, RENDER, DURATION, etc.
+        fail_type TEXT,   -- DOWNLOAD, RENDER, DURATION, etc.
+        filesize INTEGER DEFAULT 0 -- New column: Size in bytes
     );"
 
-    # Auto-migration for existing databases: Ensures older DB versions get the new column
+    # Auto-migration for existing databases
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN fail_type TEXT;" 2>/dev/null || true
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN filesize INTEGER DEFAULT 0;" 2>/dev/null || true
 
     # Added indexes for performance on frequent SELECT queries
     db_exec "CREATE INDEX IF NOT EXISTS idx_cam_type_status ON events(camera, type, status);"
