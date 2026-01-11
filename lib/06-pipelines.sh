@@ -249,6 +249,17 @@ generate_timelapse_video() {
     
     # Calculate expected timelapse duration and check against threshold
     if [ "$total_source_duration" -lt 60 ]; then
+        
+        # [NEW LOGIC] Smart Skip: Check if we already failed with 0 duration previously
+        local prev_fail_duration=$(get_last_fail_metric "$camera_name" "$start_ts" "$end_ts" "duration")
+        
+        # If no improvement (still 0 or less), SKIP instead of FAIL
+        if [ "$total_source_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
+             log "[$camera_name] ⏭️ Skipping Timelapse: Insufficient VOD (${total_source_duration}s) & No improvement over last fail."
+             rm -rf "$job_temp_dir"
+             return 2 # EXIT CODE 2 = SKIP (Handled in execute_timelapse_pipeline)
+        fi
+
         log "[$camera_name] ⚠️ Pre-check failed: Insufficient source data (${total_source_duration}s)"
         rm -rf "$job_temp_dir"
         return 1
@@ -349,7 +360,11 @@ execute_timelapse_pipeline() {
     local pipeline_success=0
 
     # 2. GENERATE VIDEO (Render)
-    if generate_timelapse_video "$src" "$start_ts" "$end_ts" "$filepath"; then
+    # [CHANGED] Capture exit code to handle SKIP vs FAIL
+    generate_timelapse_video "$src" "$start_ts" "$end_ts" "$filepath"
+    local gen_status=$?
+
+    if [ $gen_status -eq 0 ]; then
         
         local current_filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
 
@@ -407,7 +422,16 @@ execute_timelapse_pipeline() {
             trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
             pipeline_success=0
         fi
+    
+    elif [ $gen_status -eq 2 ]; then
+        # [NEW LOGIC] Handle SKIP code (2) from generate function
+        # Do NOTHING (No Alert, No DB Update). Just clean up and return failure code so scheduler knows to retry/skip.
+        log_debug "[$src] Timelapse generation skipped (Status 2)."
+        rm -f "$filepath"
+        return 1
+
     else
+        # [EXISTING LOGIC] Handle FAIL code (1) or others
         local pipe_duration=$(( $(date +%s) - pipe_start ))
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0" "0" "$pipe_duration"
         pipeline_success=0
