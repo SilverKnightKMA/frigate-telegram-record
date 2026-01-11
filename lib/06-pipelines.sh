@@ -102,20 +102,48 @@ execute_clip_pipeline() {
 
     log_debug "[$src] VOD Pre-check: Found ${vod_duration}s / Required ${threshold}s"
 
-    if [ "$vod_duration" -lt "$threshold" ]; then
-        # Logic: Check previous failure duration.
-        local prev_fail_duration=$(get_last_fail_metric "$src" "$start_ts" "$end_ts" "duration")
-        
-        # If current vod_duration <= previous failure, skip (no improvement).
-        # This prevents spamming retries for known bad slots.
-        if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -gt 0 ]; then
-             log "[$src] ⏭️ Skipping Download: Insufficient VOD (${vod_duration}s) & No improvement over last fail (${prev_fail_duration}s)."
-             return
-        fi
+    # Retrieve previous FAILED duration and alert status for terminal skip decision
+    # Reason: Prevent further processing when this time block has already been alerted
+    # and no additional VOD data is available.
+    local prev_fail_row=$(sqlite3 "$DB_FILE" \
+        "SELECT duration, alert_sent
+         FROM events
+         WHERE camera='$src'
+           AND start_ts=$start_ts
+           AND end_ts=$end_ts
+           AND status='FAILED'
+         ORDER BY id DESC
+         LIMIT 1;")
 
-        log "[$src] ⚠️ Insufficient VOD data (${vod_duration}s < ${threshold}s). Proceeding to download (First Run or Improvement)."
+    local prev_fail_duration=0
+    local prev_alert_sent=0
+
+    if [ -n "$prev_fail_row" ]; then
+        prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
+        prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
+    fi
+
+    prev_fail_duration=${prev_fail_duration:-0}
+    prev_alert_sent=${prev_alert_sent:-0}
+
+    # Terminal early-exit:
+    # If an alert has already been sent for this time block and the current
+    # VOD duration does not exceed the previously recorded failed duration,
+    # stop processing this block immediately.
+    if [ "$prev_alert_sent" -eq 1 ] && [ "$vod_duration" -le "$prev_fail_duration" ]; then
+        log "[$src] ⏭️ Skipping slot: VOD ${vod_duration}s does not exceed previous ${prev_fail_duration}s after alert."
+        return
+    fi
+
+    if [ "$vod_duration" -lt "$threshold" ]; then
+        if [ "$prev_fail_duration" -gt 0 ]; then
+            log "[$src] ⚠️ Insufficient VOD data (${vod_duration}s < ${threshold}s). Proceeding to download (Improvement over ${prev_fail_duration}s)."
+        else
+            log "[$src] ⚠️ Insufficient VOD data (${vod_duration}s < ${threshold}s). Proceeding to download (First Run)."
+        fi
     fi
     # ========================================
+
 
     # === OPTIMIZATION: Check Remote Size Before Download ===
     # Attempt to get Content-Length via HEAD request. Added -L to follow redirects.
