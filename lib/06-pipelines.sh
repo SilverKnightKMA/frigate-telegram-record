@@ -5,6 +5,47 @@
 # Purpose: Orchestrates the download/rendering, validation, and sending process.
 # ==============================================================================
 
+# Calculates the total duration of available footage for a given time range
+# by querying Frigate's VOD playlist API without downloading the full video.
+calculate_vod_source_duration() {
+    local camera_name="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    
+    # Use a unique temporary directory for playlist chunks to verify connectivity/content
+    local vod_check_dir="${TEMP_DIR}/vod_check_${camera_name}_${start_ts}_${RANDOM}"
+    mkdir -p "$vod_check_dir"
+
+    local cursor=$start_ts
+    local total_duration=0
+    local count=1
+    
+    # Iterate through time chunks to sum up available segments from HLS playlists
+    while [ "$cursor" -lt "$end_ts" ]; do
+        local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
+        if [ "$next_cursor" -gt "$end_ts" ]; then next_cursor=$end_ts; fi
+        
+        local vod_url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
+        local playlist_file="$vod_check_dir/check_${count}.m3u8"
+        
+        # Fetch playlist header to extract segment durations
+        local http_code=$(curl -s -o "$playlist_file" -w "%{http_code}" "$vod_url")
+        
+        if [ "$http_code" == "200" ] && [ -s "$playlist_file" ]; then
+            # Sum up EXTINF values to get accurate seconds for this chunk
+            local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$playlist_file" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
+            chunk_duration=${chunk_duration:-0}
+            total_duration=$((total_duration + chunk_duration))
+        fi
+        
+        cursor=$next_cursor
+        count=$((count + 1))
+    done
+
+    rm -rf "$vod_check_dir"
+    echo "$total_duration"
+}
+
 download_clip() {
     local src="$1"
     local start_ts="$2"
@@ -48,6 +89,21 @@ execute_clip_pipeline() {
     local dl_end_ts=$(( end_ts + PADDING_SEC ))
     local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
 
+    # === OPTIMIZATION: VOD Coverage Check ===
+    # Check if enough footage exists in the playlist before attempting full download
+    local expected_duration=$(( end_ts - start_ts ))
+    local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
+    local threshold=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
+
+    log_debug "[$src] VOD Pre-check: Found ${vod_duration}s / Required ${threshold}s"
+
+    if [ "$vod_duration" -lt "$threshold" ]; then
+        log "[$src] ⏩ Skipping Download: Insufficient VOD data (${vod_duration}s < ${threshold}s)."
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Pre-check Insufficient VOD (${vod_duration}s)" "$run_mode" "$vod_duration" "0"
+        return
+    fi
+    # ========================================
+
     # === OPTIMIZATION: Check Remote Size Before Download ===
     # Attempt to get Content-Length via HEAD request. Added -L to follow redirects.
     # We capture the full header to check status code as well.
@@ -90,7 +146,6 @@ execute_clip_pipeline() {
         if validate_video "$filepath"; then
             
             # 3. CHECK DURATION & STATUS
-            local expected_duration=$(( end_ts - start_ts ))
             log_debug "[$src] Expected duration: ${expected_duration}s"
             
             check_duration_and_status "$src" "$filepath" "$expected_duration" "$start_ts" "$end_ts"
@@ -167,37 +222,14 @@ generate_timelapse_video() {
     log "[$camera_name] Processing Timelapse: $(date -d @$start_ts '+%H:%M') -> $(date -d @$end_ts '+%H:%M') (Speed: x$TIMELAPSE_SPEED)"
 
     # ========== PRE-CHECK: Download all playlists to calculate total source duration ==========
-    log_debug "[$camera_name] Pre-checking all HLS chunks..."
-    local pre_cursor=$start_ts
-    local pre_count=1
-    local total_source_duration=0
-    local failed_chunks=0
+    log_debug "[$camera_name] Pre-checking all HLS chunks via helper..."
     
-    while [ "$pre_cursor" -lt "$end_ts" ]; do
-        local pre_next_cursor=$(($pre_cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
-        if [ "$pre_next_cursor" -gt "$end_ts" ]; then pre_next_cursor=$end_ts; fi
-        
-        local pre_url="${FRIGATE_HOST}/vod/${camera_name}/start/${pre_cursor}/end/${pre_next_cursor}/index.m3u8"
-        local pre_playlist="$job_temp_dir/precheck_${pre_count}.m3u8"
-        local pre_response=$(curl -s -o "$pre_playlist" -w "%{http_code}" "$pre_url")
-        
-        if [ "$pre_response" == "200" ] && [ -s "$pre_playlist" ]; then
-            local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$pre_playlist" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
-            chunk_duration=${chunk_duration:-0}
-            total_source_duration=$((total_source_duration + chunk_duration))
-            log_debug "[$camera_name] Chunk $pre_count: ${chunk_duration}s"
-        else
-            log_debug "[$camera_name] Chunk $pre_count: Failed (HTTP $pre_response)"
-            failed_chunks=$((failed_chunks + 1))
-        fi
-        
-        pre_cursor=$pre_next_cursor
-        pre_count=$((pre_count + 1))
-    done
+    # Use shared helper to get source duration
+    local total_source_duration=$(calculate_vod_source_duration "$camera_name" "$start_ts" "$end_ts")
     
     # Calculate expected timelapse duration and check against threshold
     if [ "$total_source_duration" -lt 60 ]; then
-        log "[$camera_name] ⚠️ Pre-check failed: Insufficient source data (${total_source_duration}s, ${failed_chunks} failed chunks)"
+        log "[$camera_name] ⚠️ Pre-check failed: Insufficient source data (${total_source_duration}s)"
         rm -rf "$job_temp_dir"
         return 1
     fi
@@ -216,7 +248,7 @@ generate_timelapse_video() {
         return 1
     fi
     
-    log "[$camera_name] ✓ Pre-check passed (${failed_chunks} failed chunks tolerated)"
+    log "[$camera_name] ✓ Pre-check passed"
     
     # ========== RENDER: Process and concatenate chunks ==========
     cursor=$start_ts
@@ -309,7 +341,7 @@ execute_timelapse_pipeline() {
 
         # 4. SEND TELEGRAM
         local total_hours=$(( total_real_seconds / 3600 ))
-        local caption="🎞 <b>TIMELAPSE ($total_hours h)</b>
+        local caption="🎞️ <b>TIMELAPSE ($total_hours h)</b>
 📷 $cam_name
 📅 $display_date
 ⏰ $display_start - $display_end
@@ -321,8 +353,8 @@ execute_timelapse_pipeline() {
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                      trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
-                      pipeline_success=0
+                       trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
+                       pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
                     local current_ts=$(date +%s)
