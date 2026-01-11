@@ -1,3 +1,5 @@
+=== lib/03-database.sh ===
+
 #!/bin/bash
 
 # ==============================================================================
@@ -6,8 +8,9 @@
 # ==============================================================================
 
 init_db() {
-    # CHANGE: Added 'expected_duration' to store target video length for accuracy analysis
-    # CHANGE: Added 'processing_time' to track pipeline performance (job execution time)
+    # Added 'fail_type' column for structured error categorization
+    # Added 'filesize' column to store file size in bytes for optimization checks
+    # [Dashboard Update] Added 'process_sec' to track pipeline execution time (performance metric)
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -18,19 +21,17 @@ init_db() {
         created_at INTEGER,
         message TEXT,     -- Base64 Encoded
         msg_id INTEGER,
-        duration INTEGER DEFAULT 0,          -- Actual duration
-        expected_duration INTEGER DEFAULT 0, -- New column: Target duration
+        duration INTEGER DEFAULT 0,
         fail_type TEXT,   -- DOWNLOAD, RENDER, DURATION, etc.
-        filesize INTEGER DEFAULT 0,
-        processing_time INTEGER DEFAULT 0    -- New column: Time taken to process logic
+        filesize INTEGER DEFAULT 0, -- Size in bytes
+        process_sec INTEGER DEFAULT 0 -- Time taken to process the job in seconds
     );"
 
     # Auto-migration for existing databases
-    # Adding columns safely if they do not exist
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN fail_type TEXT;" 2>/dev/null || true
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN filesize INTEGER DEFAULT 0;" 2>/dev/null || true
-    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN expected_duration INTEGER DEFAULT 0;" 2>/dev/null || true
-    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN processing_time INTEGER DEFAULT 0;" 2>/dev/null || true
+    # [Dashboard Update] Migration for process_sec
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN process_sec INTEGER DEFAULT 0;" 2>/dev/null || true
 
     # Added indexes for performance on frequent SELECT queries
     db_exec "CREATE INDEX IF NOT EXISTS idx_cam_type_status ON events(camera, type, status);"

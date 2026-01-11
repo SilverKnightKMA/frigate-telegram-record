@@ -1,3 +1,5 @@
+=== lib/06-pipelines.sh ===
+
 #!/bin/bash
 
 # ==============================================================================
@@ -73,8 +75,8 @@ execute_clip_pipeline() {
     local tid="$6"
     local chat_id="$7"
 
-    # CHANGE: Capture pipeline start time for performance tracking
-    local job_start_time=$(date +%s)
+    # [Dashboard Update] Start timer for performance tracking
+    local pipe_start=$(date +%s)
 
     log_debug "[$src] execute_clip_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
@@ -92,11 +94,9 @@ execute_clip_pipeline() {
     local dl_end_ts=$(( end_ts + PADDING_SEC ))
     local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
 
-    # CHANGE: Calculate expected duration upfront for consistent reporting
-    local expected_duration=$(( end_ts - start_ts ))
-
     # === OPTIMIZATION: VOD Coverage Check ===
     # Check if enough footage exists in the playlist before attempting full download
+    local expected_duration=$(( end_ts - start_ts ))
     local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
     local threshold=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
 
@@ -108,16 +108,16 @@ execute_clip_pipeline() {
         # If current vod_duration > previous failure, trigger alert (update DB).
         local prev_fail_duration=$(get_last_fail_metric "$src" "$start_ts" "$end_ts" "duration")
         
+        # [Dashboard Update] Calculate elapsed time for early exit
+        local pipe_duration=$(( $(date +%s) - pipe_start ))
+
         if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -gt 0 ]; then
              log "[$src] ⏭️ Skipping Download: Insufficient VOD (${vod_duration}s) & No improvement over last fail (${prev_fail_duration}s)."
              return
         fi
 
         log "[$src] ⚠️ Skipping Download: Insufficient VOD data (${vod_duration}s < ${threshold}s). Recording failure."
-        
-        # CHANGE: Calc proc_time and pass new args to trigger_failure_alert
-        local proc_time=$(( $(date +%s) - job_start_time ))
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Pre-check Insufficient VOD (${vod_duration}s)" "$run_mode" "$vod_duration" "0" "$expected_duration" "$proc_time"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Pre-check Insufficient VOD (${vod_duration}s)" "$run_mode" "$vod_duration" "0" "$pipe_duration"
         return
     fi
     # ========================================
@@ -157,6 +157,9 @@ execute_clip_pipeline() {
     
     log_debug "[$src] Download HTTP code: $http_code"
 
+    # [Dashboard Update] Calc duration for later blocks
+    local pipe_duration=$(( $(date +%s) - pipe_start ))
+
     if [ "$http_code" == "200" ]; then
         local current_filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
 
@@ -185,14 +188,15 @@ execute_clip_pipeline() {
 
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
                 log_debug "[$src] Video sent successfully, msg_id: $SENT_VIDEO_MSG_ID"
+                
+                # Recalculate duration after send
+                pipe_duration=$(( $(date +%s) - pipe_start ))
+
                 if [ "$run_mode" == "record" ]; then
                     
                     # 5a. FAILURE HANDLING (Partial)
-                    # CHANGE: Calculate proc_time for reporting
-                    local proc_time=$(( $(date +%s) - job_start_time ))
-
                     if [ "$_status" == "partial" ]; then
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$expected_duration" "$proc_time"
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
                         local current_ts=$(date +%s)
@@ -201,27 +205,25 @@ execute_clip_pipeline() {
                         
                         handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                        # CHANGE: Insert includes expected_duration and processing_time
-                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, expected_duration, processing_time) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $expected_duration, $proc_time);"
-                        log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize, Time: ${proc_time}s)."
+                        # [Dashboard Update] Insert record with process_sec
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration);"
+                        log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
                     fi
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
             else
-                local proc_time=$(( $(date +%s) - job_start_time ))
-                trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual" "$current_filesize" "$expected_duration" "$proc_time"
+                pipe_duration=$(( $(date +%s) - pipe_start ))
+                trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
             fi
         else
-            local proc_time=$(( $(date +%s) - job_start_time ))
-            trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $current_filesize)" "$run_mode" "0" "$current_filesize" "$expected_duration" "$proc_time"
+            pipe_duration=$(( $(date +%s) - pipe_start ))
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $current_filesize)" "$run_mode" "0" "$current_filesize" "$pipe_duration"
         fi
     elif [ "$http_code" == "404" ]; then
-        local proc_time=$(( $(date +%s) - job_start_time ))
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0" "0" "$expected_duration" "$proc_time"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0" "0" "$pipe_duration"
     else
-        local proc_time=$(( $(date +%s) - job_start_time ))
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0" "0" "$expected_duration" "$proc_time"
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0" "0" "$pipe_duration"
     fi
     
     rm -f "$filepath"
@@ -329,8 +331,8 @@ execute_timelapse_pipeline() {
     local original_tid="$6"
     local chat_id="$7"
 
-    # CHANGE: Capture pipeline start time
-    local job_start_time=$(date +%s)
+    # [Dashboard Update] Start timer
+    local pipe_start=$(date +%s)
 
     # 1. SETUP & IDENTIFICATION
     local target_tid="${TIMELAPSE_THREAD_ID:-$original_tid}"
@@ -376,14 +378,15 @@ execute_timelapse_pipeline() {
 ⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
 
         if send_telegram_video "$filepath" "$chat_id" "$target_tid" "$caption" "$src"; then
+            
+            # Recalculate duration after send
+            local pipe_duration=$(( $(date +%s) - pipe_start ))
+
             if [ "$run_mode" == "timelapse" ]; then
                 
-                # CHANGE: Calculate proc_time
-                local proc_time=$(( $(date +%s) - job_start_time ))
-
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$expected_duration" "$proc_time"
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
                         pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
@@ -392,9 +395,9 @@ execute_timelapse_pipeline() {
                     
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                    # CHANGE: Insert includes expected_duration and processing_time
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, expected_duration, processing_time) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $expected_duration, $proc_time);"
-                    log "[$src] Timelapse saved to history (Time: ${proc_time}s)."
+                    # [Dashboard Update] Insert record with process_sec
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration);"
+                    log "[$src] Timelapse saved to history (Process: ${pipe_duration}s)."
                     pipeline_success=1
                 fi
             else
@@ -402,16 +405,13 @@ execute_timelapse_pipeline() {
                 pipeline_success=1
             fi
         else
-            local proc_time=$(( $(date +%s) - job_start_time ))
-            trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual" "$current_filesize" "$expected_duration" "$proc_time"
+            local pipe_duration=$(( $(date +%s) - pipe_start ))
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
             pipeline_success=0
         fi
     else
-        local proc_time=$(( $(date +%s) - job_start_time ))
-        # Note: expected_duration is approximated here as 0 or calc based on range, 
-        # but since generation failed, duration is 0.
-        local expected_duration=$(( (end_ts - start_ts) / ${TIMELAPSE_SPEED:-60} ))
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0" "0" "$expected_duration" "$proc_time"
+        local pipe_duration=$(( $(date +%s) - pipe_start ))
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0" "0" "$pipe_duration"
         pipeline_success=0
     fi
 

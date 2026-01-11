@@ -1,3 +1,5 @@
+=== lib/05-core.sh ===
+
 #!/bin/bash
 
 # ==============================================================================
@@ -155,6 +157,7 @@ $body_text"
     db_exec "DELETE FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED';"
 }
 
+# [Dashboard Update] Added process_sec argument to track performance even on failures
 trigger_failure_alert() {
     local src="$1"
     local start_ts="$2"
@@ -164,9 +167,7 @@ trigger_failure_alert() {
     local run_mode="$6"
     local duration="$7"
     local filesize="$8"
-    # CHANGE: Added new arguments for enhanced statistics
-    local expected_duration="$9"
-    local processing_time="${10}"
+    local process_sec="${9:-0}" # Default to 0 if not provided
 
     # Determine Type based on run_mode
     local type_code="RECORD"
@@ -181,9 +182,7 @@ trigger_failure_alert() {
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
     local duration_val="${duration:-0}"
     local filesize_val="${filesize:-0}"
-    # CHANGE: Ensure defaults for new columns
-    local expected_val="${expected_duration:-0}"
-    local proc_time_val="${processing_time:-0}"
+    local process_sec_val="${process_sec:-0}"
 
     # Optimization: Retrieve previous duration to decide on update policy
     local prev_duration=0
@@ -243,12 +242,12 @@ trigger_failure_alert() {
     local current_ts=$(date +%s)
     local b64_text=$(echo "$alert_text" | base64 -w 0)
 
-    # CHANGE: SQL queries updated to include 'expected_duration' and 'processing_time'
+    # [Dashboard Update] Included process_sec in INSERT and UPDATE
     if [ "$existing_id" -gt 0 ]; then
          # Update existing record
-         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, expected_duration=$expected_val, processing_time=$proc_time_val WHERE id=$existing_id;"
+         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val WHERE id=$existing_id;"
     else
          # Insert new failure record
-         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, expected_duration, processing_time) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $expected_val, $proc_time_val);"
+         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val);"
     fi
 }
