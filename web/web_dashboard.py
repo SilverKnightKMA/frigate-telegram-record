@@ -22,8 +22,12 @@ LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Uses URI 'mode=ro' to ensure Read-Only access, allowing concurrent reads with WAL mode.
+    Validates file availability and uses URI 'mode=ro' for safe concurrent read access.
     """
+    # Verify database file existence to prevent runtime errors during query execution
+    if not os.path.exists(DB_FILE):
+        return None
+
     try:
         conn = sqlite3.connect(f"file:{DB_FILE}?mode=ro", uri=True, timeout=5.0)
         conn.row_factory = sqlite3.Row
