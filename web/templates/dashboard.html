@@ -80,21 +80,32 @@
         
         /* Timeline specific controls */
         .timeline-toolbar {
-            display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;
             background: #f9fafb; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;
         }
-        .control-group { display: flex; align-items: center; gap: 5px; }
+        .control-group { display: flex; align-items: center; margin-right: 10px; }
         .btn-group-item {
             padding: 6px 12px; border: 1px solid #d1d5db; background: white; cursor: pointer;
-            font-size: 0.85rem; transition: all 0.2s;
+            font-size: 0.8rem; transition: all 0.2s;
         }
         .btn-group-item:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
         .btn-group-item:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; border-right: 1px solid #d1d5db; }
         .btn-group-item:not(:last-child) { border-right: none; }
-        .btn-group-item:hover { background: #f3f4f6; }
-        .btn-icon { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; background: white; cursor: pointer; }
+        .btn-group-item:hover { background: #f3f4f6; color: var(--primary); }
+        .btn-icon { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; background: white; cursor: pointer; font-size: 0.8rem; }
+        .btn-icon:hover { background: #f3f4f6; }
+
+        .timeline-label { font-size: 0.75rem; font-weight: 600; color: var(--text-sub); margin-right: 5px; text-transform: uppercase; }
         
         .loading-row { text-align: center; color: var(--text-sub); padding: 20px; }
+
+        /* Custom Tooltip Style */
+        .apexcharts-tooltip-custom {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+        }
     </style>
 </head>
 <body>
@@ -152,23 +163,32 @@
             
             <div class="timeline-toolbar">
                 <div class="control-group">
-                    <span style="font-size:0.85rem; color:var(--text-sub); margin-right:5px">Window:</span>
+                    <span class="timeline-label">Giờ:</span>
                     <button class="btn-group-item" onclick="setWindow(1)">1h</button>
                     <button class="btn-group-item" onclick="setWindow(6)">6h</button>
                     <button class="btn-group-item" onclick="setWindow(12)">12h</button>
                     <button class="btn-group-item" onclick="setWindow(24)">24h</button>
                 </div>
 
-                <div class="control-group" style="margin-left:15px">
-                    <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮ Prev</button>
-                    <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">Next ❯</button>
+                <div class="control-group">
+                    <span class="timeline-label">Dài hạn:</span>
+                    <button class="btn-group-item" onclick="setWindow(72)">3 Ngày</button>
+                    <button class="btn-group-item" onclick="setWindow(168)">1 Tuần</button>
+                    <button class="btn-group-item" onclick="setWindow(720)">1 Tháng</button>
+                    <button class="btn-group-item" onclick="setWindow(2160)">1 Quý</button>
+                    <button class="btn-group-item" onclick="setWindow(8760)">1 Năm</button>
                 </div>
 
                 <div class="control-group" style="margin-left:auto">
-                    <input type="datetime-local" id="ts-start" style="font-size:0.8rem">
-                    <span style="color:var(--text-sub)">to</span>
-                    <input type="datetime-local" id="ts-end" style="font-size:0.8rem">
-                    <button class="action-btn" style="padding: 6px 12px;" onclick="applyCustomRange()">Go</button>
+                    <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮</button>
+                    <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">❯</button>
+                </div>
+
+                <div class="control-group">
+                    <input type="datetime-local" id="ts-start" style="font-size:0.8rem; width: 130px;">
+                    <span style="color:var(--text-sub); margin:0 5px">-</span>
+                    <input type="datetime-local" id="ts-end" style="font-size:0.8rem; width: 130px;">
+                    <button class="action-btn" style="padding: 6px 12px; margin-left: 5px;" onclick="applyCustomRange()">Go</button>
                 </div>
             </div>
 
@@ -244,7 +264,6 @@
         let logOffset = 0;
         const LOG_LIMIT = 50;
         
-        // Quản lý trạng thái timeline hiện tại (timestamp ms)
         let timelineState = {
             start: null,
             end: null
@@ -252,11 +271,10 @@
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Mặc định khởi tạo timeline 24h gần nhất
             const now = new Date();
             timelineState.end = now.getTime();
             timelineState.start = now.getTime() - (24 * 60 * 60 * 1000);
-            syncTimelineInputs(); // Cập nhật input date
+            syncTimelineInputs(); 
 
             loadCameras();
             loadOverview();
@@ -278,7 +296,6 @@
 
         // --- Timeline Logic Helpers ---
 
-        // Helper: Đồng bộ giá trị state vào các ô input datetime-local
         function syncTimelineInputs() {
             const toLocalISO = (ts) => {
                 const date = new Date(ts);
@@ -290,7 +307,6 @@
             document.getElementById('ts-end').value = toLocalISO(timelineState.end);
         }
 
-        // Helper: Chọn nhanh window time (1h, 6h, ...) tính từ hiện tại
         function setWindow(hours) {
             const now = new Date().getTime();
             timelineState.end = now;
@@ -299,10 +315,9 @@
             loadTimeline(timelineState.start, timelineState.end);
         }
 
-        // Helper: Dịch chuyển thời gian (Next/Prev) dựa trên window hiện tại
         function moveTime(direction) {
             const duration = timelineState.end - timelineState.start;
-            const shift = duration * direction; // direction: 1 (next) or -1 (prev)
+            const shift = duration * direction; 
             
             timelineState.start += shift;
             timelineState.end += shift;
@@ -311,7 +326,6 @@
             loadTimeline(timelineState.start, timelineState.end);
         }
 
-        // Helper: Áp dụng thời gian từ input datetime-local
         function applyCustomRange() {
             const startVal = document.getElementById('ts-start').value;
             const endVal = document.getElementById('ts-end').value;
@@ -349,7 +363,6 @@
         }
 
         async function loadTimeline(minTs, maxTs) {
-            // Sử dụng timestamp (ms) để gọi API, API nhận giây (float)
             let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
 
             const res = await fetch(url);
@@ -361,12 +374,12 @@
                     x: cam,
                     y: [item[0], item[1]], 
                     fillColor: item[2] === 1 ? '#10b981' : '#ef4444',
-                    meta: item[3] 
+                    meta: item[3],
+                    statusStr: item[2] === 1 ? 'Success' : 'Failed' // Add helper for tooltip
                 }))
             }));
 
             if (charts.timeline) {
-                // Update range hiển thị của chart
                 charts.timeline.updateOptions({
                     xaxis: { min: minTs, max: maxTs }
                 }, false, false);
@@ -395,7 +408,6 @@
                                 });
                             }
                         },
-                        // Khi user zoom trên biểu đồ, cập nhật lại state và inputs
                         zoomed: function(chartContext, { xaxis }) {
                             timelineState.start = xaxis.min;
                             timelineState.end = xaxis.max;
@@ -421,12 +433,34 @@
                 },
                 xaxis: { 
                     type: 'datetime',
-                    min: minTs, // Set initial range
+                    min: minTs,
                     max: maxTs
                 },
+                // CUSTOM TOOLTIP: Hiển thị Ngày + Giờ + Trạng thái
                 tooltip: { 
-                    enabled: true,
-                    x: { format: 'HH:mm:ss' }
+                    custom: function({series, seriesIndex, dataPointIndex, w}) {
+                        const data = w.config.series[seriesIndex].data[dataPointIndex];
+                        const start = new Date(data.y[0]).toLocaleString('vi-VN');
+                        const end = new Date(data.y[1]).toLocaleTimeString('vi-VN');
+                        const color = data.fillColor;
+                        const status = data.statusStr;
+                        const countInfo = data.meta ? `(${data.meta.count} events)` : '';
+
+                        return `
+                            <div class="apexcharts-tooltip-custom" style="padding: 10px; font-size: 12px; line-height: 1.6;">
+                                <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">
+                                    ${data.x}
+                                </div>
+                                <div><span style="color:#666">Bắt đầu:</span> ${start}</div>
+                                <div><span style="color:#666">Kết thúc:</span> ${end}</div>
+                                <div style="margin-top:4px;">
+                                    <span style="color:#666">Trạng thái:</span> 
+                                    <span style="color: ${color}; font-weight: 700;">${status}</span>
+                                    <span style="font-size:11px; color:#888; margin-left:5px;">${countInfo}</span>
+                                </div>
+                            </div>
+                        `;
+                    }
                 },
                 grid: { 
                     row: { colors: ['transparent'], opacity: 0 },
@@ -562,8 +596,6 @@
             document.getElementById('modal-title').innerText = `${data.camera} (${data.time})`;
             
             let content = "";
-            
-            // Render logic specifically for merged breakdown
             if (data.isMerged) {
                 let errorList = "";
                 for (const [type, count] of Object.entries(data.meta.breakdown)) {
