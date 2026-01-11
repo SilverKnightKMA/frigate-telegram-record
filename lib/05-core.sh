@@ -182,11 +182,15 @@ trigger_failure_alert() {
     local filesize_val="${filesize:-0}"
     local process_sec_val="${process_sec:-0}"
 
-    # Optimization: Retrieve previous duration to decide on update policy
+    # Optimization: Retrieve previous duration and alert_sent flag to decide on update policy
     local prev_duration=0
+    # Reason: Retrieve alert_sent flag to determine if notification was already sent
+    local prev_alert_sent=0
     if [ "$existing_id" -gt 0 ]; then
         prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE id=$existing_id;")
         prev_duration=${prev_duration:-0}
+        prev_alert_sent=$(sqlite3 "$DB_FILE" "SELECT alert_sent FROM events WHERE id=$existing_id;")
+        prev_alert_sent=${prev_alert_sent:-0}
     fi
 
     # --- DECISION 1: SHOULD WE UPDATE DB? ---
@@ -195,13 +199,11 @@ trigger_failure_alert() {
     # 2. Alert Repeat is ON.
     # 3. Video was sent (Partial Success) -> We need to record this even if duration is same.
     # 4. Improvement found.
-    # 5. [CHANGED] Previous duration was 0 (Ensure data is captured if no valid video exists).
     local should_update="false"
     if [ "$existing_id" -eq 0 ]; then should_update="true";
     elif [ "$alert_repeat" == "true" ]; then should_update="true";
     elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then should_update="true";
     elif [ "$duration_val" -gt "$prev_duration" ]; then should_update="true";
-    elif [ "$prev_duration" -eq 0 ]; then should_update="true"; # Allow update if no prior video
     fi
 
     if [ "$should_update" != "true" ]; then
@@ -226,17 +228,21 @@ trigger_failure_alert() {
     # 1. New error.
     # 2. Improvement.
     # 3. Alert Repeat is ON.
-    # 4. [CHANGED] No previous video (duration 0).
+    # 4. No alert was sent previously (alert_sent = 0).
     
     local should_send_alert="false"
     if [ "$existing_id" -eq 0 ]; then should_send_alert="true"; fi
     if [ "$duration_val" -gt "$prev_duration" ]; then should_send_alert="true"; fi
-    if [ "$prev_duration" -eq 0 ]; then should_send_alert="true"; fi # Trigger alert if no prior video
+    if [ "$prev_alert_sent" -eq 0 ]; then should_send_alert="true"; fi
     if [ "$alert_repeat" == "true" ]; then should_send_alert="true"; fi
 
-    # Execute Alert Sending
+    # Reason: Track if alert was successfully sent in this execution
+    local alert_sent_now=0
     if [ "$should_send_alert" == "true" ]; then
         handle_error "$alert_text" "$mode_upper|$src"
+        if [ -n "$SENT_ERROR_MSG_ID" ] && [ "$SENT_ERROR_MSG_ID" -ne 0 ]; then
+            alert_sent_now=1
+        fi
     fi
     
     # Determine MSG_ID to save
@@ -259,11 +265,17 @@ trigger_failure_alert() {
 
     # [Dashboard Update] Included process_sec in INSERT and UPDATE
     # [CHANGE] Added search_text to SQL queries
+    # Reason: Preserve alert_sent flag across updates, set to 1 if alert sent in this execution
+    local final_alert_sent=$prev_alert_sent
+    if [ "$alert_sent_now" -eq 1 ]; then
+        final_alert_sent=1
+    fi
+
     if [ "$existing_id" -gt 0 ]; then
          # Update existing record
-         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val, search_text='$clean_search_text' WHERE id=$existing_id;"
+         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val, search_text='$clean_search_text', alert_sent=$final_alert_sent WHERE id=$existing_id;"
     else
          # Insert new failure record
-         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec, search_text) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, '$clean_search_text');"
+         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec, search_text, alert_sent) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, '$clean_search_text', $final_alert_sent);"
     fi
 }

@@ -17,6 +17,7 @@ init_db() {
     # - filesize: Used to calculate 'Total Storage' used metric.
     # - process_sec: Used to visualize 'System Performance' trends over time.
     # - search_text: Stores sanitized text for easier searching and error prevention.
+    # - alert_sent: Tracks if Telegram alert was sent to prevent duplicate notifications.
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -31,16 +32,17 @@ init_db() {
         fail_type TEXT,   -- DOWNLOAD, RENDER, DURATION, TELEGRAM, VALIDATION
         filesize INTEGER DEFAULT 0, -- Bytes
         process_sec INTEGER DEFAULT 0, -- Processing duration (Performance metric)
-        search_text TEXT  -- Sanitized content for searching
+        search_text TEXT, -- Sanitized content for searching
+        alert_sent INTEGER DEFAULT 0 -- 0=Not sent, 1=Sent (prevents duplicate alerts)
     );"
 
     # [Migrations] Ensure schema compatibility with older DB versions
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN fail_type TEXT;" 2>/dev/null || true
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN filesize INTEGER DEFAULT 0;" 2>/dev/null || true
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN process_sec INTEGER DEFAULT 0;" 2>/dev/null || true
-    
-    # [New Migration] Add search_text column if missing
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN search_text TEXT;" 2>/dev/null || true
+    # Reason: Track alert notification status to prevent duplicate alerts for same failure
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN alert_sent INTEGER DEFAULT 0;" 2>/dev/null || true
 
     # [Dashboard Indexes] Optimized for common Dashboard queries
     

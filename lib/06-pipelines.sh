@@ -6,8 +6,7 @@
 # ==============================================================================
 
 # Calculates the total duration of available footage for a given time range
-# by querying Frigate's VOD playlist API without downloading the full video.
-calculate_vod_source_duration() {
+# by querying Frigate's VOD playlist API without downloading the full video.# Purpose: Used to pre-check if sufficient source data exists before expensive operations.calculate_vod_source_duration() {
     local camera_name="$1"
     local start_ts="$2"
     local end_ts="$3"
@@ -46,6 +45,8 @@ calculate_vod_source_duration() {
     echo "$total_duration"
 }
 
+# Downloads clip from Frigate API with padding
+# Returns: HTTP status code
 download_clip() {
     local src="$1"
     local start_ts="$2"
@@ -200,7 +201,7 @@ execute_clip_pipeline() {
 
                         # [Dashboard Update] Insert record with process_sec
                         # [CHANGE] Include 'search_text' ('Record Sent') in INSERT
-                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Record Sent');"
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Record Sent', 0);"
                         log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
                     fi
                 else
@@ -224,6 +225,7 @@ execute_clip_pipeline() {
 }
 
 # Generates timelapse using VAAPI hardware acceleration by concatenating HLS chunks
+# Returns: 0=success, 1=fail, 2=skip (no improvement)
 generate_timelapse_video() {
     local camera_name="$1"
     local start_ts="$2"
@@ -409,7 +411,7 @@ execute_timelapse_pipeline() {
 
                     # [Dashboard Update] Insert record with process_sec
                     # [CHANGE] Include 'search_text' ('Timelapse Sent') in INSERT
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent');"
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent', 0);"
                     log "[$src] Timelapse saved to history (Process: ${pipe_duration}s)."
                     pipeline_success=1
                 fi
