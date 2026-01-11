@@ -5,6 +5,94 @@
 # Purpose: Video validation, duration checks, recovery actions, and alert triggers.
 # ==============================================================================
 
+# Calculates the total duration of available footage for a given time range
+# by querying Frigate's VOD playlist API without downloading the full video.
+# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
+calculate_vod_source_duration() {
+    local camera_name="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    
+    # Use a unique temporary directory for playlist chunks to verify connectivity/content
+    local vod_check_dir="${TEMP_DIR}/vod_check_${camera_name}_${start_ts}_${RANDOM}"
+    mkdir -p "$vod_check_dir"
+
+    local cursor=$start_ts
+    local total_duration=0
+    local count=1
+    
+    # Iterate through time chunks to sum up available segments from HLS playlists
+    while [ "$cursor" -lt "$end_ts" ]; do
+        local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
+        if [ "$next_cursor" -gt "$end_ts" ]; then next_cursor=$end_ts; fi
+        
+        local vod_url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
+        local playlist_file="$vod_check_dir/check_${count}.m3u8"
+        
+        # Fetch playlist header to extract segment durations
+        local http_code=$(curl -s -o "$playlist_file" -w "%{http_code}" "$vod_url")
+        
+        if [ "$http_code" == "200" ] && [ -s "$playlist_file" ]; then
+            # Sum up EXTINF values to get accurate seconds for this chunk
+            local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$playlist_file" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
+            chunk_duration=${chunk_duration:-0}
+            total_duration=$((total_duration + chunk_duration))
+        fi
+        
+        cursor=$next_cursor
+        count=$((count + 1))
+    done
+
+    rm -rf "$vod_check_dir"
+    echo "$total_duration"
+}
+
+# Centralized gatekeeper to decide if a pipeline should proceed based on source availability.
+# Purpose: Prevents unnecessary processing/alerts when VOD data is insufficient or unchanged.
+check_source_gatekeeper() {
+    local src="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    local mode="$4" # record | timelapse
+
+    local expected_duration=$(( end_ts - start_ts ))
+    local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
+    
+    # Threshold calculation based on mode
+    local threshold=0
+    if [ "$mode" == "record" ]; then
+        threshold=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
+    else
+        local speed=${TIMELAPSE_SPEED:-60}
+        local ideal_timelapse_duration=$(( expected_duration / speed ))
+        threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
+    fi
+
+    # Retrieve previous FAILED metadata for decision
+    local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    local prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
+    local prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
+    prev_fail_duration=${prev_fail_duration:-0}
+    prev_alert_sent=${prev_alert_sent:-0}
+
+    # Early exit logic: If alert sent and no VOD improvement
+    if [ "$prev_alert_sent" -eq 1 ] && [ "$vod_duration" -le "$prev_fail_duration" ]; then
+        log "[$src] [$mode] Gatekeeper: Skipping slot (VOD ${vod_duration}s <= previous ${prev_fail_duration}s)."
+        return 1
+    fi
+
+    # Insufficient data check
+    if [ "$vod_duration" -lt "$threshold" ]; then
+        if [ "$mode" == "timelapse" ] && [ "$vod_duration" -lt 60 ]; then
+            # Smart skip for timelapse with zero/near-zero duration
+            if [ "$vod_duration" -le "$prev_fail_duration" ]; then return 1; fi
+        fi
+        log "[$src] [$mode] Gatekeeper: Insufficient VOD (${vod_duration}s < ${threshold}s). Proceeding best-effort."
+    fi
+
+    return 0
+}
+
 # Retrieves a specific metric (duration or filesize) from the last failed event
 # Purpose: Used to compare current attempt vs previous failure to decide on improvement
 get_last_fail_metric() {
