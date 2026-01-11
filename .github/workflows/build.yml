@@ -1,10 +1,12 @@
-name: Build and Push Record/Timelapse Image
+name: Build and Push Docker Images
 
 on:
   pull_request:
     paths:
       - 'app.sh'
+      - 'lib/**'
       - 'Dockerfile'
+      - 'web/**'
       - '.github/workflows/build.yml'
   release:
     types: [published]
@@ -14,9 +16,13 @@ on:
       - 'main'
     tags:
       - 'v*.*.*'
+      - 'web-*.*.*'
     paths:
       - 'app.sh'
+      - 'lib/**'
       - 'Dockerfile'
+      - 'web/**'
+      - '.github/workflows/build.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -26,8 +32,35 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      
+      - name: Check for file changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app.sh'
+              - 'lib/**'
+              - 'Dockerfile'
+              - '.github/workflows/build.yml'
+            web:
+              - 'web/**'
+              - '.github/workflows/build.yml'
+
+  build-app:
+    name: Build Record/Timelapse App
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.app == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
 
     steps:
       - name: Checkout repository
@@ -72,3 +105,48 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=record
           cache-to: type=gha,mode=max,scope=record
+
+  build-web:
+    name: Build Web Dashboard
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/web-')) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta-web
+        uses: dock${{ env.REGISTRY }}/${{ github.repository_owner }}/frigate-telegram-record-web
+
+          tags: |
+            type=raw,value=dev,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/web-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=${{ github.sha }},enable=true
+            type=raw,value=edge,enable=${{ github.event_name == 'pull_request' }}
+            type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}nt_name == 'pull_request' }}
+            type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}
+            type=match,pattern=\d.\d.\d$,priority=901
+
+      - name: Build and push Web Dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
