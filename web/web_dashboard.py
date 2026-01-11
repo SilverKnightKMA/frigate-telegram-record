@@ -22,17 +22,23 @@ LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Validates file availability and uses URI 'mode=ro' for safe concurrent read access.
+    Validates file integrity and permissions before returning the connection object.
     """
-    # Verify database file existence to prevent runtime errors during query execution
-    if not os.path.exists(DB_FILE):
+    # Ensure the path is a file, not a directory (common Docker mount issue)
+    if not os.path.isfile(DB_FILE):
         return None
 
+    conn = None
     try:
         conn = sqlite3.connect(f"file:{DB_FILE}?mode=ro", uri=True, timeout=5.0)
         conn.row_factory = sqlite3.Row
+        
+        # Execute a lightweight query to verify read access and DB validity immediately
+        conn.execute("SELECT 1")
         return conn
     except sqlite3.OperationalError:
+        if conn:
+            conn.close()
         return None
 
 def format_timestamp(ts):
