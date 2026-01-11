@@ -104,6 +104,7 @@ log_debug() {
 }
 
 # Executes SQL with a timeout to prevent 'database is locked' errors during concurrency
+# Note: With WAL mode (enabled in migrate.py) and .timeout, race conditions are handled.
 db_exec() {
     log_debug "DB_EXEC: $1"
     sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1"
@@ -339,7 +340,8 @@ echo "[INFO] System Timezone: $TZ"
 # ==============================================================================
 
 init_db() {
-    # Refactor: Use unified 'events' table instead of separate tables
+    # Change: Use unified 'events' table
+    # Reason: Single source of truth for all events, reduces schema complexity
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -353,14 +355,16 @@ init_db() {
         duration INTEGER DEFAULT 0
     );"
 
-    # Create indexes for performance optimization
+    # Change: Added indexes
+    # Reason: Speeds up the frequent SELECT queries in process_time_window
     db_exec "CREATE INDEX IF NOT EXISTS idx_cam_type_status ON events(camera, type, status);"
     db_exec "CREATE INDEX IF NOT EXISTS idx_start_ts ON events(start_ts);"
 
-    # Cleanup old records based on type
+    # Cleanup old records based on type (Retains successful records for RETENTION_DAYS)
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
     db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND created_at < $sent_cleanup_ts;"
 
+    # Cleanup old failures (Retains failed records for ALERT_RETENTION_HOURS)
     local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
     db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
 }
@@ -482,7 +486,6 @@ check_duration_and_status() {
     local src="$1"
     local filepath="$2"
     local expected_sec="$3"
-    # record_id in new schema implies lookup params (camera, start, end)
     local start_ts="$4"
     local end_ts="$5"
 
@@ -513,7 +516,8 @@ check_duration_and_status() {
     if [ "$actual" -lt "$threshold" ]; then
         log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
         
-        # Check against previous failure in DB using new events schema
+        # Change: Query 'events' table for previous failure
+        # Reason: Support partial success logic with new schema
         local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
         prev_duration=${prev_duration:-0}
 
@@ -542,7 +546,8 @@ handle_recovery_actions() {
     local start_ts="$2"
     local end_ts="$3"
     
-    # Look for existing failure alert in events table
+    # Change: Select from 'events'
+    # Reason: Unified table
     local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, message FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
     
     # If no record exists, exit immediately (No-op)
@@ -576,7 +581,7 @@ $body_text"
         fi
     fi
 
-    # Cleanup failure record after success
+    # Change: Delete failed event after recovery
     db_exec "DELETE FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED';"
 }
 
@@ -597,7 +602,7 @@ trigger_failure_alert() {
         return
     fi
 
-    # Check if alert already exists for this slot
+    # Change: Check existing failure in 'events'
     local existing_id=$(db_count "SELECT id FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='$type_code' AND status='FAILED' LIMIT 1;")
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
 
@@ -644,6 +649,7 @@ trigger_failure_alert() {
              # If repeat is on, we update timestamp and Msg ID
              db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val WHERE id=$existing_id;"
         else
+             # Change: Insert into 'events'
              db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val);"
         fi
     fi
@@ -739,6 +745,7 @@ execute_clip_pipeline() {
                         
                         handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
+                        # Change: Insert record into 'events' with type='RECORD'
                         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual);"
                         log "[$src] ✅ Success (MsgID: $sent_msg_id)."
                     fi
@@ -888,6 +895,7 @@ execute_timelapse_pipeline() {
     
     # DB Check #1: Prevent duplicate processing if already successful
     if [ "$run_mode" == "timelapse" ]; then
+        # Change: Check unified events table for existing success
         local exists=$(db_count "SELECT count(*) FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='TIMELAPSE' AND status='SUCCESS';")
         if [ "$exists" -gt 0 ]; then return 0; fi
     fi
@@ -938,6 +946,7 @@ execute_timelapse_pipeline() {
                     
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
+                    # Change: Insert record into 'events' with type='TIMELAPSE'
                     db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual);"
                     log "[$src] Timelapse saved to history."
                     pipeline_success=1
@@ -978,7 +987,8 @@ process_time_window() {
         return
     fi
 
-    # Query DB to find gaps in coverage within the master window (Using unified events table)
+    # Change: Query 'events' table for coverage gaps (type='RECORD')
+    # Reason: Unified table lookup
     local existing_clips=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "SELECT start_ts, end_ts FROM events WHERE camera='$src' AND type='RECORD' AND status='SUCCESS' AND end_ts > $master_start_ts AND start_ts < $master_end_ts ORDER BY start_ts ASC;")
     
     local cursor=$master_start_ts
@@ -1079,7 +1089,7 @@ execute_timelapse_cycle() {
             local slot_end_ts=$(( master_end_ts - offset ))
             local slot_start_ts=$(( slot_end_ts - duration_sec ))
             
-            # DB Check #2 - redundancy check before attempting generation (Unified events table)
+            # Change: Check 'events' table for existing timelapse success
             local exists=$(db_count "SELECT count(*) FROM events WHERE camera='$src' AND start_ts=$slot_start_ts AND end_ts=$slot_end_ts AND type='TIMELAPSE' AND status='SUCCESS';")
             
             if [ "$exists" -eq 0 ]; then
