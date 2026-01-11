@@ -224,18 +224,20 @@
         </div>
     </div>
 
-    <script>
+<script>
         // --- Chart Instances ---
         let timelineChart = null;
         let errorChart = null;
         let countdownVal = 30;
 
-        // --- Init ---
         document.addEventListener('DOMContentLoaded', () => {
             fetchData();
+            // Bộ đếm ngược
             setInterval(() => {
                 countdownVal--;
-                document.getElementById('countdown').innerText = countdownVal + 's';
+                const counter = document.getElementById('countdown');
+                if(counter) counter.innerText = countdownVal + 's';
+                
                 if(countdownVal <= 0) {
                     fetchData();
                     countdownVal = 30;
@@ -247,117 +249,124 @@
             try {
                 // 1. Fetch Basic Stats
                 const statsRes = await fetch('/api/stats');
+                if (!statsRes.ok) throw new Error(`API Stats Error: ${statsRes.status}`);
                 const statsData = await statsRes.json();
-                
                 if(statsData.success) updateStatsUI(statsData);
 
                 // 2. Fetch Visualization Data
                 const vizRes = await fetch('/api/visualization');
+                if (!vizRes.ok) throw new Error(`API Viz Error: ${vizRes.status}`);
                 const vizData = await vizRes.json();
-
                 if(vizData.success) updateCharts(vizData);
 
                 // 3. Fetch Activity Log
                 const actRes = await fetch('/api/recent_activity');
+                if (!actRes.ok) throw new Error(`API Activity Error: ${actRes.status}`);
                 const actData = await actRes.json();
-
                 if(actData.success) updateActivityUI(actData.activities);
 
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('lastUpdated').innerText = 'Updated: ' + new Date().toLocaleTimeString();
+                // Cập nhật giờ
+                const lastUpdated = document.getElementById('lastUpdated');
+                if(lastUpdated) lastUpdated.innerText = 'Updated: ' + new Date().toLocaleTimeString();
 
             } catch (e) {
-                console.error("Fetch Error", e);
+                console.error("Fetch Error:", e);
+                // Hiển thị lỗi lên màn hình để dễ debug
+                const loader = document.getElementById('loader');
+                if(loader) {
+                    loader.innerHTML = `<h3 style="color: red;">Lỗi tải dữ liệu!</h3><p>${e.message}</p><p>Nhấn F12 > Console để xem chi tiết.</p>`;
+                    return; // Không tắt loader mà để hiện thông báo lỗi
+                }
+            } finally {
+                // LUÔN LUÔN tắt loading dù thành công hay thất bại (trừ khi vào catch ở trên)
+                const loader = document.getElementById('loader');
+                // Chỉ tắt nếu không có lỗi nghiêm trọng (nội dung loader chưa bị đổi thành báo lỗi)
+                if(loader && !loader.innerHTML.includes("Lỗi tải dữ liệu")) {
+                    loader.style.display = 'none';
+                }
             }
         }
 
         function updateStatsUI(data) {
             const ov = data.overall;
-            document.getElementById('totalCameras').innerText = ov.total_cameras;
-            document.getElementById('recentRecords').innerText = ov.recent_records_24h;
-            document.getElementById('totalRecords').innerText = ov.total_records;
-            document.getElementById('recentTimelapses').innerText = ov.recent_timelapses_24h;
-            document.getElementById('totalTimelapses').innerText = ov.total_timelapses;
-            document.getElementById('recentFailures').innerText = ov.recent_failures_24h;
-            document.getElementById('totalFailures').innerText = ov.total_failures;
+            setText('totalCameras', ov.total_cameras);
+            setText('recentRecords', ov.recent_records_24h);
+            setText('totalRecords', ov.total_records);
+            setText('recentTimelapses', ov.recent_timelapses_24h);
+            setText('totalTimelapses', ov.total_timelapses);
+            setText('recentFailures', ov.recent_failures_24h);
+            setText('totalFailures', ov.total_failures);
 
             const tbody = document.querySelector('#cameraTable tbody');
-            tbody.innerHTML = '';
-            data.cameras.forEach(cam => {
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${cam.name}</strong></td>
-                        <td><span class="badge badge-success">${cam.success_count}</span></td>
-                        <td><span class="badge badge-warning">${cam.timelapse_count}</span></td>
-                        <td><span class="badge badge-danger">${cam.failed_count}</span></td>
-                        <td>${cam.total_duration}</td>
-                        <td>${cam.last_record}</td>
-                    </tr>
-                `;
-            });
+            if(tbody) {
+                tbody.innerHTML = '';
+                data.cameras.forEach(cam => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${cam.name}</strong></td>
+                            <td><span class="badge badge-success">${cam.success_count}</span></td>
+                            <td><span class="badge badge-warning">${cam.timelapse_count}</span></td>
+                            <td><span class="badge badge-danger">${cam.failed_count}</span></td>
+                            <td>${cam.total_duration}</td>
+                            <td>${cam.last_record}</td>
+                        </tr>
+                    `;
+                });
+            }
         }
 
         function updateCharts(data) {
-            // --- Timeline Chart ---
-            const timelineOptions = {
-                series: data.timeline, // Expected format from backend
-                chart: {
-                    height: 350,
-                    type: 'rangeBar',
-                    toolbar: { show: false }
-                },
-                plotOptions: {
-                    bar: {
-                        horizontal: true,
-                        barHeight: '80%',
-                        rangeBarGroupRows: true 
-                    }
-                },
-                colors: ['#00E396', '#FF4560'], // Default colors if not overridden
-                fill: { type: 'solid' },
-                xaxis: {
-                    type: 'datetime',
-                    labels: { datetimeFormatter: { hour: 'HH:mm' } }
-                },
-                tooltip: {
-                    x: { format: 'dd MMM HH:mm' }
-                },
-                legend: { show: false }
-            };
+            // Kiểm tra phần tử tồn tại trước khi render
+            const timelineEl = document.querySelector("#timelineChart");
+            const errorEl = document.querySelector("#errorChart");
 
-            if(timelineChart) {
-                timelineChart.updateSeries(data.timeline);
-            } else {
-                timelineChart = new ApexCharts(document.querySelector("#timelineChart"), timelineOptions);
-                timelineChart.render();
+            if (timelineEl) {
+                const timelineOptions = {
+                    series: data.timeline || [], 
+                    chart: { height: 350, type: 'rangeBar', toolbar: { show: false }, animations: { enabled: false } }, // Tắt animation để nhẹ hơn
+                    plotOptions: { bar: { horizontal: true, barHeight: '80%', rangeBarGroupRows: true } },
+                    colors: ['#00E396', '#FF4560'],
+                    fill: { type: 'solid' },
+                    xaxis: { type: 'datetime', labels: { datetimeFormatter: { hour: 'HH:mm' } } },
+                    tooltip: { x: { format: 'dd MMM HH:mm' } },
+                    legend: { show: false },
+                    noData: { text: 'Chưa có dữ liệu ghi hình' }
+                };
+
+                if(timelineChart) timelineChart.updateSeries(data.timeline);
+                else {
+                    timelineChart = new ApexCharts(timelineEl, timelineOptions);
+                    timelineChart.render();
+                }
             }
 
-            // --- Error Donut Chart ---
-            const hasErrors = data.errors.series.length > 0;
-            const errorOptions = {
-                series: hasErrors ? data.errors.series : [1],
-                labels: hasErrors ? data.errors.labels : ['No Errors'],
-                chart: { type: 'donut', height: 320 },
-                colors: hasErrors ? ['#FF4560', '#FEB019', '#775DD0', '#008FFB', '#00E396'] : ['#E0E0E0'],
-                dataLabels: { enabled: hasErrors },
-                legend: { position: 'bottom' },
-                plotOptions: { pie: { donut: { labels: { show: true, total: { show: true } } } } }
-            };
+            if (errorEl) {
+                const hasErrors = data.errors && data.errors.series && data.errors.series.length > 0;
+                const errorOptions = {
+                    series: hasErrors ? data.errors.series : [1],
+                    labels: hasErrors ? data.errors.labels : ['Không có lỗi'],
+                    chart: { type: 'donut', height: 320, animations: { enabled: false } },
+                    colors: hasErrors ? ['#FF4560', '#FEB019', '#775DD0', '#008FFB', '#00E396'] : ['#E0E0E0'],
+                    dataLabels: { enabled: hasErrors },
+                    legend: { position: 'bottom' },
+                    plotOptions: { pie: { donut: { labels: { show: true, total: { show: true } } } } }
+                };
 
-            if(errorChart) {
-                errorChart.updateOptions(errorOptions);
-            } else {
-                errorChart = new ApexCharts(document.querySelector("#errorChart"), errorOptions);
-                errorChart.render();
+                if(errorChart) errorChart.updateOptions(errorOptions);
+                else {
+                    errorChart = new ApexCharts(errorEl, errorOptions);
+                    errorChart.render();
+                }
             }
         }
 
         function updateActivityUI(activities) {
             const list = document.getElementById('activityList');
-            list.innerHTML = '';
+            if(!list) return;
             
-            if(activities.length === 0) {
-                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">No recent activity</div>';
+            list.innerHTML = '';
+            if(!activities || activities.length === 0) {
+                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">Chưa có hoạt động nào</div>';
                 return;
             }
 
@@ -376,6 +385,12 @@
                 `;
                 list.innerHTML += html;
             });
+        }
+
+        // Helper an toàn để set text
+        function setText(id, val) {
+            const el = document.getElementById(id);
+            if(el) el.innerText = val;
         }
     </script>
 </body>

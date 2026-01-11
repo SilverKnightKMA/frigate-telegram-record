@@ -17,9 +17,56 @@ app = Flask(__name__)
 DB_FILE = os.environ.get('DB_FILE', '/app/data/video_history.sqlite')
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 
+def init_db_if_missing():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Tạo bảng nếu chưa có (Copy schema từ bash script sang)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sent_ranges (
+                camera TEXT,
+                start_ts INTEGER,
+                end_ts INTEGER,
+                created_at INTEGER,
+                msg_id INTEGER,
+                PRIMARY KEY (camera, start_ts, end_ts)
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alert_history (
+                id TEXT PRIMARY KEY, 
+                camera TEXT,
+                created_at INTEGER,
+                msg_id INTEGER,
+                alert_text TEXT,
+                duration INTEGER
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS timelapse_history (
+                camera TEXT,
+                range_id TEXT,
+                created_at INTEGER,
+                PRIMARY KEY (camera, range_id)
+            );
+        """)
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Init DB Error: {e}")
+
+# Gọi hàm này ngay khi start app
+init_db_if_missing()
+
 def get_db_connection():
     """Create a database connection with timeout"""
     try:
+        # Check if file exists
+        if not os.path.exists(DB_FILE):
+             print(f"Warning: DB file not found at {DB_FILE}. Creating new one.")
+             init_db_if_missing()
+
         conn = sqlite3.connect(DB_FILE, timeout=30.0)
         conn.row_factory = sqlite3.Row
         return conn
