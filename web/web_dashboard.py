@@ -6,9 +6,11 @@ Description: Provides API endpoints for the Dashboard, handles SQLite data retri
 """
 
 import os
+import sys
 import sqlite3
 import base64
 import pytz
+import stat
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 
@@ -20,25 +22,74 @@ DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sql
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
+def diagnose_db_issues(db_path):
+    """
+    Diagnostic function to print detailed permission info when DB fails to open.
+    Logs to stderr so it appears in Docker logs.
+    """
+    try:
+        print(f"--- DATABASE DIAGNOSTICS FOR: {db_path} ---", file=sys.stderr)
+        
+        # 1. Process Info
+        print(f"Process UID: {os.getuid()}, GID: {os.getgid()}", file=sys.stderr)
+
+        # 2. File Existence & Stats
+        if os.path.exists(db_path):
+            st = os.stat(db_path)
+            print(f"DB File Exists. Owner UID: {st.st_uid}, GID: {st.st_gid}, Mode: {oct(st.st_mode)}", file=sys.stderr)
+            print(f"DB File Readable: {os.access(db_path, os.R_OK)}, Writable: {os.access(db_path, os.W_OK)}", file=sys.stderr)
+        else:
+            print("CRITICAL: DB File does not exist!", file=sys.stderr)
+
+        # 3. Directory Permissions (Crucial for WAL/SHM creation)
+        db_dir = os.path.dirname(db_path)
+        if os.path.exists(db_dir):
+            st_dir = os.stat(db_dir)
+            print(f"DB Directory: {db_dir}", file=sys.stderr)
+            print(f"Dir Owner UID: {st_dir.st_uid}, GID: {st_dir.st_gid}, Mode: {oct(st_dir.st_mode)}", file=sys.stderr)
+            print(f"Dir Writable (required for WAL): {os.access(db_dir, os.W_OK)}", file=sys.stderr)
+        else:
+            print(f"CRITICAL: Directory {db_dir} does not exist!", file=sys.stderr)
+
+        # 4. Check for lock/temp files
+        wal_path = db_path + "-wal"
+        shm_path = db_path + "-shm"
+        if os.path.exists(wal_path):
+            print(f"WAL file exists. Writable: {os.access(wal_path, os.W_OK)}", file=sys.stderr)
+        if os.path.exists(shm_path):
+            print(f"SHM file exists. Writable: {os.access(shm_path, os.W_OK)}", file=sys.stderr)
+
+        print("--- END DIAGNOSTICS ---", file=sys.stderr)
+
+    except Exception as e:
+        print(f"Error running diagnostics: {e}", file=sys.stderr)
+
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Switched to standard connection (non-URI) to handle WAL mode locks better in Docker.
+    Includes comprehensive error handling and diagnostics.
     """
-    if not os.path.isfile(DB_FILE):
+    # Quick check for file existence
+    if not os.path.exists(DB_FILE):
+        print(f"Error: Database file not found at {DB_FILE}", file=sys.stderr)
+        diagnose_db_issues(DB_FILE)
         return None
 
     conn = None
     try:
-        # Change: Use standard path instead of URI to avoid strict RO/WAL permission conflicts
-        # Increased timeout to 15s to wait for recorder locks to release
-        conn = sqlite3.connect(DB_FILE, timeout=15.0)
+        # Connect using standard file path to allow automatic WAL handling
+        # Timeout set to 30s to handle high contention scenarios
+        conn = sqlite3.connect(DB_FILE, timeout=30.0)
         conn.row_factory = sqlite3.Row
         
-        # Validation query
+        # Explicitly verify access by running a no-op query
         conn.execute("SELECT 1")
         return conn
-    except sqlite3.OperationalError:
+
+    except sqlite3.OperationalError as e:
+        print(f"SQLite Connection Error: {e}", file=sys.stderr)
+        # Trigger diagnostics to help user debug permissions/mounting
+        diagnose_db_issues(DB_FILE)
         if conn:
             conn.close()
         return None
@@ -72,7 +123,7 @@ def get_overview():
     Returns: General metrics, Stacked Bar Chart data, and Donut Chart data.
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed', 'details': 'Check server logs for diagnostics'}), 500
     
     cursor = conn.cursor()
     
