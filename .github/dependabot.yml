@@ -62,3 +62,12 @@ updates:
     allow:
       - dependency-type: "all"
 
+  - package-ecosystem: docker-compose	
+    directory: "/"
+    schedule:
+      interval: daily
+    labels:
+      - "automated"
+      - "dependencies"
+    assignees:
+      - "SilverKnightKMA"
