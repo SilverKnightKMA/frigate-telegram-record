@@ -60,6 +60,18 @@ def decode_message(b64_msg):
     except Exception:
         return str(b64_msg)
 
+# Helper to convert ISO string input from frontend to timestamp
+def parse_frontend_datetime(iso_str):
+    if not iso_str: return None
+    try:
+        # Frontend 'datetime-local' sends format: YYYY-MM-DDTHH:MM
+        # We parse it as naive time, assume it is LOCAL_TZ, then convert to timestamp
+        dt = datetime.strptime(iso_str, "%Y-%m-%dT%H:%M")
+        localized = LOCAL_TZ.localize(dt)
+        return localized.timestamp()
+    except ValueError:
+        return None
+
 # --- Routes ---
 
 @app.route('/')
@@ -228,6 +240,7 @@ def get_logs():
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
+    # Basic params
     status = request.args.get('status', 'all')
     camera = request.args.get('camera', 'all')
     event_type = request.args.get('type', 'all')
@@ -236,13 +249,23 @@ def get_logs():
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
 
-    # Note: Added search_text to the SELECT for potential use
+    # Advanced params
+    created_from = parse_frontend_datetime(request.args.get('created_from'))
+    created_to = parse_frontend_datetime(request.args.get('created_to'))
+    video_from = parse_frontend_datetime(request.args.get('video_from'))
+    video_to = parse_frontend_datetime(request.args.get('video_to'))
+    dur_min = request.args.get('dur_min', type=float)
+    dur_max = request.args.get('dur_max', type=float)
+    size_min_mb = request.args.get('size_min', type=float)
+    size_max_mb = request.args.get('size_max', type=float)
+
     base_query = """
         SELECT id, camera, type, status, created_at, message, search_text, duration, filesize, fail_type 
         FROM events WHERE 1=1
     """
     params = []
 
+    # Basic filters
     if status != 'all':
         base_query += " AND status = ?"
         params.append(status.upper())
@@ -256,9 +279,36 @@ def get_logs():
         base_query += " AND fail_type = ?"
         params.append(fail_type)
     
+    # Advanced filters (Range)
+    if created_from:
+        base_query += " AND created_at >= ?"
+        params.append(created_from)
+    if created_to:
+        base_query += " AND created_at <= ?"
+        params.append(created_to)
+        
+    if video_from:
+        base_query += " AND start_ts >= ?"
+        params.append(video_from)
+    if video_to:
+        base_query += " AND end_ts <= ?"
+        params.append(video_to)
+
+    if dur_min is not None:
+        base_query += " AND duration >= ?"
+        params.append(dur_min)
+    if dur_max is not None:
+        base_query += " AND duration <= ?"
+        params.append(dur_max)
+        
+    if size_min_mb is not None:
+        base_query += " AND filesize >= ?"
+        params.append(size_min_mb * 1024 * 1024) # Convert MB to Bytes
+    if size_max_mb is not None:
+        base_query += " AND filesize <= ?"
+        params.append(size_max_mb * 1024 * 1024) # Convert MB to Bytes
+
     if search:
-        # PURE NATIVE SQL SEARCH
-        # Using the plain text column 'search_text' instead of decoding on-the-fly
         base_query += " AND (camera LIKE ? OR fail_type LIKE ? OR search_text LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
@@ -270,8 +320,6 @@ def get_logs():
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
-            
-            # Prioritize using search_text for display if available to avoid Python decoding
             display_msg = r['search_text'] if r['search_text'] else decode_message(r['message'])
 
             data.append({

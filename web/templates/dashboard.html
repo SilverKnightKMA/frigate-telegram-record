@@ -66,7 +66,6 @@
 
         /* Modal Styles */
         dialog { 
-            /* Fix: Centers the modal viewport within the window context using automatic margins */
             margin: auto;
             border: none; border-radius: 12px; padding: 0; width: 80%; max-width: 800px;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); 
@@ -75,17 +74,20 @@
         .modal-header { padding: 15px 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb; }
         .modal-body { padding: 20px; max-height: 60vh; overflow-y: auto; white-space: pre-wrap; font-family: monospace; background: #1e1e1e; color: #e5e7eb; line-height: 1.5; }
         
-        /* Controls */
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
-        select, input { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; }
-        button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; }
-        
+        /* Filter Controls Grid Layout */
+        .controls-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; padding: 15px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .control-label { font-size: 0.75rem; font-weight: 600; color: var(--text-sub); text-transform: uppercase; }
+        .input-row { display: flex; gap: 5px; }
+        select, input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; width: 100%; font-size: 0.9rem; }
+        button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; height: 100%; }
+
         /* Timeline specific controls */
         .timeline-toolbar {
             display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;
             background: #f9fafb; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;
         }
-        .control-group { display: flex; align-items: center; margin-right: 10px; }
+        .timeline-btn-group { display: flex; align-items: center; margin-right: 10px; }
         .btn-group-item {
             padding: 6px 12px; border: 1px solid #d1d5db; background: white; cursor: pointer;
             font-size: 0.8rem; transition: all 0.2s;
@@ -164,7 +166,7 @@
             </div>
             
             <div class="timeline-toolbar">
-                <div class="control-group">
+                <div class="timeline-btn-group">
                     <span class="timeline-label">Giờ:</span>
                     <button class="btn-group-item" onclick="setWindow(1)">1h</button>
                     <button class="btn-group-item" onclick="setWindow(6)">6h</button>
@@ -172,7 +174,7 @@
                     <button class="btn-group-item" onclick="setWindow(24)">24h</button>
                 </div>
 
-                <div class="control-group">
+                <div class="timeline-btn-group">
                     <span class="timeline-label">Dài hạn:</span>
                     <button class="btn-group-item" onclick="setWindow(72)">3 Ngày</button>
                     <button class="btn-group-item" onclick="setWindow(168)">1 Tuần</button>
@@ -181,12 +183,12 @@
                     <button class="btn-group-item" onclick="setWindow(8760)">1 Năm</button>
                 </div>
 
-                <div class="control-group" style="margin-left:auto">
+                <div class="timeline-btn-group" style="margin-left:auto">
                     <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮</button>
                     <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">❯</button>
                 </div>
 
-                <div class="control-group">
+                <div class="timeline-btn-group">
                     <input type="datetime-local" id="ts-start" style="font-size:0.8rem; width: 130px;">
                     <span style="color:var(--text-sub); margin:0 5px">-</span>
                     <input type="datetime-local" id="ts-end" style="font-size:0.8rem; width: 130px;">
@@ -205,25 +207,54 @@
 
     <div id="tab-logs" class="tab-content">
         <div class="card">
-            <div class="controls">
-                <select id="f-status" onchange="resetAndLoadLogs()">
-                    <option value="all">Tất cả trạng thái</option>
-                    <option value="SUCCESS">Success</option>
-                    <option value="FAILED">Failed</option>
-                </select>
-                <select id="f-camera" onchange="resetAndLoadLogs()">
-                    <option value="all">Tất cả Camera</option>
-                </select>
-                <select id="f-type" onchange="resetAndLoadLogs()">
-                    <option value="all">Tất cả Event</option>
-                </select>
-                <select id="f-error" onchange="resetAndLoadLogs()">
-                    <option value="all">Tất cả Lỗi</option>
-                </select>
-                
-                <input type="text" id="f-search" placeholder="Tìm kiếm camera, lỗi..." onkeyup="debounceLoadLogs()">
-                <button class="action-btn" onclick="resetAndLoadLogs()">Làm mới</button>
+            <div class="controls-container">
+                <div class="control-group">
+                    <div class="control-label">Thông tin cơ bản</div>
+                    <select id="f-status">
+                        <option value="all">Tất cả trạng thái</option>
+                        <option value="SUCCESS">Success</option>
+                        <option value="FAILED">Failed</option>
+                    </select>
+                    <select id="f-camera"><option value="all">Tất cả Camera</option></select>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">Loại & Lỗi</div>
+                    <select id="f-type"><option value="all">Tất cả Event</option></select>
+                    <select id="f-error"><option value="all">Tất cả Lỗi</option></select>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">Thời gian sự kiện</div>
+                    <input type="datetime-local" id="f-created-from" placeholder="Từ">
+                    <input type="datetime-local" id="f-created-to" placeholder="Đến">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">Thời gian Video</div>
+                    <input type="datetime-local" id="f-video-from" placeholder="Video bắt đầu từ">
+                    <input type="datetime-local" id="f-video-to" placeholder="Video kết thúc đến">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">Chỉ số (Duration/Size)</div>
+                    <div class="input-row">
+                        <input type="number" id="f-dur-min" placeholder="Min Sec">
+                        <input type="number" id="f-dur-max" placeholder="Max Sec">
+                    </div>
+                    <div class="input-row">
+                        <input type="number" id="f-size-min" placeholder="Min MB">
+                        <input type="number" id="f-size-max" placeholder="Max MB">
+                    </div>
+                </div>
+
+                <div class="control-group" style="grid-column: 1 / -1; display:flex; gap:10px; align-items:flex-end;">
+                    <input type="text" id="f-search" placeholder="Tìm kiếm nội dung..." style="flex:1">
+                    <button class="action-btn" onclick="resetAndLoadLogs()">Áp dụng bộ lọc</button>
+                    <button class="action-btn" style="background: #6b7280" onclick="clearFilters()">Reset</button>
+                </div>
             </div>
+
             <div class="table-container">
                 <table id="log-table">
                     <thead>
@@ -285,7 +316,7 @@
             timelineState.start = now.getTime() - (24 * 60 * 60 * 1000);
             syncTimelineInputs(); 
 
-            loadFilters(); // UPDATED: Calls the new filters API
+            loadFilters(); 
             loadOverview();
             
             setInterval(loadOverview, 60000);
@@ -384,7 +415,7 @@
                     y: [item[0], item[1]], 
                     fillColor: item[2] === 1 ? '#10b981' : '#ef4444',
                     meta: item[3],
-                    statusStr: item[2] === 1 ? 'Success' : 'Failed' // Add helper for tooltip
+                    statusStr: item[2] === 1 ? 'Success' : 'Failed'
                 }))
             }));
 
@@ -445,13 +476,10 @@
                     min: minTs,
                     max: maxTs
                 },
-                // CUSTOM TOOLTIP: Hiển thị Ngày + Giờ + Trạng thái
                 tooltip: { 
                     custom: function({series, seriesIndex, dataPointIndex, w}) {
                         const data = w.config.series[seriesIndex].data[dataPointIndex];
-                        // Calculates localized string for start time
                         const start = new Date(data.y[0]).toLocaleString('vi-VN');
-                        // Calculates localized string for end time (Full date + time for precision)
                         const end = new Date(data.y[1]).toLocaleString('vi-VN');
                         const color = data.fillColor;
                         const status = data.statusStr;
@@ -501,15 +529,33 @@
             loadLogs(false);
         }
 
+        function clearFilters() {
+            document.querySelectorAll('.controls-container input, .controls-container select').forEach(el => {
+                if(el.tagName === 'SELECT') el.selectedIndex = 0;
+                else el.value = '';
+            });
+            resetAndLoadLogs();
+        }
+
         async function loadLogs(isAppend = false) {
-            // UPDATED: Collect values from all filter dropdowns
+            // UPDATED: Collect values from expanded filter set
             const status = document.getElementById('f-status').value;
             const cam = document.getElementById('f-camera').value;
             const type = document.getElementById('f-type').value;
             const error = document.getElementById('f-error').value;
             const search = document.getElementById('f-search').value;
-            const btnLoad = document.getElementById('btn-load-more');
             
+            // New filters
+            const createdFrom = document.getElementById('f-created-from').value;
+            const createdTo = document.getElementById('f-created-to').value;
+            const videoFrom = document.getElementById('f-video-from').value;
+            const videoTo = document.getElementById('f-video-to').value;
+            const durMin = document.getElementById('f-dur-min').value;
+            const durMax = document.getElementById('f-dur-max').value;
+            const sizeMin = document.getElementById('f-size-min').value;
+            const sizeMax = document.getElementById('f-size-max').value;
+
+            const btnLoad = document.getElementById('btn-load-more');
             btnLoad.innerText = "Đang tải...";
             btnLoad.disabled = true;
 
@@ -517,9 +563,23 @@
             if (!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
 
             try {
-                // Pass new filter params to API
-                const query = `status=${status}&camera=${cam}&type=${type}&error=${error}&search=${search}&limit=${LOG_LIMIT}&offset=${logOffset}`;
-                const res = await fetch(`/api/logs?${query}`);
+                // Build query string
+                const params = new URLSearchParams({
+                    status: status,
+                    camera: cam,
+                    type: type,
+                    error: error,
+                    search: search,
+                    limit: LOG_LIMIT,
+                    offset: logOffset,
+                    // Append new params
+                    created_from: createdFrom, created_to: createdTo,
+                    video_from: videoFrom, video_to: videoTo,
+                    dur_min: durMin, dur_max: durMax,
+                    size_min: sizeMin, size_max: sizeMax
+                });
+
+                const res = await fetch(`/api/logs?${params.toString()}`);
                 const json = await res.json();
                 
                 if (!isAppend) tbody.innerHTML = '';
@@ -598,13 +658,11 @@
 
         // --- Helpers ---
         async function loadFilters() {
-            // UPDATED: Fetches complete filter data (Cameras, Types, Errors)
             const res = await fetch('/api/filters');
             const data = await res.json();
             
             const fillSelect = (id, items) => {
                 const sel = document.getElementById(id);
-                // Clear existing options except the first one (All)
                 while (sel.options.length > 1) {
                     sel.remove(1);
                 }
