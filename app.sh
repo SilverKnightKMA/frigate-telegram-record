@@ -14,9 +14,12 @@ source /app/lib/06-pipelines.sh
 source /app/lib/07-scheduler.sh
 
 # [Ops] Signal Trap for Graceful Shutdown
-# Purpose: Ensures temporary files are cleaned up and logic terminates safely upon Docker stop.
+# Purpose: Terminates background jobs and cleans resources to ensure safe container stop.
 cleanup_on_exit() {
-    log "Received termination signal. Cleaning up resources..."
+    log "Received termination signal. Stopping background tasks..."
+    # Send SIGTERM to all active background jobs spawned by this shell
+    jobs -p | xargs -r kill -SIGTERM
+    wait
     rm -rf "$TEMP_DIR"/*
     log "Shutdown complete."
     exit 0
@@ -64,10 +67,10 @@ elif [ "$MODE" == "record" ]; then
         log_debug "--- NEW RECORDING LOOP START ---"
         
         # [Ops] Pre-Flight System Checks
-        # Purpose: Validate resources (log size, disk space) before starting a new cycle to prevent crashes.
+        # Purpose: Validate resources (log size, disk space/writability) before starting a new cycle.
         rotate_log_file
         if ! check_disk_space; then
-            log "⚠️ Pausing cycle due to insufficient disk space. Retrying in 5 minutes..."
+            log "⚠️ Pausing cycle due to storage issues. Retrying in 5 minutes..."
             sleep 300
             continue
         fi
@@ -108,10 +111,10 @@ elif [ "$MODE" == "timelapse" ]; then
         log_debug "--- NEW TIMELAPSE LOOP START ---"
 
         # [Ops] Pre-Flight System Checks
-        # Purpose: Validate resources (log size, disk space) before starting intensive rendering tasks.
+        # Purpose: Validate resources (log size, disk space/writability) before starting intensive rendering tasks.
         rotate_log_file
         if ! check_disk_space; then
-            log "⚠️ Pausing timelapse cycle due to insufficient disk space. Retrying in 5 minutes..."
+            log "⚠️ Pausing timelapse cycle due to storage issues. Retrying in 5 minutes..."
             sleep 300
             continue
         fi

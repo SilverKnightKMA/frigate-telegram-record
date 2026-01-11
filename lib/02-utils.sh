@@ -44,11 +44,18 @@ rotate_log_file() {
     fi
 }
 
-# [Ops] Disk Space Check Logic
-# Purpose: Verifies available storage in the Data Directory before starting intensive operations.
-# Returns 0 if space is sufficient, 1 if critical.
+# [Ops] Disk Space & Writability Check Logic
+# Purpose: Verifies available storage and write permissions in Data Directory before start.
+# Returns 0 if space is sufficient and writable, 1 if critical issues found.
 check_disk_space() {
-    # df -k output is in 1K blocks. We compare with MIN_DISK_SPACE_MB converted to KB.
+    # 1. Check Writability (Detect Read-Only Mounts)
+    if ! touch "$DATA_DIR/.perm_check" 2>/dev/null; then
+        log "CRITICAL: Data directory $DATA_DIR is READ-ONLY or not writable."
+        return 1
+    fi
+    rm -f "$DATA_DIR/.perm_check"
+
+    # 2. Check Space (df -k output is in 1K blocks)
     local available_kb=$(df -k "$DATA_DIR" | tail -n 1 | awk '{print $4}')
     local limit_kb=$(( MIN_DISK_SPACE_MB * 1024 ))
 
