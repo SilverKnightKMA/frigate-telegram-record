@@ -5,6 +5,18 @@
 # Purpose: Video validation, duration checks, recovery actions, and alert triggers.
 # ==============================================================================
 
+# Retrieves a specific metric (duration or filesize) from the last failed event
+# Purpose: Used to compare current attempt vs previous failure to decide on improvement
+get_last_fail_metric() {
+    local src="$1"
+    local start_ts="$2"
+    local end_ts="$3"
+    local metric="$4" # 'duration' or 'filesize'
+
+    local value=$(sqlite3 "$DB_FILE" "SELECT $metric FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    echo "${value:-0}"
+}
+
 validate_video() {
     local filepath="$1"
     log_debug "Validating video: $filepath"
@@ -77,9 +89,8 @@ check_duration_and_status() {
     if [ "$actual" -lt "$threshold" ]; then
         log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
         
-        # Support partial success logic with new schema
-        local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
-        prev_duration=${prev_duration:-0}
+        # Helper call to get previous duration
+        local prev_duration=$(get_last_fail_metric "$src" "$start_ts" "$end_ts" "duration")
 
         # If current video is not better than previous attempt, skip it
         if [ "$actual" -le "$prev_duration" ] && [ "$prev_duration" -gt 0 ]; then
@@ -168,49 +179,69 @@ trigger_failure_alert() {
     local duration_val="${duration:-0}"
     local filesize_val="${filesize:-0}"
 
-    # Logic: Only update if it's a "Partial Update" or if repeat alerts are enabled.
-    if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
-        # If we sent a video (Partial Success), update the DB with new msg_id but don't re-alert.
-        if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
-             local current_ts=$(date +%s)
-             # Update the existing record with new message ID, duration, and filesize
-             db_exec "UPDATE events SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, filesize=$filesize_val, created_at=$current_ts WHERE id=$existing_id;"
-             log "[$src] Partial improvement: Updated event DB with new Video MsgID ($SENT_VIDEO_MSG_ID), duration ($duration_val), size ($filesize_val)."
-             return
-        fi
+    # Optimization: Retrieve previous duration to decide on update policy
+    local prev_duration=0
+    if [ "$existing_id" -gt 0 ]; then
+        prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE id=$existing_id;")
+        prev_duration=${prev_duration:-0}
+    fi
 
-        log "[$src] Silent Fail (Already Alerted): $reason"
-    else
-        # Prepare Alert Text
-        local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
-        
-        # Use fail_type in the notification text for clarity
-        local alert_text="🚨 <b>EXECUTION FAILED</b>
+    # Logic: 
+    # 1. Update if it's a "Partial Update" (Video sent).
+    # 2. Update if duration has improved (Current > Prev), bypassing ALERT_REPEAT check.
+    # 3. Otherwise, respect ALERT_REPEAT setting.
+    
+    local should_update="false"
+    if [ "$existing_id" -eq 0 ]; then
+        should_update="true" # First time fail -> Always insert
+    elif [ "$alert_repeat" == "true" ]; then
+        should_update="true" # Repeat on -> Always update
+    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
+        should_update="true" # Video Sent -> Always update (Partial Success)
+    elif [ "$duration_val" -gt "$prev_duration" ]; then
+        should_update="true" # Improvement -> Always update
+        log "[$src] Duration improved ($duration_val > $prev_duration). Bypassing Silent Fail to update DB."
+    fi
+
+    if [ "$should_update" != "true" ]; then
+         log "[$src] Silent Fail (No improvement & Alert Repeat off): $reason"
+         return
+    fi
+
+    # Prepare Alert Text
+    local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
+    local alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
 <b>Context:</b> $mode_upper|$src
 <b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
-        # Send Alert
-        local msg_id_to_save="0"
-        
-        if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
-            msg_id_to_save="$SENT_VIDEO_MSG_ID"
+    # Send Alert
+    local msg_id_to_save="0"
+    
+    if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
+        # If we sent a video (Partial Success), we use that message ID
+        msg_id_to_save="$SENT_VIDEO_MSG_ID"
+    else
+        # Otherwise send a text alert
+        handle_error "$alert_text" "$mode_upper|$src"
+        # If we updated an existing alert, keep the old ID, otherwise use the new one
+        if [ "$existing_id" -gt 0 ] && [ -z "$SENT_ERROR_MSG_ID" ]; then
+             msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
         else
-            handle_error "$alert_text" "$mode_upper|$src"
-            msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
+             msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
         fi
-        
-        # Save to DB (Insert new failure record)
-        local current_ts=$(date +%s)
-        local b64_text=$(echo "$alert_text" | base64 -w 0)
+    fi
+    
+    # Save/Update DB
+    local current_ts=$(date +%s)
+    local b64_text=$(echo "$alert_text" | base64 -w 0)
 
-        if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" == "true" ]; then
-             # If repeat is on, we update timestamp, Msg ID, and filesize
-             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val WHERE id=$existing_id;"
-        else
-             # Insert into 'events' with separate fail_type and filesize columns
-             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val);"
-        fi
+    if [ "$existing_id" -gt 0 ]; then
+         # Update existing record
+         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val WHERE id=$existing_id;"
+    else
+         # Insert new failure record
+         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val);"
     fi
 }

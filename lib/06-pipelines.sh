@@ -98,7 +98,17 @@ execute_clip_pipeline() {
     log_debug "[$src] VOD Pre-check: Found ${vod_duration}s / Required ${threshold}s"
 
     if [ "$vod_duration" -lt "$threshold" ]; then
-        log "[$src] ⏩ Skipping Download: Insufficient VOD data (${vod_duration}s < ${threshold}s)."
+        # Logic: Check previous failure duration.
+        # If current vod_duration <= previous failure, skip (no improvement).
+        # If current vod_duration > previous failure, trigger alert (update DB).
+        local prev_fail_duration=$(get_last_fail_metric "$src" "$start_ts" "$end_ts" "duration")
+        
+        if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -gt 0 ]; then
+             log "[$src] ⏩ Skipping Download: Insufficient VOD (${vod_duration}s) & No improvement over last fail (${prev_fail_duration}s)."
+             return
+        fi
+
+        log "[$src] ⚠️ Skipping Download: Insufficient VOD data (${vod_duration}s < ${threshold}s). Recording failure."
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Pre-check Insufficient VOD (${vod_duration}s)" "$run_mode" "$vod_duration" "0"
         return
     fi
@@ -106,7 +116,6 @@ execute_clip_pipeline() {
 
     # === OPTIMIZATION: Check Remote Size Before Download ===
     # Attempt to get Content-Length via HEAD request. Added -L to follow redirects.
-    # We capture the full header to check status code as well.
     local header_dump=$(curl -sI -L "$url")
     local remote_size=$(echo "$header_dump" | grep -i "Content-Length" | awk '{print $2}' | tr -d '\r')
     local header_status=$(echo "$header_dump" | head -n 1 | awk '{print $2}')
@@ -162,7 +171,7 @@ execute_clip_pipeline() {
             local caption="📷 <b>$cam_name</b>
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
-⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
+⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
 
             log_debug "[$src] Caption prepared, sending to Telegram..."
 
@@ -346,15 +355,15 @@ execute_timelapse_pipeline() {
 📅 $display_date
 ⏰ $display_start - $display_end
 ⏩ Speed: x$speed
-⏱️ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
+⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
 
         if send_telegram_video "$filepath" "$chat_id" "$target_tid" "$caption" "$src"; then
             if [ "$run_mode" == "timelapse" ]; then
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                       trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
-                       pipeline_success=0
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
+                        pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
                     local current_ts=$(date +%s)
