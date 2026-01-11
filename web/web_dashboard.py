@@ -17,7 +17,6 @@ from flask import Flask, render_template, jsonify, request
 app = Flask(__name__)
 
 # System Configuration
-# Ensure absolute path to avoid relative path issues
 DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -28,68 +27,76 @@ def diagnose_db_issues(db_path):
     Logs to stderr so it appears in Docker logs.
     """
     try:
-        print(f"--- DATABASE DIAGNOSTICS FOR: {db_path} ---", file=sys.stderr)
+        sys.stderr.write(f"\n!!! DATABASE DIAGNOSTICS START ({datetime.now()}) !!!\n")
+        sys.stderr.write(f"Target DB: {db_path}\n")
         
         # 1. Process Info
-        print(f"Process UID: {os.getuid()}, GID: {os.getgid()}", file=sys.stderr)
+        sys.stderr.write(f"Process UID: {os.getuid()}, GID: {os.getgid()}\n")
 
         # 2. File Existence & Stats
         if os.path.exists(db_path):
             st = os.stat(db_path)
-            print(f"DB File Exists. Owner UID: {st.st_uid}, GID: {st.st_gid}, Mode: {oct(st.st_mode)}", file=sys.stderr)
-            print(f"DB File Readable: {os.access(db_path, os.R_OK)}, Writable: {os.access(db_path, os.W_OK)}", file=sys.stderr)
+            sys.stderr.write(f"DB File: Found. Owner UID: {st.st_uid}, GID: {st.st_gid}, Mode: {oct(st.st_mode)}\n")
+            sys.stderr.write(f"DB Access: R_OK={os.access(db_path, os.R_OK)}, W_OK={os.access(db_path, os.W_OK)}\n")
         else:
-            print("CRITICAL: DB File does not exist!", file=sys.stderr)
+            sys.stderr.write("CRITICAL: DB File does not exist!\n")
 
         # 3. Directory Permissions (Crucial for WAL/SHM creation)
         db_dir = os.path.dirname(db_path)
         if os.path.exists(db_dir):
             st_dir = os.stat(db_dir)
-            print(f"DB Directory: {db_dir}", file=sys.stderr)
-            print(f"Dir Owner UID: {st_dir.st_uid}, GID: {st_dir.st_gid}, Mode: {oct(st_dir.st_mode)}", file=sys.stderr)
-            print(f"Dir Writable (required for WAL): {os.access(db_dir, os.W_OK)}", file=sys.stderr)
+            sys.stderr.write(f"DB Dir: {db_dir}. Owner UID: {st_dir.st_uid}, GID: {st_dir.st_gid}, Mode: {oct(st_dir.st_mode)}\n")
+            sys.stderr.write(f"Dir Access: R_OK={os.access(db_dir, os.R_OK)}, W_OK={os.access(db_dir, os.W_OK)}\n")
+            
+            # Check for WAL/SHM files
+            wal_path = db_path + "-wal"
+            shm_path = db_path + "-shm"
+            if os.path.exists(wal_path):
+                 sys.stderr.write(f"WAL File: Exists. R_OK={os.access(wal_path, os.R_OK)}, W_OK={os.access(wal_path, os.W_OK)}\n")
+            else:
+                 sys.stderr.write("WAL File: Not found (SQLite needs write access to Dir to create this)\n")
         else:
-            print(f"CRITICAL: Directory {db_dir} does not exist!", file=sys.stderr)
+            sys.stderr.write(f"CRITICAL: Directory {db_dir} does not exist!\n")
 
-        # 4. Check for lock/temp files
-        wal_path = db_path + "-wal"
-        shm_path = db_path + "-shm"
-        if os.path.exists(wal_path):
-            print(f"WAL file exists. Writable: {os.access(wal_path, os.W_OK)}", file=sys.stderr)
-        if os.path.exists(shm_path):
-            print(f"SHM file exists. Writable: {os.access(shm_path, os.W_OK)}", file=sys.stderr)
-
-        print("--- END DIAGNOSTICS ---", file=sys.stderr)
+        sys.stderr.write("!!! DATABASE DIAGNOSTICS END !!!\n\n")
+        sys.stderr.flush()
 
     except Exception as e:
-        print(f"Error running diagnostics: {e}", file=sys.stderr)
+        sys.stderr.write(f"Error running diagnostics: {e}\n")
+        sys.stderr.flush()
 
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Includes comprehensive error handling and diagnostics.
+    Now forces a table read to catch 'unable to open database file' errors early.
     """
-    # Quick check for file existence
     if not os.path.exists(DB_FILE):
-        print(f"Error: Database file not found at {DB_FILE}", file=sys.stderr)
+        sys.stderr.write(f"Error: Database file not found at {DB_FILE}\n")
         diagnose_db_issues(DB_FILE)
         return None
 
     conn = None
     try:
-        # Connect using standard file path to allow automatic WAL handling
-        # Timeout set to 30s to handle high contention scenarios
-        conn = sqlite3.connect(DB_FILE, timeout=30.0)
+        # Timeout set to 10s. 
+        # Note: We do NOT use uri=True anymore to avoid strict locking issues in Docker
+        conn = sqlite3.connect(DB_FILE, timeout=10.0)
         conn.row_factory = sqlite3.Row
         
-        # Explicitly verify access by running a no-op query
-        conn.execute("SELECT 1")
+        # CHANGED: Execute a query on the ACTUAL TABLE. 
+        # 'SELECT 1' is too simple and passes even if the main table file is locked/unreadable.
+        # This will force the OperationalError to happen HERE, so we can catch it.
+        conn.execute("SELECT 1 FROM events LIMIT 1")
+        
         return conn
 
     except sqlite3.OperationalError as e:
-        print(f"SQLite Connection Error: {e}", file=sys.stderr)
-        # Trigger diagnostics to help user debug permissions/mounting
-        diagnose_db_issues(DB_FILE)
+        sys.stderr.write(f"\n[Connection Error] Could not connect to DB: {e}\n")
+        diagnose_db_issues(DB_FILE) # Run diagnostics immediately
+        if conn:
+            conn.close()
+        return None
+    except Exception as e:
+        sys.stderr.write(f"\n[Unexpected Error] {e}\n")
         if conn:
             conn.close()
         return None
@@ -120,20 +127,16 @@ def index():
 def get_overview():
     """
     API endpoint: Overview Tab
-    Returns: General metrics, Stacked Bar Chart data, and Donut Chart data.
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'Database connect failed', 'details': 'Check server logs for diagnostics'}), 500
+    if not conn: 
+        return jsonify({'error': 'Database connect failed', 'details': 'Check container logs for diagnostics'}), 500
     
     cursor = conn.cursor()
-    
-    # Date filter (default 1 day)
     days = request.args.get('days', 1, type=int)
-    cutoff_dt = datetime.now(pytz.utc) - timedelta(days=days)
-    cutoff_ts = cutoff_dt.timestamp()
+    cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=days)).timestamp()
 
     try:
-        # Aggregate Metrics
         query_metrics = """
             SELECT 
                 COUNT(*) as total_jobs,
@@ -145,11 +148,9 @@ def get_overview():
         """
         metrics = cursor.execute(query_metrics, (cutoff_ts,)).fetchone()
         
-        # Get latest update timestamp
         last_update_row = cursor.execute("SELECT MAX(created_at) FROM events").fetchone()
         last_update = last_update_row[0] if last_update_row else None
 
-        # Data for Stacked Bar Chart
         query_daily = """
             SELECT 
                 date(created_at, 'unixepoch', 'localtime') as day_str,
@@ -162,7 +163,6 @@ def get_overview():
         """
         daily_stats = cursor.execute(query_daily, (cutoff_ts,)).fetchall()
 
-        # Data for Donut Chart
         query_reasons = """
             SELECT fail_type, COUNT(*) as count 
             FROM events 
@@ -171,12 +171,9 @@ def get_overview():
         """
         fail_reasons = cursor.execute(query_reasons, (cutoff_ts,)).fetchall()
 
-        # Calculate success rate
         total = metrics['total_jobs'] or 0
         success_count = metrics['success_jobs'] or 0
         success_rate = round((success_count / total * 100), 1) if total > 0 else 0
-        
-        # Format storage unit
         storage_bytes = metrics['total_storage'] or 0
         storage_fmt = f"{storage_bytes/1024**3:.2f} GB" if storage_bytes > 1024**3 else f"{storage_bytes/1024**2:.2f} MB"
 
@@ -201,11 +198,7 @@ def get_overview():
 
 @app.route('/api/timeline')
 def get_timeline():
-    """
-    API endpoint: Timeline Tab
-    Returns: Data for Gantt/Heatmap chart to visualize recording gaps.
-    Include both SUCCESS (Green) and FAILED (Red) statuses.
-    """
+    """API endpoint: Timeline Tab"""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -221,7 +214,6 @@ def get_timeline():
         return jsonify({'error': 'Invalid date format'}), 400
 
     try:
-        # Modified Query: Fetch both SUCCESS and FAILED to visualize status colors
         query = """
             SELECT camera, start_ts, end_ts, status
             FROM events 
@@ -235,11 +227,7 @@ def get_timeline():
         for r in rows:
             cam = r['camera']
             if cam not in series_data: series_data[cam] = []
-            
-            # Determine color based on status (Backend logic for consistency)
-            # Success -> Green (#10b981), Failed -> Red (#ef4444)
             fill_color = '#10b981' if r['status'] == 'SUCCESS' else '#ef4444'
-
             series_data[cam].append({
                 'x': cam,
                 'y': [r['start_ts'] * 1000, r['end_ts'] * 1000],
@@ -254,10 +242,7 @@ def get_timeline():
 
 @app.route('/api/logs')
 def get_logs():
-    """
-    API endpoint: Logs Tab
-    Supports: Filter, Search, and Pagination (Offset/Limit).
-    """
+    """API endpoint: Logs Tab"""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -265,8 +250,6 @@ def get_logs():
     status = request.args.get('status', 'all')
     camera = request.args.get('camera', 'all')
     search = request.args.get('search', '')
-    
-    # Pagination parameters
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
 
@@ -279,22 +262,18 @@ def get_logs():
     if status != 'all':
         base_query += " AND status = ?"
         params.append(status.upper())
-    
     if camera != 'all':
         base_query += " AND camera = ?"
         params.append(camera)
-
     if search:
         base_query += " AND (camera LIKE ? OR fail_type LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
 
-    # Apply pagination
     base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     try:
         rows = cursor.execute(base_query, params).fetchall()
-        
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
@@ -315,10 +294,7 @@ def get_logs():
 
 @app.route('/api/performance')
 def get_performance():
-    """
-    API endpoint: Performance Tab
-    Analyzes server performance (Processing Time vs Duration) and storage trends.
-    """
+    """API endpoint: Performance Tab"""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -326,7 +302,6 @@ def get_performance():
     cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=7)).timestamp()
 
     try:
-        # Line Chart: Duration vs Processing Time
         query_perf = """
             SELECT created_at, duration, process_sec 
             FROM events 
@@ -341,7 +316,6 @@ def get_performance():
             'processing': [r['process_sec'] for r in rows]
         }
 
-        # Bar Chart: Storage Usage Trend
         query_store = """
             SELECT date(created_at, 'unixepoch', 'localtime') as d, SUM(filesize) as total
             FROM events WHERE created_at > ?
@@ -350,16 +324,15 @@ def get_performance():
         rows_store = cursor.execute(query_store, (cutoff_ts,)).fetchall()
         store_data = {
             'dates': [r['d'] for r in rows_store],
-            'sizes': [round((r['total'] or 0)/(1024*1024), 2) for r in rows_store] # Unit: MB
+            'sizes': [round((r['total'] or 0)/(1024*1024), 2) for r in rows_store]
         }
-
         return jsonify({'performance': perf_data, 'storage': store_data})
     finally:
         conn.close()
 
 @app.route('/api/cameras')
 def get_cameras():
-    """Fetches unique camera names for filter dropdown."""
+    """Fetches unique camera names."""
     conn = get_db_connection()
     if not conn: return jsonify([])
     try:
