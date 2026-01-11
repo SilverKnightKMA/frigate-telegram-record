@@ -9,15 +9,11 @@ from flask import Flask, render_template, jsonify, request
 app = Flask(__name__)
 
 # System Configuration
-# Ensure absolute path
 DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
 def diagnose_db_issues(db_path, error_msg):
-    """
-    Log critical permission details when connection fails.
-    """
     try:
         sys.stderr.write(f"\n[DIAGNOSTICS] Connection failed: {error_msg}\n")
         if os.path.exists(db_path):
@@ -31,50 +27,31 @@ def diagnose_db_issues(db_path, error_msg):
         pass
 
 def get_db_connection():
-    """
-    Establishes a connection to the SQLite Database.
-    CRITICAL CHANGE: Uses 'immutable=1' to force reading from Read-Only filesystems (Docker mounts).
-    """
     if not os.path.exists(DB_FILE):
         return None
-
     conn = None
     try:
-        # URI Parameter Explanation:
-        # file:{DB_FILE}  -> Path to file
-        # mode=ro         -> Open in Read-Only mode
-        # immutable=1     -> CRITICAL for Docker RO mounts. Tells SQLite the file cannot be modified,
-        #                    disabling WAL/SHM file creation requirements.
         db_uri = f"file:{DB_FILE}?mode=ro&immutable=1"
-        
         conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
-        
-        # Verify connection by reading one row
         conn.execute("SELECT 1 FROM events LIMIT 1")
-        
         return conn
-
     except sqlite3.OperationalError as e:
         diagnose_db_issues(DB_FILE, str(e))
-        if conn:
-            conn.close()
+        if conn: conn.close()
         return None
     except Exception as e:
         sys.stderr.write(f"Unexpected DB Error: {e}\n")
-        if conn:
-            conn.close()
+        if conn: conn.close()
         return None
 
 def format_timestamp(ts):
-    """Converts Unix Timestamp (UTC) to Local Time string (GMT+7)."""
     if not ts: return ""
     dt_utc = datetime.fromtimestamp(ts, pytz.utc)
     dt_local = dt_utc.astimezone(LOCAL_TZ)
     return dt_local.strftime('%Y-%m-%d %H:%M:%S')
 
 def decode_message(b64_msg):
-    """Decodes Base64 log content to UTF-8, handles exceptions."""
     if not b64_msg: return ""
     try:
         return base64.b64decode(b64_msg).decode('utf-8', errors='replace')
@@ -85,15 +62,12 @@ def decode_message(b64_msg):
 
 @app.route('/')
 def index():
-    """Renders the main Dashboard SPA interface."""
     return render_template('dashboard.html')
 
 @app.route('/api/overview')
 def get_overview():
-    """API endpoint: Overview Tab"""
     conn = get_db_connection()
-    if not conn: 
-        return jsonify({'error': 'Database connect failed', 'details': 'Check logs'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed', 'details': 'Check logs'}), 500
     
     cursor = conn.cursor()
     days = request.args.get('days', 1, type=int)
@@ -163,24 +137,21 @@ def get_overview():
 def get_timeline():
     """
     API endpoint: Timeline Tab
-    Optimized for dynamic loading and heavy datasets merging.
-    Accepts explicit start/end timestamps to support zooming outside the initial day.
+    Optimized for Visualization Performance.
+    Target: ~300 blocks per camera row regardless of time range.
     """
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    # Determine time range (priority: explicit timestamps > date param > default 24h)
     start_ts_arg = request.args.get('start', type=float)
     end_ts_arg = request.args.get('end', type=float)
     date_str = request.args.get('date')
 
     if start_ts_arg and end_ts_arg:
-        # Frontend is requesting a specific zoom range
         ts_start = start_ts_arg
         ts_end = end_ts_arg
     else:
-        # Fallback to date selection (Default behavior)
         target_date = date_str if date_str else datetime.now(LOCAL_TZ).strftime('%Y-%m-%d')
         try:
             local_dt_start = datetime.strptime(target_date, '%Y-%m-%d')
@@ -191,7 +162,13 @@ def get_timeline():
             return jsonify({'error': 'Invalid date format'}), 400
 
     try:
-        # Fetch detailed error info only for FAILED events to minimize IO
+        # Dynamic LOD Calculation
+        # Limit to max ~300 visual blocks per camera to ensure 60fps scrolling
+        TARGET_BLOCKS = 300
+        view_duration = ts_end - ts_start
+        # Ensure minimal threshold is at least 30s to avoid microscopic merges
+        dynamic_threshold = max(30.0, view_duration / float(TARGET_BLOCKS))
+
         query = """
             SELECT camera, start_ts, end_ts, status, fail_type, message
             FROM events 
@@ -203,20 +180,22 @@ def get_timeline():
         
         grouped_data = {}
         
-        # Threshold for merging SUCCESS blocks (e.g., gap < 60 seconds is considered continuous)
-        MERGE_THRESHOLD = 60 
-
         for r in rows:
             cam = r['camera']
             if cam not in grouped_data:
                 grouped_data[cam] = []
             
             status_code = 1 if r['status'] == 'SUCCESS' else 0
-            # Additional meta data for click interaction (only needed for failures)
-            meta = {
-                'error': r['fail_type'],
-                'msg': decode_message(r['message'])
-            } if status_code == 0 else None
+            fail_type = r['fail_type'] if status_code == 0 else None
+            
+            # Metadata structure: Stores counts of each error type
+            meta = None
+            if status_code == 0:
+                meta = {
+                    'count': 1,
+                    'breakdown': {fail_type: 1}, # Dictionary to count occurrences
+                    'sample_msg': decode_message(r['message'])
+                }
 
             current_block = [
                 r['start_ts'] * 1000, 
@@ -225,19 +204,23 @@ def get_timeline():
                 meta
             ]
 
-            # Merging Logic: 
-            # If current is SUCCESS and previous was SUCCESS and they are adjacent, merge them.
-            # FAILED events are never merged to preserve error details.
             last_idx = len(grouped_data[cam]) - 1
             if last_idx >= 0:
                 last_block = grouped_data[cam][last_idx]
                 prev_status = last_block[2]
-                prev_end = last_block[1] / 1000 # convert back to sec for comparison
+                prev_end = last_block[1] / 1000
                 curr_start = r['start_ts']
 
-                if status_code == 1 and prev_status == 1 and (curr_start - prev_end) <= MERGE_THRESHOLD:
-                    # Extend the previous block's end time
-                    last_block[1] = current_block[1]
+                # Merge Logic: Same status AND within dynamic threshold
+                if status_code == prev_status and (curr_start - prev_end) <= dynamic_threshold:
+                    last_block[1] = current_block[1] # Extend block
+                    
+                    if status_code == 0:
+                        # Aggregate Error Metadata
+                        last_block[3]['count'] += 1
+                        # Increment breakdown count
+                        current_count = last_block[3]['breakdown'].get(fail_type, 0)
+                        last_block[3]['breakdown'][fail_type] = current_count + 1
                 else:
                     grouped_data[cam].append(current_block)
             else:
@@ -249,7 +232,6 @@ def get_timeline():
 
 @app.route('/api/logs')
 def get_logs():
-    """API endpoint: Logs Tab"""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -301,7 +283,6 @@ def get_logs():
 
 @app.route('/api/performance')
 def get_performance():
-    """API endpoint: Performance Tab"""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -339,7 +320,6 @@ def get_performance():
 
 @app.route('/api/cameras')
 def get_cameras():
-    """Fetches unique camera names."""
     conn = get_db_connection()
     if not conn: return jsonify([])
     try:

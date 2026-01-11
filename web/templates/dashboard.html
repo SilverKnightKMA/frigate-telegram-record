@@ -223,7 +223,6 @@
             document.getElementById(`tab-${tabId}`).classList.add('active');
             event.target.classList.add('active');
 
-            // Initial load for timeline without params (uses date input)
             if(tabId === 'timeline') loadTimeline();
             if(tabId === 'logs') resetAndLoadLogs();
             if(tabId === 'perf') loadPerformance();
@@ -258,9 +257,7 @@
             const date = document.getElementById('timeline-date').value;
             let url = `/api/timeline?date=${date}`;
             
-            // If explicit bounds are provided (from zoom/scroll), request specific range
             if (minTs && maxTs) {
-                // Convert ms (chart) to seconds (api)
                 url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
             }
 
@@ -271,19 +268,17 @@
                 name: cam,
                 data: json.data[cam].map(item => ({
                     x: cam,
-                    y: [item[0], item[1]], // Timestamps in ms
+                    y: [item[0], item[1]], 
                     fillColor: item[2] === 1 ? '#10b981' : '#ef4444',
-                    meta: item[3] // Contains error info if failed
+                    meta: item[3] 
                 }))
             }));
 
-            // Update existing chart if it exists and we have bounds (dynamic update)
             if (charts.timeline && minTs) {
                 charts.timeline.updateSeries(series);
                 return;
             }
 
-            // Configuration for new chart
             const options = {
                 series: series,
                 chart: { 
@@ -291,22 +286,20 @@
                     type: 'rangeBar', 
                     toolbar: { show: true },
                     background: '#e5e7eb',
-                    animations: { enabled: false }, // Disabled for performance
+                    animations: { enabled: false }, 
                     zoom: { enabled: true },
                     events: {
-                        // Handle clicking on "Failed" blocks
                         dataPointSelection: function(event, chartContext, config) {
                             const dp = config.w.config.series[config.seriesIndex].data[config.dataPointIndex];
-                            // Check if it's a failed block (item[2] == 0 from server, mapped to meta)
                             if (dp.meta) {
                                 showModal({
                                     camera: dp.x,
                                     time: new Date(dp.y[0]).toLocaleString('vi-VN'),
-                                    message: `Type: ${dp.meta.error}\nDetail: ${dp.meta.msg}`
+                                    isMerged: true,
+                                    meta: dp.meta
                                 });
                             }
                         },
-                        // Dynamic Loading triggers
                         beforeZoom: function(chartContext, { xaxis }) {
                             debounceTimelineUpdate(xaxis.min, xaxis.max);
                         },
@@ -346,7 +339,6 @@
 
         function debounceTimelineUpdate(min, max) {
             clearTimeout(timelineDebounce);
-            // Wait 500ms after user stops moving to fetch new data
             timelineDebounce = setTimeout(() => {
                 loadTimeline(min, max);
             }, 500);
@@ -385,120 +377,3 @@
                 json.data.forEach(row => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td>${row.time}</td>
-                        <td><strong>${row.camera}</strong></td>
-                        <td>${row.type}</td>
-                        <td><span class="badge ${row.status.toLowerCase()}">${row.status}</span></td>
-                        <td>${row.duration}</td>
-                        <td>${row.size}</td>
-                        <td style="color:var(--danger)">${row.error_type}</td>
-                    `;
-                    tr.onclick = () => showModal(row);
-                    tbody.appendChild(tr);
-                });
-
-                logOffset += LOG_LIMIT;
-                
-                if (json.data.length < LOG_LIMIT) {
-                    btnLoad.innerText = "Đã hiển thị hết";
-                    btnLoad.disabled = true;
-                } else {
-                    btnLoad.innerText = "Xem thêm (50 dòng)";
-                    btnLoad.disabled = false;
-                }
-
-            } catch (e) {
-                if(!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Lỗi kết nối server</td></tr>';
-                btnLoad.innerText = "Lỗi tải trang";
-            }
-        }
-
-        async function loadPerformance() {
-            const res = await fetch('/api/performance');
-            const data = await res.json();
-
-            const optLine = {
-                series: [
-                    { name: 'Duration (s)', type: 'line', data: data.performance.duration },
-                    { name: 'Processing (s)', type: 'line', data: data.performance.processing }
-                ],
-                chart: { height: 350, type: 'line', zoom: { enabled: false }, animations: { enabled: false } },
-                stroke: { width: [2, 2], curve: 'smooth' },
-                labels: data.performance.categories,
-                xaxis: { type: 'category', labels: { show: false } },
-                colors: ['#2563eb', '#f59e0b'],
-                yaxis: [
-                    { title: { text: "Video Duration" } },
-                    { opposite: true, title: { text: "Processing Time" } }
-                ]
-            };
-            if(charts.perfLine) charts.perfLine.destroy();
-            charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optLine);
-            charts.perfLine.render();
-
-            const optBar = {
-                series: [{ name: 'Storage (MB)', data: data.storage.sizes }],
-                chart: { height: 350, type: 'bar', animations: { enabled: false } },
-                xaxis: { categories: data.storage.dates },
-                colors: ['#8b5cf6'],
-                dataLabels: { enabled: false }
-            };
-            if(charts.storeBar) charts.storeBar.destroy();
-            charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);
-            charts.storeBar.render();
-        }
-
-        // --- Helpers ---
-        async function loadCameras() {
-            const res = await fetch('/api/cameras');
-            const cams = await res.json();
-            const sel = document.getElementById('f-camera');
-            cams.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c; opt.innerText = c;
-                sel.appendChild(opt);
-            });
-        }
-
-        function showModal(row) {
-            document.getElementById('modal-title').innerText = `${row.camera} (${row.time})`;
-            document.getElementById('modal-content').innerText = row.message || "No content";
-            document.getElementById('msg-modal').showModal();
-        }
-
-        function debounceLoadLogs() {
-            clearTimeout(updateTimer);
-            updateTimer = setTimeout(resetAndLoadLogs, 500);
-        }
-
-        function renderStackedBar(data) {
-            const options = {
-                series: [
-                    { name: 'Success', data: data.map(d => d.success) }, 
-                    { name: 'Failed', data: data.map(d => d.failed) }
-                ],
-                chart: { type: 'bar', height: 350, stacked: true, animations: { enabled: false } },
-                colors: ['#10b981', '#ef4444'],
-                xaxis: { categories: data.map(d => d.date) },
-                plotOptions: { bar: { borderRadius: 4, columnWidth: '40%' } }
-            };
-            if(charts.daily) charts.daily.destroy();
-            charts.daily = new ApexCharts(document.querySelector("#chart-daily"), options);
-            charts.daily.render();
-        }
-
-        function renderDonut(data) {
-            const options = {
-                series: data.series,
-                labels: data.labels,
-                chart: { type: 'donut', height: 350, animations: { enabled: false } },
-                colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
-                plotOptions: { pie: { donut: { size: '65%' } } }
-            };
-            if(charts.reasons) charts.reasons.destroy();
-            charts.reasons = new ApexCharts(document.querySelector("#chart-reasons"), options);
-            charts.reasons.render();
-        }
-    </script>
-</body>
-</html>
