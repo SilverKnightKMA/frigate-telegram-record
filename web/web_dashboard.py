@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Frigate Telegram Recorder - Web Dashboard Backend
-Architecture: Flask API + SQLite (URI Read-Only Mode)
+Architecture: Flask API + SQLite (Immutable Read-Only Mode)
 Description: Provides API endpoints for the Dashboard, handles SQLite data retrieval.
 """
 
@@ -10,88 +10,65 @@ import sys
 import sqlite3
 import base64
 import pytz
-import stat
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
 # System Configuration
-# Ensure absolute path to avoid relative path issues
+# Ensure absolute path
 DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
-def diagnose_db_issues(db_path):
+def diagnose_db_issues(db_path, error_msg):
     """
-    Diagnostic function to print detailed permission info when DB fails to open.
-    Logs to stderr so it appears in Docker logs.
+    Log critical permission details when connection fails.
     """
     try:
-        sys.stderr.write(f"\n!!! DATABASE DIAGNOSTICS START ({datetime.now()}) !!!\n")
-        sys.stderr.write(f"Target DB: {db_path}\n")
-        
-        # 1. Process Info
-        sys.stderr.write(f"Process UID: {os.getuid()}, GID: {os.getgid()}\n")
-
-        # 2. File Existence & Stats
+        sys.stderr.write(f"\n[DIAGNOSTICS] Connection failed: {error_msg}\n")
         if os.path.exists(db_path):
             st = os.stat(db_path)
-            sys.stderr.write(f"DB File: Found. Owner UID: {st.st_uid}, GID: {st.st_gid}, Mode: {oct(st.st_mode)}\n")
-            sys.stderr.write(f"DB Access: R_OK={os.access(db_path, os.R_OK)}, W_OK={os.access(db_path, os.W_OK)}\n")
+            sys.stderr.write(f"[DIAGNOSTICS] DB File: {db_path} | Size: {st.st_size} bytes | Mode: {oct(st.st_mode)}\n")
+            sys.stderr.write(f"[DIAGNOSTICS] Access: R_OK={os.access(db_path, os.R_OK)} | W_OK={os.access(db_path, os.W_OK)}\n")
         else:
-            sys.stderr.write("CRITICAL: DB File does not exist!\n")
-
-        # 3. Directory Permissions
-        db_dir = os.path.dirname(db_path)
-        if os.path.exists(db_dir):
-            st_dir = os.stat(db_dir)
-            sys.stderr.write(f"DB Dir: {db_dir}. Owner UID: {st_dir.st_uid}, GID: {st_dir.st_gid}, Mode: {oct(st_dir.st_mode)}\n")
-            sys.stderr.write(f"Dir Access: R_OK={os.access(db_dir, os.R_OK)}, W_OK={os.access(db_dir, os.W_OK)}\n")
-        else:
-            sys.stderr.write(f"CRITICAL: Directory {db_dir} does not exist!\n")
-
-        sys.stderr.write("!!! DATABASE DIAGNOSTICS END !!!\n\n")
+            sys.stderr.write(f"[DIAGNOSTICS] CRITICAL: File not found at {db_path}\n")
         sys.stderr.flush()
-
-    except Exception as e:
-        sys.stderr.write(f"Error running diagnostics: {e}\n")
-        sys.stderr.flush()
+    except Exception:
+        pass
 
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Uses URI mode with 'mode=ro' and 'nolock=1' to bypass Read-Only filesystem restrictions.
+    CRITICAL CHANGE: Uses 'immutable=1' to force reading from Read-Only filesystems (Docker mounts).
     """
     if not os.path.exists(DB_FILE):
-        sys.stderr.write(f"Error: Database file not found at {DB_FILE}\n")
-        diagnose_db_issues(DB_FILE)
         return None
 
     conn = None
     try:
-        # Change: Use URI syntax to force Read-Only and No-Lock
-        # ?mode=ro: Tells SQLite to open in Read-Only mode.
-        # &nolock=1: Critical for Read-Only mounts. Tells SQLite NOT to try creating lock files, 
-        #            which avoids the "unable to open database file" error when the directory is not writable.
-        db_uri = f"file:{DB_FILE}?mode=ro&nolock=1"
+        # URI Parameter Explanation:
+        # file:{DB_FILE}  -> Path to file
+        # mode=ro         -> Open in Read-Only mode
+        # immutable=1     -> CRITICAL for Docker RO mounts. Tells SQLite the file cannot be modified,
+        #                    disabling WAL/SHM file creation requirements.
+        db_uri = f"file:{DB_FILE}?mode=ro&immutable=1"
         
         conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
         
-        # Verify connection with a real query
+        # Verify connection by reading one row
         conn.execute("SELECT 1 FROM events LIMIT 1")
         
         return conn
 
     except sqlite3.OperationalError as e:
-        sys.stderr.write(f"\n[Connection Error] Could not connect to DB: {e}\n")
-        diagnose_db_issues(DB_FILE)
+        diagnose_db_issues(DB_FILE, str(e))
         if conn:
             conn.close()
         return None
     except Exception as e:
-        sys.stderr.write(f"\n[Unexpected Error] {e}\n")
+        sys.stderr.write(f"Unexpected DB Error: {e}\n")
         if conn:
             conn.close()
         return None
@@ -123,7 +100,7 @@ def get_overview():
     """API endpoint: Overview Tab"""
     conn = get_db_connection()
     if not conn: 
-        return jsonify({'error': 'Database connect failed', 'details': 'Check container logs for diagnostics'}), 500
+        return jsonify({'error': 'Database connect failed', 'details': 'Check logs'}), 500
     
     cursor = conn.cursor()
     days = request.args.get('days', 1, type=int)
