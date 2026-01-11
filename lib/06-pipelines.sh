@@ -6,7 +6,8 @@
 # ==============================================================================
 
 # Calculates the total duration of available footage for a given time range
-# by querying Frigate's VOD playlist API without downloading the full video.# Purpose: Used to pre-check if sufficient source data exists before expensive operations.calculate_vod_source_duration() {
+# by querying Frigate's VOD playlist API without downloading the full video.# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
+calculate_vod_source_duration() {
     local camera_name="$1"
     local start_ts="$2"
     local end_ts="$3"
