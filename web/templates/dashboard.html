@@ -78,6 +78,22 @@
         select, input { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; }
         button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; }
         
+        /* Timeline specific controls */
+        .timeline-toolbar {
+            display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;
+            background: #f9fafb; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;
+        }
+        .control-group { display: flex; align-items: center; gap: 5px; }
+        .btn-group-item {
+            padding: 6px 12px; border: 1px solid #d1d5db; background: white; cursor: pointer;
+            font-size: 0.85rem; transition: all 0.2s;
+        }
+        .btn-group-item:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+        .btn-group-item:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; border-right: 1px solid #d1d5db; }
+        .btn-group-item:not(:last-child) { border-right: none; }
+        .btn-group-item:hover { background: #f3f4f6; }
+        .btn-icon { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; background: white; cursor: pointer; }
+        
         .loading-row { text-align: center; color: var(--text-sub); padding: 20px; }
     </style>
 </head>
@@ -130,10 +146,32 @@
 
     <div id="tab-timeline" class="tab-content">
         <div class="card">
-            <div class="controls" style="justify-content: space-between;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
                 <h3>Timeline Ghi hình</h3>
-                <input type="date" id="timeline-date" onchange="loadTimeline()">
             </div>
+            
+            <div class="timeline-toolbar">
+                <div class="control-group">
+                    <span style="font-size:0.85rem; color:var(--text-sub); margin-right:5px">Window:</span>
+                    <button class="btn-group-item" onclick="setWindow(1)">1h</button>
+                    <button class="btn-group-item" onclick="setWindow(6)">6h</button>
+                    <button class="btn-group-item" onclick="setWindow(12)">12h</button>
+                    <button class="btn-group-item" onclick="setWindow(24)">24h</button>
+                </div>
+
+                <div class="control-group" style="margin-left:15px">
+                    <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮ Prev</button>
+                    <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">Next ❯</button>
+                </div>
+
+                <div class="control-group" style="margin-left:auto">
+                    <input type="datetime-local" id="ts-start" style="font-size:0.8rem">
+                    <span style="color:var(--text-sub)">to</span>
+                    <input type="datetime-local" id="ts-end" style="font-size:0.8rem">
+                    <button class="action-btn" style="padding: 6px 12px;" onclick="applyCustomRange()">Go</button>
+                </div>
+            </div>
+
             <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
                 <span style="display:inline-block;width:12px;height:12px;background:#10b981;margin-right:5px;border-radius:2px;"></span>Success
                 <span style="display:inline-block;width:12px;height:12px;background:#ef4444;margin-right:5px;margin-left:10px;border-radius:2px;"></span>Failed
@@ -205,11 +243,21 @@
         let timelineDebounce = null;
         let logOffset = 0;
         const LOG_LIMIT = 50;
+        
+        // Quản lý trạng thái timeline hiện tại (timestamp ms)
+        let timelineState = {
+            start: null,
+            end: null
+        };
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('timeline-date').valueAsDate = new Date();
-            
+            // Mặc định khởi tạo timeline 24h gần nhất
+            const now = new Date();
+            timelineState.end = now.getTime();
+            timelineState.start = now.getTime() - (24 * 60 * 60 * 1000);
+            syncTimelineInputs(); // Cập nhật input date
+
             loadCameras();
             loadOverview();
             
@@ -223,9 +271,56 @@
             document.getElementById(`tab-${tabId}`).classList.add('active');
             event.target.classList.add('active');
 
-            if(tabId === 'timeline') loadTimeline();
+            if(tabId === 'timeline') loadTimeline(timelineState.start, timelineState.end);
             if(tabId === 'logs') resetAndLoadLogs();
             if(tabId === 'perf') loadPerformance();
+        }
+
+        // --- Timeline Logic Helpers ---
+
+        // Helper: Đồng bộ giá trị state vào các ô input datetime-local
+        function syncTimelineInputs() {
+            const toLocalISO = (ts) => {
+                const date = new Date(ts);
+                const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+                const localDate = new Date(date.getTime() - offsetMs);
+                return localDate.toISOString().slice(0, 16);
+            };
+            document.getElementById('ts-start').value = toLocalISO(timelineState.start);
+            document.getElementById('ts-end').value = toLocalISO(timelineState.end);
+        }
+
+        // Helper: Chọn nhanh window time (1h, 6h, ...) tính từ hiện tại
+        function setWindow(hours) {
+            const now = new Date().getTime();
+            timelineState.end = now;
+            timelineState.start = now - (hours * 60 * 60 * 1000);
+            syncTimelineInputs();
+            loadTimeline(timelineState.start, timelineState.end);
+        }
+
+        // Helper: Dịch chuyển thời gian (Next/Prev) dựa trên window hiện tại
+        function moveTime(direction) {
+            const duration = timelineState.end - timelineState.start;
+            const shift = duration * direction; // direction: 1 (next) or -1 (prev)
+            
+            timelineState.start += shift;
+            timelineState.end += shift;
+            
+            syncTimelineInputs();
+            loadTimeline(timelineState.start, timelineState.end);
+        }
+
+        // Helper: Áp dụng thời gian từ input datetime-local
+        function applyCustomRange() {
+            const startVal = document.getElementById('ts-start').value;
+            const endVal = document.getElementById('ts-end').value;
+            
+            if (startVal && endVal) {
+                timelineState.start = new Date(startVal).getTime();
+                timelineState.end = new Date(endVal).getTime();
+                loadTimeline(timelineState.start, timelineState.end);
+            }
         }
 
         // --- API Functions ---
@@ -253,13 +348,9 @@
             } catch (e) { console.error("Load Overview Error", e); }
         }
 
-        async function loadTimeline(minTs = null, maxTs = null) {
-            const date = document.getElementById('timeline-date').value;
-            let url = `/api/timeline?date=${date}`;
-            
-            if (minTs && maxTs) {
-                url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
-            }
+        async function loadTimeline(minTs, maxTs) {
+            // Sử dụng timestamp (ms) để gọi API, API nhận giây (float)
+            let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
 
             const res = await fetch(url);
             const json = await res.json();
@@ -274,7 +365,11 @@
                 }))
             }));
 
-            if (charts.timeline && minTs) {
+            if (charts.timeline) {
+                // Update range hiển thị của chart
+                charts.timeline.updateOptions({
+                    xaxis: { min: minTs, max: maxTs }
+                }, false, false);
                 charts.timeline.updateSeries(series);
                 return;
             }
@@ -300,10 +395,17 @@
                                 });
                             }
                         },
-                        beforeZoom: function(chartContext, { xaxis }) {
+                        // Khi user zoom trên biểu đồ, cập nhật lại state và inputs
+                        zoomed: function(chartContext, { xaxis }) {
+                            timelineState.start = xaxis.min;
+                            timelineState.end = xaxis.max;
+                            syncTimelineInputs();
                             debounceTimelineUpdate(xaxis.min, xaxis.max);
                         },
                         scrolled: function(chartContext, { xaxis }) {
+                            timelineState.start = xaxis.min;
+                            timelineState.end = xaxis.max;
+                            syncTimelineInputs();
                             debounceTimelineUpdate(xaxis.min, xaxis.max);
                         }
                     }
@@ -317,7 +419,11 @@
                         dataLabels: { enabled: false } 
                     } 
                 },
-                xaxis: { type: 'datetime' },
+                xaxis: { 
+                    type: 'datetime',
+                    min: minTs, // Set initial range
+                    max: maxTs
+                },
                 tooltip: { 
                     enabled: true,
                     x: { format: 'HH:mm:ss' }
