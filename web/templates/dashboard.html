@@ -44,12 +44,21 @@
         .metric-sub { font-size: 0.8rem; margin-top: 5px; color: var(--text-sub); }
 
         /* Data Table */
-        .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 15px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
         th { background: #f9fafb; font-weight: 600; color: var(--text-sub); font-size: 0.85rem; }
         tr:hover { background: #f9fafb; cursor: pointer; }
         
+        /* Load More Button */
+        .load-more-container { text-align: center; margin-top: 10px; }
+        .btn-load { 
+            padding: 8px 24px; background: white; border: 1px solid #d1d5db; border-radius: 6px; 
+            color: var(--text-main); cursor: pointer; font-weight: 500; transition: all 0.2s;
+        }
+        .btn-load:hover { background: #f3f4f6; border-color: #9ca3af; }
+        .btn-load:disabled { opacity: 0.5; cursor: not-allowed; }
+
         /* Status Badges */
         .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
         .badge.success { background: #d1fae5; color: #065f46; }
@@ -122,8 +131,13 @@
     <div id="tab-timeline" class="tab-content">
         <div class="card">
             <div class="controls" style="justify-content: space-between;">
-                <h3>Timeline Ghi hình (Phát hiện khoảng trống)</h3>
+                <h3>Timeline Ghi hình</h3>
                 <input type="date" id="timeline-date" onchange="loadTimeline()">
+            </div>
+            <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
+                <span style="display:inline-block;width:12px;height:12px;background:#10b981;margin-right:5px;border-radius:2px;"></span>Success
+                <span style="display:inline-block;width:12px;height:12px;background:#ef4444;margin-right:5px;margin-left:10px;border-radius:2px;"></span>Failed
+                <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data (Gap)
             </div>
             <div id="chart-timeline" style="min-height: 500px;"></div>
         </div>
@@ -132,16 +146,16 @@
     <div id="tab-logs" class="tab-content">
         <div class="card">
             <div class="controls">
-                <select id="f-status" onchange="loadLogs()">
+                <select id="f-status" onchange="resetAndLoadLogs()">
                     <option value="all">Tất cả trạng thái</option>
                     <option value="SUCCESS">Success</option>
                     <option value="FAILED">Failed</option>
                 </select>
-                <select id="f-camera" onchange="loadLogs()">
+                <select id="f-camera" onchange="resetAndLoadLogs()">
                     <option value="all">Tất cả Camera</option>
                 </select>
                 <input type="text" id="f-search" placeholder="Tìm kiếm camera, lỗi..." onkeyup="debounceLoadLogs()">
-                <button class="action-btn" onclick="loadLogs()">Làm mới</button>
+                <button class="action-btn" onclick="resetAndLoadLogs()">Làm mới</button>
             </div>
             <div class="table-container">
                 <table id="log-table">
@@ -158,6 +172,9 @@
                     </thead>
                     <tbody></tbody>
                 </table>
+            </div>
+            <div class="load-more-container">
+                <button id="btn-load-more" class="btn-load" onclick="loadLogs(true)">Xem thêm (50 dòng)</button>
             </div>
         </div>
     </div>
@@ -185,31 +202,28 @@
         // --- Global State ---
         let charts = {};
         let updateTimer = null;
+        let logOffset = 0;
+        const LOG_LIMIT = 50;
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Set date picker mặc định là hôm nay
             document.getElementById('timeline-date').valueAsDate = new Date();
             
-            // Load initial data
             loadCameras();
             loadOverview();
             
-            // Auto refresh overview mỗi 60s
             setInterval(loadOverview, 60000);
         });
 
         function switchTab(tabId) {
-            // Xử lý chuyển tab
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             
             document.getElementById(`tab-${tabId}`).classList.add('active');
             event.target.classList.add('active');
 
-            // Lazy load dữ liệu khi mở tab
             if(tabId === 'timeline') loadTimeline();
-            if(tabId === 'logs') loadLogs();
+            if(tabId === 'logs') resetAndLoadLogs();
             if(tabId === 'perf') loadPerformance();
         }
 
@@ -221,7 +235,6 @@
                 const data = await res.json();
                 const m = data.metrics;
 
-                // Update Metrics
                 document.getElementById('m-health').innerText = `${m.success_rate}%`;
                 document.getElementById('m-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
                 document.getElementById('m-total').innerText = `trên tổng ${m.total} job`;
@@ -233,7 +246,6 @@
                 statusEl.innerText = m.success_rate > 95 ? 'Ổn định' : 'Cần kiểm tra';
                 statusEl.style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
 
-                // Render Charts
                 renderStackedBar(data.charts.daily);
                 renderDonut(data.charts.reasons);
 
@@ -245,15 +257,28 @@
             const res = await fetch(`/api/timeline?date=${date}`);
             const data = await res.json();
             
-            // Cấu hình Gantt Chart
+            // Timeline Config with explicit colors and Grey background for gaps
             const options = {
                 series: data.series,
-                chart: { height: 500, type: 'rangeBar', toolbar: {show: true} },
-                plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
+                chart: { 
+                    height: 500, 
+                    type: 'rangeBar', 
+                    toolbar: {show: true},
+                    background: '#e5e7eb' // Background color explicitly set to Grey to represent Gaps
+                },
+                plotOptions: { 
+                    bar: { 
+                        horizontal: true, 
+                        barHeight: '70%', 
+                        rangeBarGroupRows: true 
+                    } 
+                },
                 xaxis: { type: 'datetime' },
-                fill: { type: 'solid', colors: ['#10b981'] }, // Màu xanh cho Success
                 tooltip: { x: { format: 'HH:mm:ss' } },
-                grid: { row: { colors: ['#f3f4f6', 'transparent'], opacity: 0.5 } }
+                grid: { 
+                    row: { colors: ['transparent'], opacity: 0 },
+                    borderColor: '#ffffff' // White grid lines for separation
+                }
             };
 
             if(charts.timeline) charts.timeline.destroy();
@@ -261,21 +286,34 @@
             charts.timeline.render();
         }
 
-        async function loadLogs() {
+        function resetAndLoadLogs() {
+            logOffset = 0;
+            document.querySelector('#log-table tbody').innerHTML = '';
+            loadLogs(false);
+        }
+
+        async function loadLogs(isAppend = false) {
             const status = document.getElementById('f-status').value;
             const cam = document.getElementById('f-camera').value;
             const search = document.getElementById('f-search').value;
+            const btnLoad = document.getElementById('btn-load-more');
             
+            btnLoad.innerText = "Đang tải...";
+            btnLoad.disabled = true;
+
             const tbody = document.querySelector('#log-table tbody');
-            tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
+            if (!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
 
             try {
-                const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}`);
+                // Fetch with pagination parameters
+                const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}&limit=${LOG_LIMIT}&offset=${logOffset}`);
                 const json = await res.json();
                 
-                tbody.innerHTML = '';
+                if (!isAppend) tbody.innerHTML = '';
+                
                 if(json.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+                    if(!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+                    btnLoad.innerText = "Hết dữ liệu";
                     return;
                 }
 
@@ -293,8 +331,21 @@
                     tr.onclick = () => showModal(row);
                     tbody.appendChild(tr);
                 });
+
+                // Pagination State Management
+                logOffset += LOG_LIMIT;
+                
+                if (json.data.length < LOG_LIMIT) {
+                    btnLoad.innerText = "Đã hiển thị hết";
+                    btnLoad.disabled = true;
+                } else {
+                    btnLoad.innerText = "Xem thêm (50 dòng)";
+                    btnLoad.disabled = false;
+                }
+
             } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Lỗi kết nối server</td></tr>';
+                if(!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Lỗi kết nối server</td></tr>';
+                btnLoad.innerText = "Lỗi tải trang";
             }
         }
 
@@ -302,7 +353,6 @@
             const res = await fetch('/api/performance');
             const data = await res.json();
 
-            // Line Chart: Duration vs Processing
             const optLine = {
                 series: [
                     { name: 'Duration (s)', type: 'line', data: data.performance.duration },
@@ -322,7 +372,6 @@
             charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optLine);
             charts.perfLine.render();
 
-            // Bar Chart: Storage
             const optBar = {
                 series: [{ name: 'Storage (MB)', data: data.storage.sizes }],
                 chart: { height: 350, type: 'bar' },
@@ -355,10 +404,9 @@
 
         function debounceLoadLogs() {
             clearTimeout(updateTimer);
-            updateTimer = setTimeout(loadLogs, 500);
+            updateTimer = setTimeout(resetAndLoadLogs, 500);
         }
 
-        // --- Render Charts Utils ---
         function renderStackedBar(data) {
             const options = {
                 series: [
