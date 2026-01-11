@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-Frigate Telegram Recorder - Web Dashboard Backend
-Architecture: Flask API + SQLite (Immutable Read-Only Mode)
-Description: Provides API endpoints for the Dashboard, handles SQLite data retrieval.
-"""
-
 import os
 import sys
 import sqlite3
@@ -168,7 +161,11 @@ def get_overview():
 
 @app.route('/api/timeline')
 def get_timeline():
-    """API endpoint: Timeline Tab"""
+    """
+    API endpoint: Timeline Tab
+    Optimized for heavy datasets: Returns simplified structure grouped by camera.
+    Payload structure: { 'CameraName': [[start_ts, end_ts, status_code], ...] }
+    """
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -184,6 +181,7 @@ def get_timeline():
         return jsonify({'error': 'Invalid date format'}), 400
 
     try:
+        # Fetch raw data sorted by camera
         query = """
             SELECT camera, start_ts, end_ts, status
             FROM events 
@@ -193,20 +191,24 @@ def get_timeline():
         """
         rows = cursor.execute(query, (ts_start, ts_end)).fetchall()
         
-        series_data = {}
+        # Group data into a minimal structure to save bandwidth and JSON parsing time
+        # Status code: 1 = SUCCESS, 0 = FAILED
+        grouped_data = {}
+        
         for r in rows:
             cam = r['camera']
-            if cam not in series_data: series_data[cam] = []
-            fill_color = '#10b981' if r['status'] == 'SUCCESS' else '#ef4444'
-            series_data[cam].append({
-                'x': cam,
-                'y': [r['start_ts'] * 1000, r['end_ts'] * 1000],
-                'fillColor': fill_color
-            })
+            if cam not in grouped_data:
+                grouped_data[cam] = []
+            
+            status_code = 1 if r['status'] == 'SUCCESS' else 0
+            # Append as tuple/list for compactness [start_ms, end_ms, status]
+            grouped_data[cam].append([
+                r['start_ts'] * 1000, 
+                r['end_ts'] * 1000, 
+                status_code
+            ])
 
-        return jsonify({
-            'series': [{'name': k, 'data': v} for k, v in series_data.items()]
-        })
+        return jsonify({'data': grouped_data})
     finally:
         conn.close()
 

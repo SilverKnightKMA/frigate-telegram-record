@@ -255,33 +255,64 @@
         async function loadTimeline() {
             const date = document.getElementById('timeline-date').value;
             const res = await fetch(`/api/timeline?date=${date}`);
-            const data = await res.json();
+            const json = await res.json();
             
-            // Timeline Config with explicit colors and Grey background for gaps
+            // Client-side mapping to reduce JSON payload and server processing
+            // Input Format: { "CameraName": [ [start, end, status_code], ... ] }
+            const series = Object.keys(json.data).map(cam => ({
+                name: cam,
+                data: json.data[cam].map(item => ({
+                    x: cam,
+                    y: [item[0], item[1]], // Timestamps
+                    fillColor: item[2] === 1 ? '#10b981' : '#ef4444' // 1: Success, 0: Failed
+                }))
+            }));
+
+            // Configuration optimized for Performance
             const options = {
-                series: data.series,
+                series: series,
                 chart: { 
                     height: 500, 
                     type: 'rangeBar', 
-                    toolbar: {show: true},
-                    background: '#e5e7eb' // Background color explicitly set to Grey to represent Gaps
+                    toolbar: { show: true },
+                    background: '#e5e7eb',
+                    // Disable all animations for heavy datasets
+                    animations: { enabled: false },
+                    selection: { enabled: false },
+                    zoom: { enabled: true }
                 },
                 plotOptions: { 
                     bar: { 
                         horizontal: true, 
                         barHeight: '70%', 
-                        rangeBarGroupRows: true 
+                        rangeBarGroupRows: true,
+                        borderRadius: 0, // Remove radius calculation for performance
+                        dataLabels: { enabled: false } // Disable labels on bars
                     } 
                 },
                 xaxis: { type: 'datetime' },
-                tooltip: { x: { format: 'HH:mm:ss' } },
+                // Simplified states to prevent heavy re-renders on hover
+                states: {
+                    normal: { filter: { type: 'none' } },
+                    hover: { filter: { type: 'none' } },
+                    active: { filter: { type: 'none' } }
+                },
+                tooltip: { 
+                    enabled: true,
+                    x: { format: 'HH:mm:ss' }
+                },
                 grid: { 
                     row: { colors: ['transparent'], opacity: 0 },
-                    borderColor: '#ffffff' // White grid lines for separation
+                    borderColor: '#ffffff'
                 }
             };
 
-            if(charts.timeline) charts.timeline.destroy();
+            // Explicitly destroy old instance to free memory
+            if(charts.timeline) {
+                charts.timeline.destroy();
+                charts.timeline = null;
+            }
+            
             charts.timeline = new ApexCharts(document.querySelector("#chart-timeline"), options);
             charts.timeline.render();
         }
@@ -305,7 +336,6 @@
             if (!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
 
             try {
-                // Fetch with pagination parameters
                 const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}&limit=${LOG_LIMIT}&offset=${logOffset}`);
                 const json = await res.json();
                 
@@ -332,7 +362,6 @@
                     tbody.appendChild(tr);
                 });
 
-                // Pagination State Management
                 logOffset += LOG_LIMIT;
                 
                 if (json.data.length < LOG_LIMIT) {
@@ -358,7 +387,7 @@
                     { name: 'Duration (s)', type: 'line', data: data.performance.duration },
                     { name: 'Processing (s)', type: 'line', data: data.performance.processing }
                 ],
-                chart: { height: 350, type: 'line', zoom: { enabled: false } },
+                chart: { height: 350, type: 'line', zoom: { enabled: false }, animations: { enabled: false } },
                 stroke: { width: [2, 2], curve: 'smooth' },
                 labels: data.performance.categories,
                 xaxis: { type: 'category', labels: { show: false } },
@@ -374,7 +403,7 @@
 
             const optBar = {
                 series: [{ name: 'Storage (MB)', data: data.storage.sizes }],
-                chart: { height: 350, type: 'bar' },
+                chart: { height: 350, type: 'bar', animations: { enabled: false } },
                 xaxis: { categories: data.storage.dates },
                 colors: ['#8b5cf6'],
                 dataLabels: { enabled: false }
@@ -413,7 +442,7 @@
                     { name: 'Success', data: data.map(d => d.success) }, 
                     { name: 'Failed', data: data.map(d => d.failed) }
                 ],
-                chart: { type: 'bar', height: 350, stacked: true },
+                chart: { type: 'bar', height: 350, stacked: true, animations: { enabled: false } },
                 colors: ['#10b981', '#ef4444'],
                 xaxis: { categories: data.map(d => d.date) },
                 plotOptions: { bar: { borderRadius: 4, columnWidth: '40%' } }
@@ -427,7 +456,7 @@
             const options = {
                 series: data.series,
                 labels: data.labels,
-                chart: { type: 'donut', height: 350 },
+                chart: { type: 'donut', height: 350, animations: { enabled: false } },
                 colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
                 plotOptions: { pie: { donut: { size: '65%' } } }
             };
