@@ -115,9 +115,22 @@ check_source_gatekeeper() {
     prev_fail_duration=${prev_fail_duration:-0}
     prev_alert_sent=${prev_alert_sent:-0}
 
-    # Logic chặn: Nếu đã cảnh báo và dữ liệu VOD không tăng thêm
-    if [ "$prev_alert_sent" -eq 1 ] && [ "$vod_duration" -le "$prev_fail_duration" ]; then
-        log "[$src] [$mode] Gatekeeper: Skipping (VOD ${vod_duration}s <= previous ${prev_fail_duration}s)."
+    # [FIX] Tính toán thời lượng output ước tính để so sánh công bằng
+    local estimated_output=$vod_duration
+    if [ "$mode" == "timelapse" ]; then
+        local speed=${TIMELAPSE_SPEED:-60}
+        # Chia cho speed để ra output duration ước tính
+        estimated_output=$(( vod_duration / speed ))
+    fi
+
+    # [Debug] Log so sánh để dễ kiểm tra
+    if [ "$prev_fail_duration" -gt 0 ]; then
+        log_debug "[$src] Gatekeeper Check: Est. Output ${estimated_output}s vs Prev Fail ${prev_fail_duration}s (VOD: ${vod_duration}s)"
+    fi
+
+    # Logic chặn: Nếu đã cảnh báo và dữ liệu Output ước tính không tăng thêm
+    if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
+        log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
         return 1
     fi
 
@@ -131,15 +144,18 @@ check_source_gatekeeper() {
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
         
         # [CHANGE] Replaced hardcoded '60' with TIMELAPSE_MIN_DURATION_SEC env var (Smart Skip)
+        # So sánh dựa trên VOD raw cho Smart Skip (vẫn giữ nguyên logic này vì nó check đầu vào)
         if [ "$vod_duration" -lt "$TIMELAPSE_MIN_DURATION_SEC" ]; then
-            if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
+            # [FIX] So sánh với estimated output ở đây luôn cho chắc
+            if [ "$estimated_output" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
+                log "[$src] [$mode] Gatekeeper: Smart Skip (Insufficient VOD & No Improvement)."
                 return 1
             fi
         fi
     fi
 
-    if [ "$vod_duration" -lt "$threshold" ]; then
-        log "[$src] [$mode] Gatekeeper: Insufficient data (${vod_duration}s < ${threshold}s), proceeding best-effort."
+    if [ "$estimated_output" -lt "$threshold" ]; then
+        log "[$src] [$mode] Gatekeeper: Insufficient data (Est. ${estimated_output}s < ${threshold}s), proceeding best-effort."
     fi
 
     return 0
