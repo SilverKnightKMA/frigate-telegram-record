@@ -130,11 +130,23 @@ jobs:
         id: meta-web
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/frigate-telegram-record-web
+          images: |
+            ${{ env.REGISTRY == 'ghcr.io' && format('{0}/{1}-web', env.REGISTRY, github.repository) || '' }}
+            ${{ env.REGISTRY != 'ghcr.io' && env.REGISTRY != 'docker.io' && format('{0}/{1}-web', env.REGISTRY, github.repository) || '' }}
+            ${{ env.REGISTRY == 'docker.io' && format('{0}/{1}-web', github.repository_owner, github.event.repository.name) || '' }}
+
           tags: |
-            type=raw,value=dev,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+            # Đồng bộ logic tag với app chính
+            type=raw,value=dev,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
+            
+            # Logic riêng cho web tag (giữ nguyên nếu bạn quy hoạch web đánh version riêng)
             type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/web-') }}
+            
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            
+            # Thêm tag version cụ thể khi release (nếu cần)
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
+            
             type=raw,value=${{ github.sha }},enable=true
             type=raw,value=edge,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}
