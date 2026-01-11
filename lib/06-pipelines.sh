@@ -19,7 +19,7 @@ download_clip() {
     log_debug "[$src] Saving to: $filepath"
     
     # Use --write-out to print status code to stdout while saving body to file
-    local http_code=$(curl -s -o "$filepath" --write-out "%{http_code}" "$url")
+    local http_code=$(curl -s -L -o "$filepath" --write-out "%{http_code}" "$url")
     echo "$http_code"
 }
 
@@ -49,12 +49,15 @@ execute_clip_pipeline() {
     local url="${FRIGATE_HOST}/api/${src}/start/${dl_start_ts}/end/${dl_end_ts}/clip.mp4"
 
     # === OPTIMIZATION: Check Remote Size Before Download ===
-    # Attempt to get Content-Length via HEAD request
-    local remote_size=$(curl -sI "$url" | grep -i "Content-Length" | awk '{print $2}' | tr -d '\r')
-    
-    # Check if we got a valid size (some servers might use chunked encoding where size is null)
+    # Attempt to get Content-Length via HEAD request. Added -L to follow redirects.
+    # We capture the full header to check status code as well.
+    local header_dump=$(curl -sI -L "$url")
+    local remote_size=$(echo "$header_dump" | grep -i "Content-Length" | awk '{print $2}' | tr -d '\r')
+    local header_status=$(echo "$header_dump" | head -n 1 | awk '{print $2}')
+
+    # Check validity
     if [[ "$remote_size" =~ ^[0-9]+$ ]] && [ "$remote_size" -gt 0 ]; then
-        # Retrieve the maximum filesize recorded in DB for this slot (including failed attempts)
+        # Retrieve the maximum filesize recorded in DB for this slot
         local db_max_size=$(sqlite3 "$DB_FILE" "SELECT MAX(filesize) FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts;")
         db_max_size=${db_max_size:-0}
 
@@ -65,7 +68,12 @@ execute_clip_pipeline() {
             log_debug "[$src] Remote size ($remote_size) > DB record ($db_max_size). Proceeding with download."
         fi
     else
-        log_debug "[$src] Could not determine remote size (Chunked or No Header). Forcing download."
+        # Reason analysis for log
+        if [ "$header_status" != "200" ] && [ -n "$header_status" ]; then
+            log_debug "[$src] Pre-check skipped: HTTP Status $header_status"
+        else
+            log_debug "[$src] Pre-check skipped: Server using Chunked Encoding (No Content-Length)."
+        fi
     fi
     # =======================================================
 
@@ -109,7 +117,6 @@ execute_clip_pipeline() {
                     
                     # 5a. FAILURE HANDLING (Partial)
                     if [ "$_status" == "partial" ]; then
-                        # Pass filesize to alert logic
                         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
@@ -127,7 +134,6 @@ execute_clip_pipeline() {
                     log "[$src] Sent (Test Mode)."
                 fi
             else
-                # Handle Telegram Failure in Record Mode
                 trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual" "$current_filesize"
             fi
         else
