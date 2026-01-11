@@ -8,7 +8,7 @@
 
 init_db() {
     # [Dashboard Req] Enable Write-Ahead Logging (WAL)
-    # Reason: Allows the Web Dashboard to read (SELECT) statistics simultaneously
+    # Reason: Allows the Web Dashboard to read (SELECT) simultaneously
     # while the script is writing (INSERT/UPDATE) without locking the database.
     sqlite3 "$DB_FILE" "PRAGMA journal_mode=WAL;" >/dev/null 2>&1
 
@@ -91,8 +91,6 @@ init_db() {
     GROUP BY day, hour, camera, type, status;"
 
     # [Cleanup] Maintain DB size to keep Dashboard queries fast
-    # CHANGE: Added conditional check. If retention is set to 0 or less, cleanup is skipped.
-    # This prevents accidental data loss if the user wants to keep history or disable auto-cleanup.
     
     if [ "$RETENTION_DAYS" -gt 0 ]; then
         local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
@@ -102,5 +100,12 @@ init_db() {
     if [ "$ALERT_RETENTION_HOURS" -gt 0 ]; then
         local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
         db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
+    fi
+
+    # [Ops] Database Maintenance (VACUUM)
+    # Reason: Reclaims unused disk space from deleted rows and defragments the DB file.
+    # This prevents the SQLite file from growing indefinitely and maintains query performance.
+    if [ "$RETENTION_DAYS" -gt 0 ] || [ "$ALERT_RETENTION_HOURS" -gt 0 ]; then
+        sqlite3 "$DB_FILE" "VACUUM;" >/dev/null 2>&1
     fi
 }
