@@ -3,394 +3,241 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Frigate Telegram NVR Monitor</title>
+    <title>Frigate NVR Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
-        :root {
-            --primary: #667eea;
-            --secondary: #764ba2;
-            --bg: #f4f6f9;
-            --card-bg: #ffffff;
-            --text-main: #333;
-            --text-muted: #666;
-            --success: #00E396;
-            --warning: #FEB019;
-            --danger: #FF4560;
-        }
+        :root { --primary: #667eea; --bg: #f4f6f9; --card: #fff; --text: #333; --success: #00E396; --danger: #FF4560; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* Header */
+        .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 1.4rem; }
+        
+        /* Loading Overlay */
+        #loader { position: fixed; inset: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg);
-            color: var(--text-main);
-            padding: 20px;
-        }
-        
-        .container { max-width: 1600px; margin: 0 auto; }
-        
-        .header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            padding: 20px 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        /* Grid Layouts */
+        .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 1000px) { .grid-main { grid-template-columns: 1fr; } }
 
-        .header h1 { font-size: 1.5rem; }
-        .header-meta { text-align: right; font-size: 0.9rem; opacity: 0.9; }
+        /* Cards */
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .card h3 { font-size: 1rem; color: #666; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .stat-box { background: white; padding: 15px; border-radius: 10px; border-left: 4px solid var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .stat-box.err { border-left-color: var(--danger); }
+        .stat-box.ok { border-left-color: var(--success); }
+        .stat-label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
+        .stat-val { font-size: 1.8rem; font-weight: bold; margin: 5px 0; }
 
-        /* KPI Cards */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .stat-card {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border-left: 4px solid var(--primary);
-        }
-        
-        .stat-card.danger { border-left-color: var(--danger); }
-        .stat-card.success { border-left-color: var(--success); }
-        
-        .stat-card .label { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-card .value { font-size: 2rem; font-weight: 700; margin: 5px 0; color: var(--text-main); }
-        .stat-card .subvalue { font-size: 0.85rem; color: var(--text-muted); }
-
-        /* Visualization Section */
-        .viz-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            margin-bottom: 25px;
-        }
-
-        .chart-card {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            min-height: 400px;
-        }
-
-        .chart-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: var(--text-main);
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-        }
-
-        /* Tables & Lists */
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 25px;
-        }
-        
-        .section-card {
-            background: var(--card-bg);
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        
-        .table-responsive { overflow-x: auto; }
-        
+        /* Table */
         table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 12px; border-bottom: 2px solid #eee; color: var(--text-muted); font-size: 0.9rem; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 0.95rem; }
-        tr:hover { background-color: #f8f9fa; }
-        
-        .badge {
-            padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; color: white;
-        }
-        .badge-success { background: var(--success); }
-        .badge-warning { background: var(--warning); }
-        .badge-danger { background: var(--danger); }
+        th { text-align: left; padding: 10px; color: #666; font-size: 0.9rem; border-bottom: 2px solid #eee; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; }
+        .bg-green { background: var(--success); } .bg-red { background: var(--danger); } .bg-orange { background: #FEB019; }
 
-        /* Activity Feed */
-        .activity-list { max-height: 400px; overflow-y: auto; }
-        .activity-item {
-            padding: 12px;
-            border-left: 3px solid #ddd;
-            background: #fdfdfd;
-            margin-bottom: 8px;
-            border-radius: 0 4px 4px 0;
-            font-size: 0.9rem;
-        }
-        .activity-item.failed { border-left-color: var(--danger); background: #fff5f5; }
-        .activity-item .top { display: flex; justify-content: space-between; margin-bottom: 4px; }
-        .activity-item .time { font-size: 0.8rem; color: var(--text-muted); }
-        .activity-item .cam { font-weight: 600; }
-        
-        .loading-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255,255,255,0.8);
-            display: flex; justify-content: center; align-items: center;
-            z-index: 1000;
-        }
-
-        @media (max-width: 1024px) {
-            .viz-grid { grid-template-columns: 1fr; }
-        }
+        /* Activity List */
+        .act-list { max-height: 400px; overflow-y: auto; }
+        .act-item { padding: 10px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .act-item.fail { background: #fff5f5; border-left: 3px solid var(--danger); }
+        .act-info { font-size: 0.9rem; }
+        .act-time { font-size: 0.8rem; color: #999; }
     </style>
 </head>
 <body>
-    <div class="loading-overlay" id="loader">
-        <h2>Loading Dashboard...</h2>
-    </div>
+    <div id="loader"><div class="spinner"></div><div>Loading Data...</div></div>
 
     <div class="container">
         <div class="header">
             <div>
-                <h1>📹 Frigate Telegram NVR</h1>
-                <div style="font-size: 0.9rem; opacity: 0.8;">Monitoring & Automation Dashboard</div>
+                <h1>📹 Frigate NVR Monitor</h1>
+                <small>Auto-refresh in <span id="timer">30</span>s</small>
             </div>
-            <div class="header-meta">
-                <div id="lastUpdated">Updated: -</div>
-                <div id="countdown" style="font-weight: bold;">30s</div>
-            </div>
-        </div>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="label">Total Cameras</div>
-                <div class="value" id="totalCameras">0</div>
-            </div>
-            <div class="stat-card success">
-                <div class="label">24h Recordings</div>
-                <div class="value" id="recentRecords">0</div>
-                <div class="subvalue">Total: <span id="totalRecords">0</span></div>
-            </div>
-            <div class="stat-card">
-                <div class="label">24h Timelapses</div>
-                <div class="value" id="recentTimelapses">0</div>
-                <div class="subvalue">Total: <span id="totalTimelapses">0</span></div>
-            </div>
-            <div class="stat-card danger">
-                <div class="label">24h Failures</div>
-                <div class="value" id="recentFailures">0</div>
-                <div class="subvalue">Total: <span id="totalFailures">0</span></div>
+            <div style="text-align: right; font-size: 0.8rem;">
+                Last Update: <span id="lastUpd">-</span>
             </div>
         </div>
 
-        <div class="viz-grid">
-            <div class="chart-card">
-                <div class="chart-title">Timeline Coverage (Last 24h)</div>
-                <div id="timelineChart"></div>
+        <div class="grid-stats">
+            <div class="stat-box">
+                <div class="stat-label">Total Cameras</div>
+                <div class="stat-val" id="s_cams">0</div>
             </div>
-            <div class="chart-card">
-                <div class="chart-title">Error Distribution</div>
-                <div id="errorChart"></div>
+            <div class="stat-box ok">
+                <div class="stat-label">24h Recordings</div>
+                <div class="stat-val" id="s_recs">0</div>
+            </div>
+            <div class="stat-box err">
+                <div class="stat-label">24h Failures</div>
+                <div class="stat-val" id="s_fails">0</div>
             </div>
         </div>
 
-        <div class="content-grid">
-            <div class="section-card">
-                <div class="chart-title">📊 Camera Status</div>
-                <div class="table-responsive">
-                    <table id="cameraTable">
-                        <thead>
-                            <tr>
-                                <th>Camera</th>
-                                <th>Videos</th>
-                                <th>Timelapse</th>
-                                <th>Failures</th>
-                                <th>Total Duration</th>
-                                <th>Last Activity</th>
-                            </tr>
-                        </thead>
+        <div class="grid-main">
+            <div class="card">
+                <h3>Timeline (Last 24h)</h3>
+                <div id="chartTimeline"></div>
+            </div>
+            <div class="card">
+                <h3>Error Types</h3>
+                <div id="chartErrors"></div>
+            </div>
+        </div>
+
+        <div class="grid-main">
+            <div class="card">
+                <h3>Camera Status</h3>
+                <div style="overflow-x:auto;">
+                    <table id="tblCams">
+                        <thead><tr><th>Cam</th><th>Success</th><th>Fail</th><th>Timelapse</th><th>Duration</th></tr></thead>
                         <tbody></tbody>
                     </table>
                 </div>
             </div>
-
-            <div class="section-card">
-                <div class="chart-title">📝 Activity Log</div>
-                <div class="activity-list" id="activityList"></div>
+            <div class="card">
+                <h3>Recent Activity</h3>
+                <div class="act-list" id="lstAct"></div>
             </div>
         </div>
     </div>
 
-<script>
-        // --- Chart Instances ---
-        let timelineChart = null;
-        let errorChart = null;
-        let countdownVal = 30;
+    <script>
+        // State
+        let charts = { timeline: null, error: null };
+        let countdown = 30;
 
         document.addEventListener('DOMContentLoaded', () => {
-            fetchData();
-            // Bộ đếm ngược
+            loadData();
             setInterval(() => {
-                countdownVal--;
-                const counter = document.getElementById('countdown');
-                if(counter) counter.innerText = countdownVal + 's';
-                
-                if(countdownVal <= 0) {
-                    fetchData();
-                    countdownVal = 30;
-                }
+                countdown--;
+                document.getElementById('timer').innerText = countdown;
+                if(countdown <= 0) { loadData(); countdown = 30; }
             }, 1000);
         });
 
-        async function fetchData() {
+        async function loadData() {
+            const loader = document.getElementById('loader');
             try {
-                // 1. Fetch Basic Stats
-                const statsRes = await fetch('/api/stats');
-                if (!statsRes.ok) throw new Error(`API Stats Error: ${statsRes.status}`);
-                const statsData = await statsRes.json();
-                if(statsData.success) updateStatsUI(statsData);
+                // Parallel Fetching for Speed
+                const [statsRes, vizRes, actRes] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/visualization'),
+                    fetch('/api/recent_activity')
+                ]);
 
-                // 2. Fetch Visualization Data
-                const vizRes = await fetch('/api/visualization');
-                if (!vizRes.ok) throw new Error(`API Viz Error: ${vizRes.status}`);
-                const vizData = await vizRes.json();
-                if(vizData.success) updateCharts(vizData);
-
-                // 3. Fetch Activity Log
-                const actRes = await fetch('/api/recent_activity');
-                if (!actRes.ok) throw new Error(`API Activity Error: ${actRes.status}`);
-                const actData = await actRes.json();
-                if(actData.success) updateActivityUI(actData.activities);
-
-                // Cập nhật giờ
-                const lastUpdated = document.getElementById('lastUpdated');
-                if(lastUpdated) lastUpdated.innerText = 'Updated: ' + new Date().toLocaleTimeString();
-
+                if(statsRes.ok) updateStats(await statsRes.json());
+                if(vizRes.ok) updateCharts(await vizRes.json());
+                if(actRes.ok) updateActivity(await actRes.json());
+                
+                document.getElementById('lastUpd').innerText = new Date().toLocaleTimeString();
+                
             } catch (e) {
-                console.error("Fetch Error:", e);
-                // Hiển thị lỗi lên màn hình để dễ debug
-                const loader = document.getElementById('loader');
-                if(loader) {
-                    loader.innerHTML = `<h3 style="color: red;">Lỗi tải dữ liệu!</h3><p>${e.message}</p><p>Nhấn F12 > Console để xem chi tiết.</p>`;
-                    return; // Không tắt loader mà để hiện thông báo lỗi
-                }
+                console.error("Fetch Error", e);
             } finally {
-                // LUÔN LUÔN tắt loading dù thành công hay thất bại (trừ khi vào catch ở trên)
-                const loader = document.getElementById('loader');
-                // Chỉ tắt nếu không có lỗi nghiêm trọng (nội dung loader chưa bị đổi thành báo lỗi)
-                if(loader && !loader.innerHTML.includes("Lỗi tải dữ liệu")) {
-                    loader.style.display = 'none';
-                }
+                // Ensure loader is hidden even if errors occur
+                if(loader) loader.style.display = 'none';
             }
         }
 
-        function updateStatsUI(data) {
-            const ov = data.overall;
-            setText('totalCameras', ov.total_cameras);
-            setText('recentRecords', ov.recent_records_24h);
-            setText('totalRecords', ov.total_records);
-            setText('recentTimelapses', ov.recent_timelapses_24h);
-            setText('totalTimelapses', ov.total_timelapses);
-            setText('recentFailures', ov.recent_failures_24h);
-            setText('totalFailures', ov.total_failures);
+        function updateStats(data) {
+            if(!data.success) return;
+            const o = data.overall;
+            document.getElementById('s_cams').innerText = o.total_cameras;
+            document.getElementById('s_recs').innerText = o.recent_records_24h;
+            document.getElementById('s_fails').innerText = o.recent_failures_24h;
 
-            const tbody = document.querySelector('#cameraTable tbody');
-            if(tbody) {
-                tbody.innerHTML = '';
-                data.cameras.forEach(cam => {
-                    tbody.innerHTML += `
-                        <tr>
-                            <td><strong>${cam.name}</strong></td>
-                            <td><span class="badge badge-success">${cam.success_count}</span></td>
-                            <td><span class="badge badge-warning">${cam.timelapse_count}</span></td>
-                            <td><span class="badge badge-danger">${cam.failed_count}</span></td>
-                            <td>${cam.total_duration}</td>
-                            <td>${cam.last_record}</td>
-                        </tr>
-                    `;
-                });
-            }
-        }
-
-        function updateCharts(data) {
-            // Kiểm tra phần tử tồn tại trước khi render
-            const timelineEl = document.querySelector("#timelineChart");
-            const errorEl = document.querySelector("#errorChart");
-
-            if (timelineEl) {
-                const timelineOptions = {
-                    series: data.timeline || [], 
-                    chart: { height: 350, type: 'rangeBar', toolbar: { show: false }, animations: { enabled: false } }, // Tắt animation để nhẹ hơn
-                    plotOptions: { bar: { horizontal: true, barHeight: '80%', rangeBarGroupRows: true } },
-                    colors: ['#00E396', '#FF4560'],
-                    fill: { type: 'solid' },
-                    xaxis: { type: 'datetime', labels: { datetimeFormatter: { hour: 'HH:mm' } } },
-                    tooltip: { x: { format: 'dd MMM HH:mm' } },
-                    legend: { show: false },
-                    noData: { text: 'Chưa có dữ liệu ghi hình' }
-                };
-
-                if(timelineChart) timelineChart.updateSeries(data.timeline);
-                else {
-                    timelineChart = new ApexCharts(timelineEl, timelineOptions);
-                    timelineChart.render();
-                }
-            }
-
-            if (errorEl) {
-                const hasErrors = data.errors && data.errors.series && data.errors.series.length > 0;
-                const errorOptions = {
-                    series: hasErrors ? data.errors.series : [1],
-                    labels: hasErrors ? data.errors.labels : ['Không có lỗi'],
-                    chart: { type: 'donut', height: 320, animations: { enabled: false } },
-                    colors: hasErrors ? ['#FF4560', '#FEB019', '#775DD0', '#008FFB', '#00E396'] : ['#E0E0E0'],
-                    dataLabels: { enabled: hasErrors },
-                    legend: { position: 'bottom' },
-                    plotOptions: { pie: { donut: { labels: { show: true, total: { show: true } } } } }
-                };
-
-                if(errorChart) errorChart.updateOptions(errorOptions);
-                else {
-                    errorChart = new ApexCharts(errorEl, errorOptions);
-                    errorChart.render();
-                }
-            }
-        }
-
-        function updateActivityUI(activities) {
-            const list = document.getElementById('activityList');
-            if(!list) return;
-            
-            list.innerHTML = '';
-            if(!activities || activities.length === 0) {
-                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">Chưa có hoạt động nào</div>';
-                return;
-            }
-
-            activities.forEach(act => {
-                const isFailed = act.status === 'failed';
-                const html = `
-                    <div class="activity-item ${isFailed ? 'failed' : ''}">
-                        <div class="top">
-                            <span class="cam">${act.camera} <span style="font-weight:normal; color:#666;">• ${act.type}</span></span>
-                            <span class="time">${act.timestamp.split(' ')[1]}</span>
-                        </div>
-                        <div style="color: ${isFailed ? '#d32f2f' : '#555'}; font-size: 0.85rem;">
-                            ${act.details}
-                        </div>
-                    </div>
+            const tbody = document.querySelector('#tblCams tbody');
+            tbody.innerHTML = '';
+            data.cameras.forEach(c => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${c.name}</strong></td>
+                        <td><span class="badge bg-green">${c.success_count}</span></td>
+                        <td><span class="badge bg-red">${c.failed_count}</span></td>
+                        <td><span class="badge bg-orange">${c.timelapse_count}</span></td>
+                        <td>${c.total_duration}</td>
+                    </tr>
                 `;
-                list.innerHTML += html;
             });
         }
 
-        // Helper an toàn để set text
-        function setText(id, val) {
-            const el = document.getElementById(id);
-            if(el) el.innerText = val;
+        function updateCharts(data) {
+            if(!data.success) return;
+
+            // --- 1. TIMELINE CHART (Optimized) ---
+            const tlEl = document.getElementById('chartTimeline');
+            // Safety Check: Too many points crash browser
+            const points = data.timeline.reduce((sum, item) => sum + item.data.length, 0);
+            
+            if(points > 3000) {
+                tlEl.innerHTML = `<div style="text-align:center; padding:20px; color:orange">Too much data (${points} points) to render safely. Check logs.</div>`;
+            } else {
+                const tlOpts = {
+                    series: data.timeline,
+                    chart: { 
+                        type: 'rangeBar', height: 350, 
+                        animations: { enabled: false }, // CRITICAL: Disable animations prevents freezing
+                        toolbar: { show: false }
+                    },
+                    plotOptions: { 
+                        bar: { horizontal: true, barHeight: '80%', rangeBarGroupRows: true } 
+                    },
+                    xaxis: { type: 'datetime' },
+                    fill: { type: 'solid', opacity: 1 },
+                    stroke: { width: 0 }, // Improve render speed
+                    tooltip: { enabled: true, x: { format: 'HH:mm' } },
+                    legend: { show: false }
+                };
+
+                if(charts.timeline) charts.timeline.updateSeries(data.timeline);
+                else {
+                    charts.timeline = new ApexCharts(tlEl, tlOpts);
+                    charts.timeline.render();
+                }
+            }
+
+            // --- 2. ERROR CHART ---
+            const errEl = document.getElementById('chartErrors');
+            const hasErr = data.errors.series.length > 0;
+            const errOpts = {
+                series: hasErr ? data.errors.series : [1],
+                labels: hasErr ? data.errors.labels : ['No Errors'],
+                chart: { type: 'donut', height: 300, animations: { enabled: false } },
+                colors: hasErr ? ['#FF4560', '#FEB019', '#00E396', '#775DD0'] : ['#ddd'],
+                legend: { position: 'bottom' },
+                dataLabels: { enabled: false }
+            };
+
+            if(charts.error) charts.error.updateOptions(errOpts);
+            else {
+                charts.error = new ApexCharts(errEl, errOpts);
+                charts.error.render();
+            }
+        }
+
+        function updateActivity(data) {
+            const lst = document.getElementById('lstAct');
+            lst.innerHTML = '';
+            if(!data.activities || data.activities.length === 0) {
+                lst.innerHTML = '<div style="padding:10px; text-align:center; color:#999">No activity</div>';
+                return;
+            }
+            data.activities.forEach(a => {
+                lst.innerHTML += `
+                    <div class="act-item ${a.status === 'failed' ? 'fail' : ''}">
+                        <div class="act-info">
+                            <strong>${a.camera}</strong> - ${a.details}
+                        </div>
+                        <div class="act-time">${a.timestamp}</div>
+                    </div>
+                `;
+            });
         }
     </script>
 </body>

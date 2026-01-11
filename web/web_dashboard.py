@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Frigate Telegram Record - Web Dashboard
-Simple web interface to monitor camera statistics and recording history
+Frigate Telegram Record - Web Dashboard (Optimized)
 """
 
 import os
 import sqlite3
 import base64
-import time
+import re
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify
 
 app = Flask(__name__)
 
@@ -17,57 +16,44 @@ app = Flask(__name__)
 DB_FILE = os.environ.get('DB_FILE', '/app/data/video_history.sqlite')
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 
+# --- DATABASE INITIALIZATION ---
 def init_db_if_missing():
+    """Ensure database tables exist to prevent 500 errors on fresh start"""
     try:
+        # Create dir if not exists
+        os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+        
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Tạo bảng nếu chưa có (Copy schema từ bash script sang)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sent_ranges (
-                camera TEXT,
-                start_ts INTEGER,
-                end_ts INTEGER,
-                created_at INTEGER,
-                msg_id INTEGER,
+                camera TEXT, start_ts INTEGER, end_ts INTEGER, created_at INTEGER, msg_id INTEGER,
                 PRIMARY KEY (camera, start_ts, end_ts)
             );
         """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS alert_history (
-                id TEXT PRIMARY KEY, 
-                camera TEXT,
-                created_at INTEGER,
-                msg_id INTEGER,
-                alert_text TEXT,
-                duration INTEGER
+                id TEXT PRIMARY KEY, camera TEXT, created_at INTEGER, msg_id INTEGER, alert_text TEXT, duration INTEGER
             );
         """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS timelapse_history (
-                camera TEXT,
-                range_id TEXT,
-                created_at INTEGER,
+                camera TEXT, range_id TEXT, created_at INTEGER,
                 PRIMARY KEY (camera, range_id)
             );
         """)
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"Init DB Error: {e}")
+        print(f"Init DB Warning: {e}")
 
-# Gọi hàm này ngay khi start app
+# Run init on startup
 init_db_if_missing()
 
 def get_db_connection():
-    """Create a database connection with timeout"""
     try:
-        # Check if file exists
-        if not os.path.exists(DB_FILE):
-             print(f"Warning: DB file not found at {DB_FILE}. Creating new one.")
-             init_db_if_missing()
-
-        conn = sqlite3.connect(DB_FILE, timeout=30.0)
+        conn = sqlite3.connect(DB_FILE, timeout=10.0)
         conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
@@ -75,312 +61,179 @@ def get_db_connection():
         return None
 
 def parse_duration(duration_sec):
-    """Convert seconds to human-readable format"""
-    if not duration_sec:
-        return "N/A"
-    hours = duration_sec // 3600
-    minutes = (duration_sec % 3600) // 60
-    seconds = duration_sec % 60
-    if hours > 0:
-        return f"{hours}h {minutes:02d}m {seconds:02d}s"
-    elif minutes > 0:
-        return f"{minutes}m {seconds:02d}s"
-    else:
-        return f"{seconds}s"
+    if not duration_sec: return "N/A"
+    h, r = divmod(duration_sec, 3600)
+    m, s = divmod(r, 60)
+    if h > 0: return f"{h}h {m:02d}m {s:02d}s"
+    elif m > 0: return f"{m}m {s:02d}s"
+    return f"{s}s"
 
 @app.route('/')
 def dashboard():
-    """Main dashboard page"""
     return render_template('dashboard.html')
 
 @app.route('/api/stats')
 def get_stats():
-    """API endpoint to get database statistics"""
     try:
         conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        if not conn: return jsonify({'success': False, 'error': 'DB Error'}), 500
         cursor = conn.cursor()
         
-        # Get unique cameras and their counts
         cameras = {}
         
-        # Get record statistics (sent_ranges table)
+        # 1. Get Success Stats
         cursor.execute("""
-            SELECT 
-                camera,
-                COUNT(*) as total_records,
-                MIN(created_at) as first_record,
-                MAX(created_at) as last_record,
-                SUM(end_ts - start_ts) as total_duration
-            FROM sent_ranges
-            GROUP BY camera
+            SELECT camera, COUNT(*) as total, MAX(created_at) as last_ts, SUM(end_ts - start_ts) as dur
+            FROM sent_ranges GROUP BY camera
         """)
-        
         for row in cursor.fetchall():
-            camera = row['camera']
-            cameras[camera] = {
-                'name': camera,
-                'total_records': row['total_records'],
-                'first_record': datetime.fromtimestamp(row['first_record']).strftime('%Y-%m-%d %H:%M:%S') if row['first_record'] else 'N/A',
-                'last_record': datetime.fromtimestamp(row['last_record']).strftime('%Y-%m-%d %H:%M:%S') if row['last_record'] else 'N/A',
-                'total_duration': parse_duration(row['total_duration']),
-                'success_count': row['total_records'],
-                'timelapse_count': 0,
-                'failed_count': 0
+            cam = row['camera']
+            cameras[cam] = {
+                'name': cam, 'success_count': row['total'], 'failed_count': 0, 'timelapse_count': 0,
+                'total_duration': parse_duration(row['dur']),
+                'last_record': datetime.fromtimestamp(row['last_ts']).strftime('%Y-%m-%d %H:%M:%S') if row['last_ts'] else '-'
             }
-        
-        # Get timelapse statistics
-        cursor.execute("""
-            SELECT camera, COUNT(*) as timelapse_count
-            FROM timelapse_history
-            GROUP BY camera
-        """)
-        
+            
+        # 2. Get Timelapse Stats
+        cursor.execute("SELECT camera, COUNT(*) as total FROM timelapse_history GROUP BY camera")
         for row in cursor.fetchall():
-            camera = row['camera']
-            if camera not in cameras:
-                cameras[camera] = {
-                    'name': camera, 'total_records': 0, 'first_record': 'N/A', 'last_record': 'N/A',
-                    'total_duration': 'N/A', 'success_count': 0, 'timelapse_count': 0, 'failed_count': 0
-                }
-            cameras[camera]['timelapse_count'] = row['timelapse_count']
-        
-        # Get failed records
-        cursor.execute("""
-            SELECT camera, COUNT(*) as failed_count
-            FROM alert_history
-            GROUP BY camera
-        """)
-        
+            cam = row['camera']
+            if cam not in cameras: cameras[cam] = {'name': cam, 'success_count': 0, 'failed_count': 0, 'timelapse_count': 0, 'total_duration': '0s', 'last_record': '-'}
+            cameras[cam]['timelapse_count'] = row['total']
+
+        # 3. Get Failure Stats
+        cursor.execute("SELECT camera, COUNT(*) as total FROM alert_history GROUP BY camera")
         for row in cursor.fetchall():
-            camera = row['camera']
-            if camera not in cameras:
-                cameras[camera] = {
-                    'name': camera, 'total_records': 0, 'first_record': 'N/A', 'last_record': 'N/A',
-                    'total_duration': 'N/A', 'success_count': 0, 'timelapse_count': 0, 'failed_count': 0
-                }
-            cameras[camera]['failed_count'] = row['failed_count']
+            cam = row['camera']
+            if cam not in cameras: cameras[cam] = {'name': cam, 'success_count': 0, 'failed_count': 0, 'timelapse_count': 0, 'total_duration': '0s', 'last_record': '-'}
+            cameras[cam]['failed_count'] = row['total']
+
+        # 4. Overall & Recent (24h)
+        yesterday = int((datetime.now() - timedelta(days=1)).timestamp())
         
-        # Get overall statistics
-        cursor.execute("SELECT COUNT(*) as total FROM sent_ranges")
-        total_records = cursor.fetchone()['total']
-        
-        cursor.execute("SELECT COUNT(*) as total FROM timelapse_history")
-        total_timelapses = cursor.fetchone()['total']
-        
-        cursor.execute("SELECT COUNT(*) as total FROM alert_history")
-        total_failures = cursor.fetchone()['total']
-        
-        # Get recent activity (last 24 hours)
-        yesterday_ts = int((datetime.now() - timedelta(days=1)).timestamp())
-        
-        cursor.execute("SELECT COUNT(*) as recent FROM sent_ranges WHERE created_at > ?", (yesterday_ts,))
-        recent_records = cursor.fetchone()['recent']
-        
-        cursor.execute("SELECT COUNT(*) as recent FROM timelapse_history WHERE created_at > ?", (yesterday_ts,))
-        recent_timelapses = cursor.fetchone()['recent']
-        
-        cursor.execute("SELECT COUNT(*) as recent FROM alert_history WHERE created_at > ?", (yesterday_ts,))
-        recent_failures = cursor.fetchone()['recent']
+        stats = {
+            'total_cameras': len(cameras),
+            'total_records': cursor.execute("SELECT COUNT(*) FROM sent_ranges").fetchone()[0],
+            'total_timelapses': cursor.execute("SELECT COUNT(*) FROM timelapse_history").fetchone()[0],
+            'total_failures': cursor.execute("SELECT COUNT(*) FROM alert_history").fetchone()[0],
+            'recent_records_24h': cursor.execute("SELECT COUNT(*) FROM sent_ranges WHERE created_at > ?", (yesterday,)).fetchone()[0],
+            'recent_timelapses_24h': cursor.execute("SELECT COUNT(*) FROM timelapse_history WHERE created_at > ?", (yesterday,)).fetchone()[0],
+            'recent_failures_24h': cursor.execute("SELECT COUNT(*) FROM alert_history WHERE created_at > ?", (yesterday,)).fetchone()[0],
+        }
         
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'cameras': list(cameras.values()),
-            'overall': {
-                'total_cameras': len(cameras),
-                'total_records': total_records,
-                'total_timelapses': total_timelapses,
-                'total_failures': total_failures,
-                'recent_records_24h': recent_records,
-                'recent_timelapses_24h': recent_timelapses,
-                'recent_failures_24h': recent_failures
-            },
-            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
-        
+        return jsonify({'success': True, 'cameras': list(cameras.values()), 'overall': stats})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/visualization')
 def get_visualization_data():
-    """API to get detailed data for charts (Last 24h)"""
+    """Optimized for performance: Limits data points to prevent browser freeze"""
     try:
         conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
-        # Time filter: Last 24 hours
         start_time = int((datetime.now() - timedelta(hours=24)).timestamp())
         
-        # 1. Timeline Data (Ranges)
-        timeline_data = []
+        # --- OPTIMIZATION: LIMIT 1000 ---
+        # Prevent massive data payload
         cursor.execute("""
-            SELECT camera, start_ts, end_ts 
-            FROM sent_ranges 
-            WHERE start_ts > ? 
-            ORDER BY camera, start_ts
+            SELECT camera, start_ts, end_ts FROM sent_ranges 
+            WHERE start_ts > ? ORDER BY start_ts DESC LIMIT 1000
         """, (start_time,))
         
-        raw_ranges = cursor.fetchall()
-        
-        # Group ranges by camera for ApexCharts RangeBar
-        # Format: [{'x': 'CameraName', 'y': [start_ms, end_ms]}, ...]
         camera_ranges = {}
-        for row in raw_ranges:
+        for row in cursor.fetchall():
             cam = row['camera']
-            if cam not in camera_ranges:
-                camera_ranges[cam] = []
-            # Convert to milliseconds for JS charts
+            if cam not in camera_ranges: camera_ranges[cam] = []
             camera_ranges[cam].append({
                 'x': cam,
                 'y': [row['start_ts'] * 1000, row['end_ts'] * 1000],
-                'fillColor': '#00E396' # Green for success
+                'fillColor': '#00E396'
             })
-            
-        # 2. Error Points for Timeline
+
+        # --- OPTIMIZATION: LIMIT 500 ---
         cursor.execute("""
-            SELECT camera, created_at, alert_text 
-            FROM alert_history 
-            WHERE created_at > ?
+            SELECT camera, created_at, alert_text FROM alert_history 
+            WHERE created_at > ? ORDER BY created_at DESC LIMIT 500
         """, (start_time,))
-        raw_alerts = cursor.fetchall()
         
-        error_distribution = {}
-        
-        for row in raw_alerts:
+        error_dist = {}
+        for row in cursor.fetchall():
             cam = row['camera']
             ts = row['created_at']
-            
-            # Decode error for categorization
-            try:
-                alert_text = base64.b64decode(row['alert_text']).decode('utf-8')
-            except:
-                alert_text = str(row['alert_text'])
+            try: alert = base64.b64decode(row['alert_text']).decode('utf-8')
+            except: alert = str(row['alert_text'])
 
-            # Add to timeline as a "point" (small range)
-            if cam not in camera_ranges:
-                camera_ranges[cam] = []
-            
+            if cam not in camera_ranges: camera_ranges[cam] = []
+            # Create a 1-minute red block for visibility
             camera_ranges[cam].append({
                 'x': cam,
-                'y': [ts * 1000, (ts + 60) * 1000], # Make a 1-minute block for visibility
-                'fillColor': '#FF4560', # Red for error
-                'meta': 'Error'
+                'y': [ts * 1000, (ts + 60) * 1000],
+                'fillColor': '#FF4560'
             })
             
-            # Categorize Error
-            category = "Unknown"
-            if "404" in alert_text or "Not Found" in alert_text:
-                category = "Frigate 404 (Not Found)"
-            elif "Validation failed" in alert_text:
-                category = "Validation Failed (File Size/Type)"
-            elif "Partial" in alert_text:
-                category = "Partial Video (Duration Mismatch)"
-            elif "Network" in alert_text or "Curl" in alert_text:
-                category = "Network/API Error"
-            elif "Timelapse" in alert_text:
-                 category = "Timelapse Generation Failed"
-            else:
-                category = "Other Errors"
-                
-            error_distribution[category] = error_distribution.get(category, 0) + 1
+            # Simple Categorization
+            cat = "Other"
+            if "404" in alert: cat = "Not Found (404)"
+            elif "Validation" in alert: cat = "Validation Failed"
+            elif "Partial" in alert: cat = "Partial Recording"
+            elif "Network" in alert or "Curl" in alert: cat = "Network Error"
+            elif "Timelapse" in alert: cat = "Timelapse Error"
+            
+            error_dist[cat] = error_dist.get(cat, 0) + 1
 
-        # Format timeline series
-        timeline_series = []
-        for cam, data_points in camera_ranges.items():
-            timeline_series.append({
-                'name': cam,
-                'data': data_points
-            })
-
-        # Format error donut chart
-        error_labels = list(error_distribution.keys())
-        error_values = list(error_distribution.values())
-
+        timeline = [{'name': k, 'data': v} for k, v in camera_ranges.items()]
         conn.close()
         
         return jsonify({
-            'success': True,
-            'timeline': timeline_series,
-            'errors': {
-                'labels': error_labels,
-                'series': error_values
-            }
+            'success': True, 
+            'timeline': timeline, 
+            'errors': {'labels': list(error_dist.keys()), 'series': list(error_dist.values())}
         })
-
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recent_activity')
 def get_recent_activity():
-    """Get recent activity from all tables"""
     try:
         conn = get_db_connection()
-        if not conn:
-             return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
         activities = []
         
-        # Get recent successful records
-        cursor.execute("""
-            SELECT camera, start_ts, end_ts, created_at, 'success' as type
-            FROM sent_ranges ORDER BY created_at DESC LIMIT 50
-        """)
-        for row in cursor.fetchall():
-            activities.append({
-                'camera': row['camera'], 'type': 'Record', 'status': 'success',
-                'timestamp': datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S'),
-                'details': f"{datetime.fromtimestamp(row['start_ts']).strftime('%H:%M:%S')} - {datetime.fromtimestamp(row['end_ts']).strftime('%H:%M:%S')}"
-            })
-        
-        # Get recent timelapses
-        cursor.execute("""
-            SELECT camera, range_id, created_at
-            FROM timelapse_history ORDER BY created_at DESC LIMIT 50
-        """)
-        for row in cursor.fetchall():
-            activities.append({
-                'camera': row['camera'], 'type': 'Timelapse', 'status': 'success',
-                'timestamp': datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S'),
-                'details': row['range_id']
-            })
-        
-        # Get recent failures
-        cursor.execute("""
-            SELECT camera, id, created_at, alert_text, duration
-            FROM alert_history ORDER BY created_at DESC LIMIT 50
-        """)
-        for row in cursor.fetchall():
-            duration_str = parse_duration(row['duration']) if row['duration'] else 'N/A'
-            alert_text = row['alert_text'] if row['alert_text'] else 'Error'
-            try:
-                decoded = base64.b64decode(alert_text).decode('utf-8')
-                alert_text = decoded
-            except:
-                pass
+        # Fetch Success
+        cursor.execute("SELECT camera, created_at, 'Record' as type, 'success' as status, (start_ts || '-' || end_ts) as det FROM sent_ranges ORDER BY created_at DESC LIMIT 50")
+        for r in cursor.fetchall():
+            activities.append({'camera': r['camera'], 'type': r['type'], 'status': r['status'], 'timestamp': r['created_at'], 'details': 'Success'})
+
+        # Fetch Failures
+        cursor.execute("SELECT camera, created_at, 'Alert' as type, 'failed' as status, alert_text FROM alert_history ORDER BY created_at DESC LIMIT 50")
+        for r in cursor.fetchall():
+            try: txt = base64.b64decode(r['alert_text']).decode('utf-8')
+            except: txt = "Error"
+            clean = re.sub('<[^<]+?>', '', txt)[:80]
+            activities.append({'camera': r['camera'], 'type': r['type'], 'status': r['status'], 'timestamp': r['created_at'], 'details': clean})
             
-            # Clean HTML tags for display
-            clean_text = re.sub('<[^<]+?>', '', alert_text)
-            
-            activities.append({
-                'camera': row['camera'], 'type': 'Alert', 'status': 'failed',
-                'timestamp': datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S'),
-                'details': f"{clean_text[:100]}... (Dur: {duration_str})"
-            })
-        
+        # Sort and Format
         activities.sort(key=lambda x: x['timestamp'], reverse=True)
+        final_list = []
+        for act in activities[:100]:
+            final_list.append({
+                'camera': act['camera'],
+                'type': act['type'],
+                'status': act['status'],
+                'timestamp': datetime.fromtimestamp(act['timestamp']).strftime('%H:%M:%S'),
+                'details': act['details']
+            })
+            
         conn.close()
-        
-        return jsonify({'success': True, 'activities': activities[:100]})
-        
+        return jsonify({'success': True, 'activities': final_list})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    print(f"Starting Dashboard on port {PORT}")
+    print(f"Starting Dashboard on port {PORT}...")
     app.run(host='0.0.0.0', port=PORT, debug=False)
