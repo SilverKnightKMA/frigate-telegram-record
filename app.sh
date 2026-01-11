@@ -105,8 +105,16 @@ elif [ "$MODE" == "record" ]; then
             continue
         fi
 
+        # [Ops] Performance Monitoring - Start Timer
+        cycle_start_ts=$(date +%s)
+
         execute_cycle "$REC_DURATION_MIN" "record"
         
+        # [Ops] Performance Monitoring - End Timer & Log
+        cycle_end_ts=$(date +%s)
+        cycle_duration=$((cycle_end_ts - cycle_start_ts))
+        log "🔄 Record Cycle completed in ${cycle_duration}s."
+
         # [Ops] Update Heartbeat
         # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
         touch "$DATA_DIR/.heartbeat"
@@ -157,10 +165,18 @@ elif [ "$MODE" == "timelapse" ]; then
             continue
         fi
 
+        # [Ops] Performance Monitoring - Start Timer
+        cycle_start_ts=$(date +%s)
+
         # Run cycle and capture exit status
         execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
         CYCLE_STATUS=$?
         log_debug "Timelapse cycle finished with exit status: $CYCLE_STATUS"
+
+        # [Ops] Performance Monitoring - End Timer & Log
+        cycle_end_ts=$(date +%s)
+        cycle_duration=$((cycle_end_ts - cycle_start_ts))
+        log "🔄 Timelapse Cycle completed in ${cycle_duration}s."
 
         # [Ops] Update Heartbeat
         # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
