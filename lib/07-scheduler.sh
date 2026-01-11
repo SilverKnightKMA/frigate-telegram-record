@@ -124,7 +124,8 @@ execute_timelapse_cycle() {
             local exists=$(db_count "SELECT count(*) FROM events WHERE camera='$src' AND start_ts=$slot_start_ts AND end_ts=$slot_end_ts AND type='TIMELAPSE' AND status='SUCCESS';")
             
             if [ "$exists" -eq 0 ]; then
-                log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
+                # [LOGGING] Included Date in the log to identify which day the missing slot belongs to
+                log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%Y-%m-%d %H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
                 
                 if ! execute_timelapse_pipeline "$name" "$src" "$slot_start_ts" "$slot_end_ts" "timelapse" "$tid" "$chat_id"; then
                     log "[$src] ❌ Failed to process slot. Will retry later."

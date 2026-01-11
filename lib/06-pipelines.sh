@@ -328,6 +328,9 @@ execute_timelapse_pipeline() {
     # [Dashboard Update] Start timer
     local pipe_start=$(date +%s)
 
+    # [LOGGING] Add detailed START log to match Record pipeline
+    log_debug "[$src] execute_timelapse_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
+
     # 1. SETUP & IDENTIFICATION
     local target_tid="${TIMELAPSE_THREAD_ID:-$original_tid}"
     
