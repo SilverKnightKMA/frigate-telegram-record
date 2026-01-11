@@ -6,8 +6,7 @@
 # ==============================================================================
 
 # Calculates the total duration of available footage for a given time range
-# by querying Frigate's VOD playlist API without downloading the full video.
-# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
+# by querying Frigate's VOD playlist API without downloading the full video.# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
 calculate_vod_source_duration() {
     local camera_name="$1"
     local start_ts="$2"
@@ -48,7 +47,7 @@ calculate_vod_source_duration() {
 }
 
 # Centralized gatekeeper to decide if a pipeline should proceed based on source availability.
-# Purpose: Prevents unnecessary processing/alerts when VOD data is insufficient or unchanged.
+# Purpose: Hợp nhất logic kiểm tra VOD và so sánh lịch sử để quyết định có chạy Pipeline không.
 check_source_gatekeeper() {
     local src="$1"
     local start_ts="$2"
@@ -58,7 +57,24 @@ check_source_gatekeeper() {
     local expected_duration=$(( end_ts - start_ts ))
     local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
     
-    # Threshold calculation based on mode
+    # Lấy thông tin lỗi cũ từ Database
+    local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    local prev_fail_duration=0
+    local prev_alert_sent=0
+    if [ -n "$prev_fail_row" ]; then
+        prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
+        prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
+    fi
+    prev_fail_duration=${prev_fail_duration:-0}
+    prev_alert_sent=${prev_alert_sent:-0}
+
+    # Logic chặn: Nếu đã cảnh báo và dữ liệu VOD không tăng thêm
+    if [ "$prev_alert_sent" -eq 1 ] && [ "$vod_duration" -le "$prev_fail_duration" ]; then
+        log "[$src] [$mode] Gatekeeper: Skipping (VOD ${vod_duration}s <= previous ${prev_fail_duration}s)."
+        return 1
+    fi
+
+    # Xác định ngưỡng (threshold) tùy theo mode
     local threshold=0
     if [ "$mode" == "record" ]; then
         threshold=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
@@ -66,28 +82,17 @@ check_source_gatekeeper() {
         local speed=${TIMELAPSE_SPEED:-60}
         local ideal_timelapse_duration=$(( expected_duration / speed ))
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
-    fi
-
-    # Retrieve previous FAILED metadata for decision
-    local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
-    local prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
-    local prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
-    prev_fail_duration=${prev_fail_duration:-0}
-    prev_alert_sent=${prev_alert_sent:-0}
-
-    # Early exit logic: If alert sent and no VOD improvement
-    if [ "$prev_alert_sent" -eq 1 ] && [ "$vod_duration" -le "$prev_fail_duration" ]; then
-        log "[$src] [$mode] Gatekeeper: Skipping slot (VOD ${vod_duration}s <= previous ${prev_fail_duration}s)."
-        return 1
-    fi
-
-    # Insufficient data check
-    if [ "$vod_duration" -lt "$threshold" ]; then
-        if [ "$mode" == "timelapse" ] && [ "$vod_duration" -lt 60 ]; then
-            # Smart skip for timelapse with zero/near-zero duration
-            if [ "$vod_duration" -le "$prev_fail_duration" ]; then return 1; fi
+        
+        # Xử lý riêng cho Timelapse quá ngắn
+        if [ "$vod_duration" -lt 60 ]; then
+            if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
+                return 1
+            fi
         fi
-        log "[$src] [$mode] Gatekeeper: Insufficient VOD (${vod_duration}s < ${threshold}s). Proceeding best-effort."
+    fi
+
+    if [ "$vod_duration" -lt "$threshold" ]; then
+        log "[$src] [$mode] Gatekeeper: Insufficient data (${vod_duration}s < ${threshold}s), proceeding best-effort."
     fi
 
     return 0
