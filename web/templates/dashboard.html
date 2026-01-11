@@ -9,37 +9,58 @@
         :root { --primary: #667eea; --bg: #f4f6f9; --card: #fff; --text: #333; --success: #00E396; --danger: #FF4560; }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, sans-serif; }
         body { background: var(--bg); color: var(--text); padding: 20px; }
-        .container { max-width: 1400px; margin: 0 auto; }
+        .container { max-width: 1600px; margin: 0 auto; }
+        
+        /* Header */
         .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 15px 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         
-        /* Layout Grids */
+        /* Grids */
         .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
         .grid-full { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
-        @media (max-width: 1000px) { .grid-main { grid-template-columns: 1fr; } }
+        @media (max-width: 1024px) { .grid-main { grid-template-columns: 1fr; } }
         
-        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 0; display: flex; flex-direction: column; }
-        .card-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .card-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; align-items: center; }
         .card h3 { font-size: 1rem; color: #555; margin: 0; }
         
-        /* Stats Box */
+        /* Stats */
         .stat-box { background: white; padding: 15px; border-radius: 10px; border-left: 4px solid var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
         .stat-box.err { border-left-color: var(--danger); }
         .stat-box.ok { border-left-color: var(--success); }
         .stat-val { font-size: 1.8rem; font-weight: bold; margin-top: 5px; }
         .stat-lbl { font-size: 0.8rem; color: #888; text-transform: uppercase; }
 
-        /* Filter */
-        .filter-bar { display: flex; gap: 10px; margin-bottom: 10px; }
-        .filter-select { padding: 5px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; outline: none; }
+        /* Filters */
+        .filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 8px; }
+        .filter-group { display: flex; flex-direction: column; gap: 4px; }
+        .filter-lbl { font-size: 0.75rem; font-weight: bold; color: #666; }
+        .form-control { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; outline: none; }
+        .form-control:focus { border-color: var(--primary); }
+
+        /* Activity List */
+        .act-list { min-height: 400px; display: flex; flex-direction: column; gap: 8px; }
+        .act-item { 
+            padding: 10px 12px; border: 1px solid #eee; background: #fff; 
+            border-left: 4px solid #ddd; border-radius: 6px; cursor: pointer; 
+            transition: all 0.2s ease; /* Smooth transition */
+        }
         
-        /* Lists */
-        .act-list { max-height: 600px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-        .act-item { padding: 10px; border: 1px solid #eee; background: #fff; border-left: 4px solid #ddd; border-radius: 6px; cursor: pointer; transition: transform 0.1s; }
-        .act-item:hover { transform: translateX(3px); border-color: var(--primary); }
+        /* HOVER FIX: Use shadow & border instead of transform/scale */
+        .act-item:hover { 
+            border-color: var(--primary); 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+            background: #fafbff;
+        }
+        
         .act-item.failed { border-left-color: var(--danger); background: #fffbfb; }
         .act-item.success { border-left-color: var(--success); }
-        .act-desc { font-size: 0.85rem; color: #666; word-break: break-word; margin-top: 4px; }
+        .act-desc { font-size: 0.85rem; color: #666; word-break: break-word; margin-top: 4px; line-height: 1.4; }
+        
+        /* Pagination */
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
+        .page-btn { padding: 6px 14px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+        .page-btn:disabled { background: #ccc; cursor: not-allowed; }
         
         /* Table */
         .table-responsive { overflow-x: auto; }
@@ -63,28 +84,6 @@
             <div class="stat-box err"><div class="stat-lbl">24h Failures</div><div class="stat-val" id="s_fails">0</div></div>
         </div>
 
-        <div class="grid-main">
-            <div style="display:flex; flex-direction:column; gap:20px;">
-                <div class="card">
-                    <div class="card-header"><h3>Timeline (Aggregated)</h3></div>
-                    <div id="chartTimeline">Loading...</div>
-                </div>
-                <div class="card">
-                    <div class="card-header"><h3>Error Distribution</h3></div>
-                    <div id="chartErrors"></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header"><h3>Activity Log</h3></div>
-                <div class="filter-bar">
-                    <select id="filterCam" class="filter-select"><option value="all">All Cameras</option></select>
-                    <select id="filterStatus" class="filter-select"><option value="all">All Status</option><option value="success">Success</option><option value="failed">Failed</option></select>
-                </div>
-                <div class="act-list" id="lstAct"></div>
-            </div>
-        </div>
-
         <div class="grid-full">
             <div class="card">
                 <div class="card-header"><h3>Camera Status Overview</h3></div>
@@ -96,19 +95,81 @@
                 </div>
             </div>
         </div>
+
+        <div class="grid-main">
+            <div style="display:flex; flex-direction:column; gap:20px;">
+                <div class="card">
+                    <div class="card-header"><h3>Timeline (24h)</h3></div>
+                    <div id="chartTimeline"></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Error Distribution (48h)</h3></div>
+                    <div id="chartErrors"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Activity Log</h3></div>
+                
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label class="filter-lbl">Search</label>
+                        <input type="text" id="fSearch" class="form-control" placeholder="Keyword...">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-lbl">Status</label>
+                        <select id="fStatus" class="form-control">
+                            <option value="all">All</option><option value="success">Success</option><option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-lbl">Type</label>
+                        <select id="fType" class="form-control">
+                            <option value="all">All</option><option value="Record">Record</option><option value="Alert">Alert</option><option value="Timelapse">Timelapse</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-lbl">Camera</label>
+                        <select id="fCam" class="form-control"><option value="all">All</option></select>
+                    </div>
+                     <div class="filter-group">
+                        <label class="filter-lbl">From Date</label>
+                        <input type="date" id="fDateFrom" class="form-control">
+                    </div>
+                </div>
+
+                <div class="act-list" id="lstAct"></div>
+                
+                <div class="pagination">
+                    <button class="page-btn" id="btnPrev" onclick="changePage(-1)">Prev</button>
+                    <span id="pageInfo" style="font-size:0.9rem; color:#666;">Page 1</span>
+                    <button class="page-btn" id="btnNext" onclick="changePage(1)">Next</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <dialog id="modal"><h3 id="mTitle"></h3><pre id="mBody" style="white-space:pre-wrap; font-size:0.9rem; background:#f5f5f5; padding:10px; border-radius:5px;"></pre><button onclick="document.getElementById('modal').close()" style="margin-top:10px; padding:5px 15px;">Close</button></dialog>
+    <dialog id="modal"><h3 id="mTitle"></h3><pre id="mBody" style="white-space:pre-wrap; font-size:0.9rem; background:#f5f5f5; padding:10px; border-radius:5px;"></pre><button onclick="document.getElementById('modal').close()" style="margin-top:10px; padding:5px 15px; cursor:pointer;">Close</button></dialog>
 
     <script>
         let charts = { timeline: null, error: null };
         let countdown = 30;
         let allActivities = [];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+        let filteredActivities = [];
 
         document.addEventListener('DOMContentLoaded', () => {
             loadData();
-            document.getElementById('filterCam').addEventListener('change', renderActivityList);
-            document.getElementById('filterStatus').addEventListener('change', renderActivityList);
+            
+            // Add listeners to all filters
+            ['fSearch', 'fStatus', 'fType', 'fCam', 'fDateFrom'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    currentPage = 1; // Reset to page 1 on filter change
+                    renderActivityList();
+                });
+            });
+
             setInterval(() => {
                 countdown--;
                 document.getElementById('timer').innerText = countdown;
@@ -132,30 +193,19 @@
 
         function updateStats(d) {
             if(!d.success) return;
-            // Update KPIs
             document.getElementById('s_cams').innerText = d.overall.total_cameras;
             document.getElementById('s_recs').innerText = d.overall.recent_records_24h;
             document.getElementById('s_fails').innerText = d.overall.recent_failures_24h;
 
-            // Update Table
             const tbody = document.querySelector('#tblCams tbody');
             if(tbody) {
                 tbody.innerHTML = '';
                 d.cameras.forEach(c => {
-                    tbody.innerHTML += `
-                        <tr>
-                            <td><strong>${c.name}</strong></td>
-                            <td><span class="badge bg-green">${c.success_count}</span></td>
-                            <td><span class="badge ${c.failed_count > 0 ? 'bg-red' : 'bg-gray'}">${c.failed_count}</span></td>
-                            <td><span class="badge bg-orange">${c.timelapse_count}</span></td>
-                            <td>${c.total_duration}</td>
-                            <td style="color:#666; font-size:0.85rem">${c.last_record}</td>
-                        </tr>`;
+                    tbody.innerHTML += `<tr><td><strong>${c.name}</strong></td><td><span class="badge bg-green">${c.success_count}</span></td><td><span class="badge ${c.failed_count > 0 ? 'bg-red' : 'bg-gray'}">${c.failed_count}</span></td><td><span class="badge bg-orange">${c.timelapse_count}</span></td><td>${c.total_duration}</td><td style="color:#666; font-size:0.85rem">${c.last_record}</td></tr>`;
                 });
             }
 
-            // Update Filter
-            const sel = document.getElementById('filterCam');
+            const sel = document.getElementById('fCam');
             if(sel.options.length === 1) {
                 d.cameras.forEach(c => {
                     const opt = document.createElement('option');
@@ -168,69 +218,99 @@
         function renderActivityList() {
             const list = document.getElementById('lstAct');
             list.innerHTML = '';
-            const camFilter = document.getElementById('filterCam').value;
-            const statusFilter = document.getElementById('filterStatus').value;
-            const filtered = allActivities.filter(a => {
-                if (camFilter !== 'all' && a.camera !== camFilter) return false;
-                if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+
+            // 1. Get Filters
+            const search = document.getElementById('fSearch').value.toLowerCase();
+            const status = document.getElementById('fStatus').value;
+            const type = document.getElementById('fType').value;
+            const cam = document.getElementById('fCam').value;
+            const dateFrom = document.getElementById('fDateFrom').value;
+
+            // 2. Filter Data
+            filteredActivities = allActivities.filter(a => {
+                if (status !== 'all' && a.status !== status) return false;
+                if (type !== 'all' && a.type !== type) return false;
+                if (cam !== 'all' && a.camera !== cam) return false;
+                if (search && !a.details.toLowerCase().includes(search) && !a.camera.toLowerCase().includes(search)) return false;
+                
+                if (dateFrom) {
+                    // Convert raw_ts to YYYY-MM-DD
+                    const itemDate = new Date(a.raw_ts * 1000).toISOString().split('T')[0];
+                    if (itemDate < dateFrom) return false;
+                }
                 return true;
             });
-            if (filtered.length === 0) { list.innerHTML = '<div style="padding:20px; text-align:center; color:#999">No items</div>'; return; }
-            filtered.forEach(a => {
-                const div = document.createElement('div');
-                div.className = `act-item ${a.status}`;
-                div.innerHTML = `<div style="display:flex; justify-content:space-between; font-weight:bold; font-size:0.9rem;"><span>${a.camera}</span><span>${a.time_short}</span></div><div class="act-desc">${a.details.replace(/<[^>]+>/g, '')}</div>`;
-                div.onclick = () => {
-                    document.getElementById('mTitle').innerText = `${a.camera} - ${a.timestamp}`;
-                    document.getElementById('mBody').innerText = a.details;
-                    document.getElementById('modal').showModal();
-                };
-                list.appendChild(div);
-            });
+
+            // 3. Pagination Logic
+            const totalPages = Math.ceil(filteredActivities.length / itemsPerPage) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            
+            const start = (currentPage - 1) * itemsPerPage;
+            const pagedItems = filteredActivities.slice(start, start + itemsPerPage);
+
+            // 4. Render Items
+            if (pagedItems.length === 0) { 
+                list.innerHTML = '<div style="padding:20px; text-align:center; color:#999">No matching activities</div>';
+            } else {
+                pagedItems.forEach(a => {
+                    const div = document.createElement('div');
+                    div.className = `act-item ${a.status}`;
+                    div.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:0.9rem;">
+                            <span>${a.camera} <small style="color:#666; font-weight:normal">(${a.type})</small></span>
+                            <span>${a.timestamp}</span>
+                        </div>
+                        <div class="act-desc">${a.details.replace(/<[^>]+>/g, '')}</div>
+                    `;
+                    div.onclick = () => {
+                        document.getElementById('mTitle').innerText = `${a.camera} - ${a.timestamp}`;
+                        document.getElementById('mBody').innerText = a.details;
+                        document.getElementById('modal').showModal();
+                    };
+                    list.appendChild(div);
+                });
+            }
+
+            // 5. Update Pagination Controls
+            document.getElementById('pageInfo').innerText = `Page ${currentPage} / ${totalPages}`;
+            document.getElementById('btnPrev').disabled = currentPage === 1;
+            document.getElementById('btnNext').disabled = currentPage === totalPages;
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            renderActivityList();
         }
 
         function updateCharts(d) {
             if(!d.success) return;
 
-            // --- TIMELINE CHART ---
+            // Timeline
             const tlEl = document.getElementById('chartTimeline');
-            
-            // KEY FIX: Only create new chart if it doesn't exist.
-            // If exists, just update series data. This preserves ZOOM state.
-            if(charts.timeline) {
-                charts.timeline.updateSeries(d.timeline);
-            } else {
+            if(charts.timeline) { charts.timeline.updateSeries(d.timeline); } 
+            else {
                 const now = new Date().getTime();
-                const startView = now - (24 * 3600 * 1000); // 24h view default
-
-                const tlOpts = {
+                charts.timeline = new ApexCharts(tlEl, {
                     series: d.timeline,
-                    chart: { 
-                        type: 'rangeBar', height: 350, 
-                        animations: { enabled: false },
-                        toolbar: { show: true } 
-                    },
-                    plotOptions: { bar: { horizontal: true, barHeight: '60%', rangeBarGroupRows: true } },
-                    xaxis: { type: 'datetime', min: startView, max: now }, // Initial view
-                    fill: { type: 'solid', opacity: 1 },
-                    stroke: { width: 0 },
+                    chart: { type: 'rangeBar', height: 350, animations: { enabled: false }, toolbar: { show: true } },
+                    plotOptions: { bar: { horizontal: true, barHeight: '70%', rangeBarGroupRows: true } },
+                    xaxis: { type: 'datetime', min: now - (24 * 3600 * 1000), max: now },
+                    stroke: { width: 1, colors: ['#fff'] },
                     tooltip: { enabled: true, x: { format: 'dd MMM HH:mm' } },
+                    fill: { type: 'solid', opacity: 1 },
                     legend: { show: false }
-                };
-                charts.timeline = new ApexCharts(tlEl, tlOpts);
+                });
                 charts.timeline.render();
             }
 
-            // --- ERROR CHART ---
-            // Donut chart doesn't zoom, so recreating it is fine/safer for label changes
+            // Error Donut
             const errEl = document.getElementById('chartErrors');
             if(charts.error) { charts.error.destroy(); }
-            
             const hasErr = d.errors.series.length > 0;
             charts.error = new ApexCharts(errEl, {
                 series: hasErr ? d.errors.series : [1],
                 labels: hasErr ? d.errors.labels : ['No Errors'],
-                chart: { type: 'donut', height: 250, animations: { enabled: false } },
+                chart: { type: 'donut', height: 280, animations: { enabled: false } },
                 colors: hasErr ? ['#FF4560', '#FEB019', '#00E396', '#775DD0'] : ['#eee'],
                 legend: { position: 'bottom' },
                 dataLabels: { enabled: false }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Frigate Telegram Record - Web Dashboard (Final Fixed)
+Frigate Telegram Record - Web Dashboard (Final + Pagination + Filters)
 """
 
 import os
@@ -49,43 +49,29 @@ def dashboard(): return render_template('dashboard.html')
 
 @app.route('/api/stats')
 def get_stats():
-    """Returns detailed stats for KPI cards and Table"""
     try:
         conn = get_db_connection()
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
         cameras = {}
-        # 1. Stats from sent_ranges (Success records)
-        cursor.execute("""
-            SELECT 
-                camera, 
-                COUNT(*) as total, 
-                MAX(created_at) as last_ts, 
-                SUM(end_ts - start_ts) as dur 
-            FROM sent_ranges 
-            GROUP BY camera
-        """)
+        # 1. Success Stats
+        cursor.execute("SELECT camera, COUNT(*) as total, MAX(created_at) as last_ts, SUM(end_ts - start_ts) as dur FROM sent_ranges GROUP BY camera")
         for row in cursor.fetchall():
             cameras[row['camera']] = {
-                'name': row['camera'], 
-                'success_count': row['total'], 
-                'failed_count': 0, 
-                'timelapse_count': 0,
+                'name': row['camera'], 'success_count': row['total'], 'failed_count': 0, 'timelapse_count': 0,
                 'total_duration': parse_duration(row['dur']),
                 'last_record': datetime.fromtimestamp(row['last_ts']).strftime('%Y-%m-%d %H:%M:%S') if row['last_ts'] else '-'
             }
             
-        # 2. Stats from other tables
+        # 2. Other Stats
         for table, key in [('timelapse_history', 'timelapse_count'), ('alert_history', 'failed_count')]:
             cursor.execute(f"SELECT camera, COUNT(*) as total FROM {table} GROUP BY camera")
             for row in cursor.fetchall():
                 c = row['camera']
-                if c not in cameras: 
-                    cameras[c] = {'name': c, 'success_count':0, 'failed_count':0, 'timelapse_count':0, 'total_duration':'0s', 'last_record':'-'}
+                if c not in cameras: cameras[c] = {'name': c, 'success_count':0, 'failed_count':0, 'timelapse_count':0, 'total_duration':'0s', 'last_record':'-'}
                 cameras[c][key] = row['total']
 
-        # 3. Overall Stats (24h)
         yesterday = int((datetime.now() - timedelta(days=1)).timestamp())
         stats = {
             'total_cameras': len(cameras),
@@ -96,30 +82,6 @@ def get_stats():
         return jsonify({'success': True, 'cameras': list(cameras.values()), 'overall': stats})
     except Exception as e: return jsonify({'success': False, 'error': str(e)}), 500
 
-def compact_ranges(raw_rows, tolerance=30):
-    """Merges adjacent blocks to reduce DOM stress"""
-    if not raw_rows: return []
-    raw_rows.sort(key=lambda x: x['start_ts'])
-    merged = []
-    current_blk = None
-
-    for row in raw_rows:
-        start = row['start_ts']
-        end = row['end_ts']
-        if current_blk is None:
-            current_blk = {'x': row['camera'], 'y': [start*1000, end*1000], 'fillColor': '#00E396'}
-            continue
-        prev_end_ms = current_blk['y'][1]
-        # Merge if gap is less than tolerance
-        if (start * 1000) <= (prev_end_ms + (tolerance * 1000)):
-            current_blk['y'][1] = max(prev_end_ms, end * 1000)
-        else:
-            merged.append(current_blk)
-            current_blk = {'x': row['camera'], 'y': [start*1000, end*1000], 'fillColor': '#00E396'}
-            
-    if current_blk: merged.append(current_blk)
-    return merged
-
 @app.route('/api/visualization')
 def get_visualization_data():
     try:
@@ -127,60 +89,45 @@ def get_visualization_data():
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
-        # Load 48h for buffer
         start_time = int((datetime.now() - timedelta(hours=48)).timestamp())
         
-        # Fetch RAW ranges
-        cursor.execute("SELECT camera, start_ts, end_ts FROM sent_ranges WHERE start_ts > ? ORDER BY camera, start_ts", (start_time,))
-        raw_data = cursor.fetchall()
-        
-        # Group & Compact
-        grouped_by_cam = {}
-        for row in raw_data:
+        # 1. TIMELINE DATA (Raw Ranges for 48h)
+        cursor.execute("SELECT camera, start_ts, end_ts FROM sent_ranges WHERE start_ts > ? ORDER BY start_ts DESC LIMIT 2000", (start_time,))
+        camera_ranges = {}
+        for row in cursor.fetchall():
             c = row['camera']
-            if c not in grouped_by_cam: grouped_by_cam[c] = []
-            grouped_by_cam[c].append(row)
-            
-        final_timeline = []
-        for cam, rows in grouped_by_cam.items():
-            merged_blocks = compact_ranges(rows)
-            final_timeline.append({'name': cam, 'data': merged_blocks})
+            if c not in camera_ranges: camera_ranges[c] = []
+            camera_ranges[c].append({'x': c, 'y': [row['start_ts']*1000, row['end_ts']*1000], 'fillColor': '#00E396'})
 
-        # Add Errors
-        cursor.execute("SELECT camera, created_at, alert_text FROM alert_history WHERE created_at > ? ORDER BY created_at DESC LIMIT 200", (start_time,))
-        error_dist = {}
-        
+        # 2. ERROR DOTS (For Timeline - LIMITED to prevent lag)
+        cursor.execute("SELECT camera, created_at FROM alert_history WHERE created_at > ? ORDER BY created_at DESC LIMIT 500", (start_time,))
         for row in cursor.fetchall():
             c = row['camera']
             ts = row['created_at']
-            
-            # Find Series
-            series = next((s for s in final_timeline if s['name'] == c), None)
-            if not series:
-                series = {'name': c, 'data': []}
-                final_timeline.append(series)
-            
-            # Error point
-            series['data'].append({
-                'x': c, 
-                'y': [ts*1000, (ts+60)*1000], 
-                'fillColor': '#FF4560'
-            })
-            
+            if c not in camera_ranges: camera_ranges[c] = []
+            camera_ranges[c].append({'x': c, 'y': [ts*1000, (ts+60)*1000], 'fillColor': '#FF4560'})
+
+        # 3. ERROR DISTRIBUTION (For Pie Chart - FULL COUNT)
+        # Query riêng để đếm chính xác toàn bộ lỗi trong 48h mà không bị LIMIT
+        cursor.execute("SELECT alert_text FROM alert_history WHERE created_at > ?", (start_time,))
+        error_dist = {}
+        for row in cursor.fetchall():
             try: alert = base64.b64decode(row['alert_text']).decode('utf-8')
             except: alert = str(row['alert_text'])
             
             cat = "Other"
             if "404" in alert: cat = "404 Not Found"
             elif "Validation" in alert: cat = "Validation Failed"
-            elif "Network" in alert: cat = "Network Err"
             elif "Partial" in alert: cat = "Partial Rec"
+            elif "Network" in alert: cat = "Network Err"
+            elif "Timelapse" in alert: cat = "Timelapse Err"
+            
             error_dist[cat] = error_dist.get(cat, 0) + 1
 
         conn.close()
         return jsonify({
             'success': True, 
-            'timeline': final_timeline, 
+            'timeline': [{'name': k, 'data': v} for k, v in camera_ranges.items()], 
             'errors': {'labels': list(error_dist.keys()), 'series': list(error_dist.values())}
         })
     except Exception as e: return jsonify({'success': False, 'error': str(e)}), 500
@@ -193,19 +140,23 @@ def get_recent_activity():
         cursor = conn.cursor()
         
         acts = []
-        # Get Failures
-        cursor.execute("SELECT camera, created_at, 'failed' as status, alert_text FROM alert_history ORDER BY created_at DESC LIMIT 50")
+        # Tăng limit lên 1000 để client-side pagination hoạt động hiệu quả
+        cursor.execute("SELECT camera, created_at, 'Alert' as type, 'failed' as status, alert_text FROM alert_history ORDER BY created_at DESC LIMIT 500")
         for r in cursor.fetchall():
             try: txt = base64.b64decode(r['alert_text']).decode('utf-8')
             except: txt = "Error"
             acts.append({'camera': r['camera'], 'type': 'Alert', 'status': 'failed', 'ts': r['created_at'], 'det': txt[:200]})
 
-        # Get Success
-        cursor.execute("SELECT camera, created_at, (start_ts || '-' || end_ts) as val FROM sent_ranges ORDER BY created_at DESC LIMIT 50")
+        cursor.execute("SELECT camera, created_at, 'Record' as type, 'success' as status, (start_ts || '-' || end_ts) as det FROM sent_ranges ORDER BY created_at DESC LIMIT 500")
         for r in cursor.fetchall():
             acts.append({'camera': r['camera'], 'type': 'Record', 'status': 'success', 'ts': r['created_at'], 'det': 'Success'})
+
+        cursor.execute("SELECT camera, created_at, 'Timelapse' as type, 'success' as status, range_id as det FROM timelapse_history ORDER BY created_at DESC LIMIT 100")
+        for r in cursor.fetchall():
+             acts.append({'camera': r['camera'], 'type': 'Timelapse', 'status': 'success', 'ts': r['created_at'], 'det': r['det']})
             
         acts.sort(key=lambda x: x['ts'], reverse=True)
+        
         final = []
         for a in acts:
             final.append({
@@ -213,6 +164,7 @@ def get_recent_activity():
                 'type': a['type'],
                 'status': a['status'],
                 'timestamp': datetime.fromtimestamp(a['ts']).strftime('%Y-%m-%d %H:%M:%S'),
+                'raw_ts': a['ts'], # Gửi thêm raw timestamp để frontend filter ngày
                 'time_short': datetime.fromtimestamp(a['ts']).strftime('%H:%M'),
                 'details': a['det']
             })
