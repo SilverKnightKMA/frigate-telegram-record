@@ -1,5 +1,3 @@
-=== lib/05-core.sh ===
-
 #!/bin/bash
 
 # ==============================================================================
@@ -209,8 +207,8 @@ trigger_failure_alert() {
     fi
 
     if [ "$should_update" != "true" ]; then
-         log "[$src] Silent Fail (No improvement & Alert Repeat off): $reason"
-         return
+          log "[$src] Silent Fail (No improvement & Alert Repeat off): $reason"
+          return
     fi
 
     # Prepare Alert Text
