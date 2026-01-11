@@ -92,9 +92,15 @@ get_aligned_master_ts() {
     
     if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
     
+    # [Debug] Log calculation inputs to verify timezone offsets
+    log_debug "Aligning TS: Current=$current_ts, Offset=$tz_offset_sec, Duration=$duration_sec"
+
     local local_ts=$((current_ts + tz_offset_sec))
     local aligned_local_end=$(( local_ts - (local_ts % duration_sec) ))
     local master_end_ts=$(( aligned_local_end - tz_offset_sec ))
     
+    # [Debug] Log final result
+    log_debug "Aligned Master TS: $master_end_ts ($(date -d @$master_end_ts '+%H:%M:%S'))"
+
     echo "$master_end_ts"
 }

@@ -6,7 +6,8 @@
 # ==============================================================================
 
 # Calculates the total duration of available footage for a given time range
-# by querying Frigate's VOD playlist API without downloading the full video.# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
+# by querying Frigate's VOD playlist API without downloading the full video.
+# Purpose: Used to pre-check if sufficient source data exists before expensive operations.
 calculate_vod_source_duration() {
     local camera_name="$1"
     local start_ts="$2"
@@ -20,6 +21,8 @@ calculate_vod_source_duration() {
     local total_duration=0
     local count=1
     
+    log_debug "[$camera_name] VOD Check Start: $(date -d @$start_ts '+%H:%M') - $(date -d @$end_ts '+%H:%M')"
+
     # Iterate through time chunks to sum up available segments from HLS playlists
     while [ "$cursor" -lt "$end_ts" ]; do
         local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
@@ -28,6 +31,9 @@ calculate_vod_source_duration() {
         local vod_url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
         local playlist_file="$vod_check_dir/check_${count}.m3u8"
         
+        # [Debug] Log current chunk being checked
+        log_debug "[$camera_name] Checking VOD Chunk $count: $vod_url"
+
         # Fetch playlist header to extract segment durations
         local http_code=$(curl -s -o "$playlist_file" -w "%{http_code}" "$vod_url")
         
@@ -36,6 +42,10 @@ calculate_vod_source_duration() {
             local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$playlist_file" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
             chunk_duration=${chunk_duration:-0}
             total_duration=$((total_duration + chunk_duration))
+            # [Debug] Log progress of duration accumulation
+            log_debug "[$camera_name] Chunk $count Duration: ${chunk_duration}s (Total: ${total_duration}s)"
+        else
+            log_debug "[$camera_name] Chunk $count Failed/Empty (HTTP $http_code)"
         fi
         
         cursor=$next_cursor
@@ -108,12 +118,12 @@ get_last_fail_metric() {
 
     # [CHANGE] Updated SQL formatting from script 2 for readability
     local value=$(sqlite3 "$DB_FILE" \
-        "SELECT $metric FROM events 
-         WHERE camera='$src' 
-           AND start_ts=$start_ts 
-           AND end_ts=$end_ts 
-           AND status='FAILED' 
-         ORDER BY id DESC 
+        "SELECT $metric FROM events \
+         WHERE camera='$src' \
+           AND start_ts=$start_ts \
+           AND end_ts=$end_ts \
+           AND status='FAILED' \
+         ORDER BY id DESC \
          LIMIT 1;")
     echo "${value:-0}"
 }
@@ -220,12 +230,12 @@ handle_recovery_actions() {
     
     # [CHANGE] Updated SQL formatting from script 2
     local db_row=$(sqlite3 "$DB_FILE" \
-        "SELECT msg_id, message FROM events 
-         WHERE camera='$src' 
-           AND start_ts=$start_ts 
-           AND end_ts=$end_ts 
-           AND status='FAILED' 
-         ORDER BY id DESC 
+        "SELECT msg_id, message FROM events \
+         WHERE camera='$src' \
+           AND start_ts=$start_ts \
+           AND end_ts=$end_ts \
+           AND status='FAILED' \
+         ORDER BY id DESC \
          LIMIT 1;")
     
     # If no record exists, exit immediately (No-op)
@@ -286,12 +296,12 @@ trigger_failure_alert() {
     fi
 
     local existing_id=$(db_count \
-        "SELECT id FROM events 
-         WHERE camera='$src' 
-           AND start_ts=$start_ts 
-           AND end_ts=$end_ts 
-           AND type='$type_code' 
-           AND status='FAILED' 
+        "SELECT id FROM events \
+         WHERE camera='$src' \
+           AND start_ts=$start_ts \
+           AND end_ts=$end_ts \
+           AND type='$type_code' \
+           AND status='FAILED' \
          LIMIT 1;")
 
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
@@ -307,6 +317,9 @@ trigger_failure_alert() {
         prev_alert_sent=$(sqlite3 "$DB_FILE" "SELECT alert_sent FROM events WHERE id=$existing_id;")
         prev_alert_sent=${prev_alert_sent:-0}
     fi
+
+    # [Debug] Log key variables affecting alert decision logic
+    log_debug "[$src] Failure Analysis: ExistingID=$existing_id, PrevDur=$prev_duration, CurrDur=$duration_val, Repeat=$alert_repeat"
 
     # --- DECISION 1: SHOULD WE UPDATE DB? ---
     # [CHANGE] Applied logic from script 2: Removed check for SENT_VIDEO_MSG_ID
@@ -332,6 +345,9 @@ trigger_failure_alert() {
     elif [ "$prev_alert_sent" -eq 0 ]; then should_send_alert="true";
     elif [ "$alert_repeat" == "true" ]; then should_send_alert="true"; 
     fi
+
+    # [Debug] Log final decisions
+    log_debug "[$src] Failure Decision: UpdateDB=$should_update, SendAlert=$should_send_alert"
 
     local alert_sent_now=0
     local msg_id_to_save="0"
@@ -370,26 +386,26 @@ trigger_failure_alert() {
     if [ "$existing_id" -gt 0 ]; then
          # [CHANGE] Removed 'message' from UPDATE, fixed quoting, removed SENT_VIDEO_MSG_ID logic
          db_exec \
-            "UPDATE events 
-             SET created_at=$current_ts, 
-                 msg_id=$msg_id_to_save, 
-                 duration=$duration_val, 
-                 fail_type='$fail_type', 
-                 filesize=$filesize_val, 
-                 process_sec=$process_sec_val, 
-                 search_text='$clean_search_text', 
-                 alert_sent=$final_alert_sent 
+            "UPDATE events \
+             SET created_at=$current_ts, \
+                 msg_id=$msg_id_to_save, \
+                 duration=$duration_val, \
+                 fail_type='$fail_type', \
+                 filesize=$filesize_val, \
+                 process_sec=$process_sec_val, \
+                 search_text='$clean_search_text', \
+                 alert_sent=$final_alert_sent \
              WHERE id=$existing_id;"
     else
          # [CHANGE] Removed 'message' from INSERT, fixed quoting
          db_exec \
-            "INSERT INTO events 
-             (camera, type, status, start_ts, end_ts, created_at, 
-              msg_id, duration, fail_type, filesize, process_sec, 
-              search_text, alert_sent) 
-             VALUES 
-             ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, 
-              $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, 
+            "INSERT INTO events \
+             (camera, type, status, start_ts, end_ts, created_at, \
+              msg_id, duration, fail_type, filesize, process_sec, \
+              search_text, alert_sent) \
+             VALUES \
+             ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, \
+              $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, \
               '$clean_search_text', $final_alert_sent);"
     fi
 }

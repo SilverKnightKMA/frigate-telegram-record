@@ -22,6 +22,15 @@ process_time_window() {
     # Query 'events' table for coverage gaps (type='RECORD')
     local existing_clips=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "SELECT start_ts, end_ts FROM events WHERE camera='$src' AND type='RECORD' AND status='SUCCESS' AND end_ts > $master_start_ts AND start_ts < $master_end_ts ORDER BY start_ts ASC;")
     
+    # [Debug] Log count of found clips to verify DB query results before processing
+    if [ "${DEBUG}" == "true" ]; then
+        local clip_count=0
+        if [ -n "$existing_clips" ]; then
+             clip_count=$(echo "$existing_clips" | grep -c "^")
+        fi
+        log_debug "[$src] Gap Analysis: Found $clip_count existing clips in window."
+    fi
+
     local cursor=$master_start_ts
 
     for row in $existing_clips; do
