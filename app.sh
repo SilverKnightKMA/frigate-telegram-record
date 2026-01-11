@@ -339,44 +339,30 @@ echo "[INFO] System Timezone: $TZ"
 # ==============================================================================
 
 init_db() {
-    # Initialize tables for tracking sent videos and errors
-    db_exec "CREATE TABLE IF NOT EXISTS sent_ranges (
+    # Refactor: Use unified 'events' table instead of separate tables
+    db_exec "CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
+        type TEXT,        -- RECORD | TIMELAPSE
+        status TEXT,      -- SUCCESS | FAILED
         start_ts INTEGER,
         end_ts INTEGER,
         created_at INTEGER,
-        PRIMARY KEY (camera, start_ts, end_ts)
-    );"
-    
-    db_exec "CREATE TABLE IF NOT EXISTS alert_history (
-        id TEXT PRIMARY KEY, 
-        camera TEXT,
-        created_at INTEGER
+        message TEXT,     -- Base64 Encoded
+        msg_id INTEGER,
+        duration INTEGER DEFAULT 0
     );"
 
-    # Initialize table for timelapse tracking
-    db_exec "CREATE TABLE IF NOT EXISTS timelapse_history (
-        camera TEXT,
-        range_id TEXT,
-        created_at INTEGER,
-        PRIMARY KEY (camera, range_id)
-    );"
+    # Create indexes for performance optimization
+    db_exec "CREATE INDEX IF NOT EXISTS idx_cam_type_status ON events(camera, type, status);"
+    db_exec "CREATE INDEX IF NOT EXISTS idx_start_ts ON events(start_ts);"
 
-    # Schema updates (idempotent)
-    db_exec "ALTER TABLE alert_history ADD COLUMN msg_id INTEGER;" 2>/dev/null
-    db_exec "ALTER TABLE sent_ranges ADD COLUMN msg_id INTEGER;" 2>/dev/null
-    db_exec "ALTER TABLE alert_history ADD COLUMN alert_text TEXT;" 2>/dev/null
-    
-    # Add duration column to track partial download improvements
-    db_exec "ALTER TABLE alert_history ADD COLUMN duration INTEGER;" 2>/dev/null
-    
-    # Cleanup old records
+    # Cleanup old records based on type
     local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
-    db_exec "DELETE FROM sent_ranges WHERE created_at < $sent_cleanup_ts;"
-    db_exec "DELETE FROM timelapse_history WHERE created_at < $sent_cleanup_ts;"
+    db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND created_at < $sent_cleanup_ts;"
 
     local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
-    db_exec "DELETE FROM alert_history WHERE created_at < $alert_cleanup_ts;"
+    db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
 }
 init_db
 
@@ -496,7 +482,9 @@ check_duration_and_status() {
     local src="$1"
     local filepath="$2"
     local expected_sec="$3"
-    local record_id="$4"
+    # record_id in new schema implies lookup params (camera, start, end)
+    local start_ts="$4"
+    local end_ts="$5"
 
     log_debug "[$src] check_duration_and_status: expected=${expected_sec}s, file=$filepath"
 
@@ -525,8 +513,8 @@ check_duration_and_status() {
     if [ "$actual" -lt "$threshold" ]; then
         log "[$src] ⚠️ Duration Mismatch: ${actual}s (Expected > ${threshold}s, ${MIN_DURATION_PERCENT}%)"
         
-        # Check against previous failure in DB
-        local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM alert_history WHERE id='$record_id' LIMIT 1;")
+        # Check against previous failure in DB using new events schema
+        local prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
         prev_duration=${prev_duration:-0}
 
         # If current video is not better than previous attempt, skip it
@@ -551,11 +539,11 @@ check_duration_and_status() {
 # Handles post-success cleanup: deletes alert from DB, replies to error msg, edits status.
 handle_recovery_actions() {
     local src="$1"
-    local record_id="$2"
+    local start_ts="$2"
+    local end_ts="$3"
     
-    # Check if the alert record actually exists first
-    # This prevents executing recovery logic/deletion on slots that were never broken.
-    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, alert_text FROM alert_history WHERE id='$record_id' LIMIT 1;")
+    # Look for existing failure alert in events table
+    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, message FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
     
     # If no record exists, exit immediately (No-op)
     if [ -z "$db_row" ]; then
@@ -588,7 +576,8 @@ $body_text"
         fi
     fi
 
-    db_exec "DELETE FROM alert_history WHERE id='$record_id';"
+    # Cleanup failure record after success
+    db_exec "DELETE FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED';"
 }
 
 trigger_failure_alert() {
@@ -599,23 +588,28 @@ trigger_failure_alert() {
     local run_mode="$5"
     local duration="$6"
 
+    # Determine Type based on run_mode
+    local type_code="RECORD"
+    if [[ "$run_mode" == *"timelapse"* ]]; then type_code="TIMELAPSE"; fi
+
     if [ "$run_mode" != "record" ] && [ "$run_mode" != "timelapse" ]; then
         log "[$src] $reason (Test Mode - No Alert)"
         return
     fi
 
-    local record_id="${src}_${start_ts}_${end_ts}"
-    local alerted=$(db_count "SELECT count(*) FROM alert_history WHERE id='$record_id';")
+    # Check if alert already exists for this slot
+    local existing_id=$(db_count "SELECT id FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='$type_code' AND status='FAILED' LIMIT 1;")
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
 
     # Logic: Only update if it's a "Partial Update" or if repeat alerts are enabled.
-    if [ "$alerted" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
+    if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" != "true" ]; then
         # If we sent a video (Partial Success), update the DB with new msg_id but don't re-alert.
         if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
              local current_ts=$(date +%s)
              local duration_val="${duration:-0}"
-             db_exec "UPDATE alert_history SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, created_at=$current_ts WHERE id='$record_id';"
-             log "[$src] Partial improvement: Updated alert DB with new Video MsgID ($SENT_VIDEO_MSG_ID) and duration ($duration_val)."
+             # Update the existing record with new message ID and improved duration
+             db_exec "UPDATE events SET msg_id=$SENT_VIDEO_MSG_ID, duration=$duration_val, created_at=$current_ts WHERE id=$existing_id;"
+             log "[$src] Partial improvement: Updated event DB with new Video MsgID ($SENT_VIDEO_MSG_ID) and duration ($duration_val)."
              return
         fi
 
@@ -636,21 +630,21 @@ trigger_failure_alert() {
         
         if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
             msg_id_to_save="$SENT_VIDEO_MSG_ID"
-            # No text alert needed as the video itself acts as the notification
         else
             handle_error "$alert_text" "$mode_upper|$src"
             msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
         fi
         
-        # Save to DB
+        # Save to DB (Insert new failure record)
         local current_ts=$(date +%s)
         local b64_text=$(echo "$alert_text" | base64 -w 0)
         local duration_val="${duration:-0}"
 
-        if [ "$alert_repeat" == "true" ]; then
-            db_exec "INSERT OR REPLACE INTO alert_history (id, camera, created_at, msg_id, alert_text, duration) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text', $duration_val);"
+        if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" == "true" ]; then
+             # If repeat is on, we update timestamp and Msg ID
+             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val WHERE id=$existing_id;"
         else
-            db_exec "INSERT OR IGNORE INTO alert_history (id, camera, created_at, msg_id, alert_text, duration) VALUES ('$record_id', '$src', $current_ts, $msg_id_to_save, '$b64_text', $duration_val);"
+             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val);"
         fi
     fi
 }
@@ -689,7 +683,6 @@ execute_clip_pipeline() {
     log_debug "[$src] execute_clip_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
     # 1. SETUP & IDENTIFICATION
-    local record_id="${src}_${start_ts}_${end_ts}"
     local date_file=$(date -d @$start_ts '+%Y%m%d')
     local start_file=$(date -d @$start_ts '+%H%M')
     local end_file=$(date -d @$end_ts '+%H%M')
@@ -699,7 +692,6 @@ execute_clip_pipeline() {
     local display_start=$(date -d @$start_ts '+%H:%M')
     local display_end=$(date -d @$end_ts '+%H:%M')
 
-    log_debug "[$src] Record ID: $record_id"
     log_debug "[$src] File path: $filepath"
 
     # 2. GENERATE VIDEO (Download)
@@ -714,7 +706,7 @@ execute_clip_pipeline() {
             local expected_duration=$(( end_ts - start_ts ))
             log_debug "[$src] Expected duration: ${expected_duration}s"
             
-            check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id"
+            check_duration_and_status "$src" "$filepath" "$expected_duration" "$start_ts" "$end_ts"
             
             log_debug "[$src] Status: $_status, actual: $_actual, formatted: ${_fmt_actual}/${_fmt_expected} (${_percent}%)"
             
@@ -743,10 +735,11 @@ execute_clip_pipeline() {
                         # 5b. SUCCESS HANDLING & RECOVERY
                         local current_ts=$(date +%s)
                         local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
+                        local msg_b64=$(echo "Record Sent" | base64 -w 0)
                         
-                        handle_recovery_actions "$src" "$record_id"
+                        handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                        db_exec "INSERT OR IGNORE INTO sent_ranges (camera, start_ts, end_ts, created_at, msg_id) VALUES ('$src', $start_ts, $end_ts, $current_ts, $sent_msg_id);"
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual);"
                         log "[$src] ✅ Success (MsgID: $sent_msg_id)."
                     fi
                 else
@@ -892,11 +885,10 @@ execute_timelapse_pipeline() {
 
     # 1. SETUP & IDENTIFICATION
     local target_tid="${TIMELAPSE_THREAD_ID:-$original_tid}"
-    local record_id="${src}_${start_ts}_${end_ts}"
     
     # DB Check #1: Prevent duplicate processing if already successful
     if [ "$run_mode" == "timelapse" ]; then
-        local exists=$(db_count "SELECT count(*) FROM timelapse_history WHERE camera='$src' AND range_id='$record_id';")
+        local exists=$(db_count "SELECT count(*) FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='TIMELAPSE' AND status='SUCCESS';")
         if [ "$exists" -gt 0 ]; then return 0; fi
     fi
 
@@ -916,7 +908,7 @@ execute_timelapse_pipeline() {
         local speed=${TIMELAPSE_SPEED:-60}
         local expected_duration=$(( total_real_seconds / speed ))
         
-        check_duration_and_status "$src" "$filepath" "$expected_duration" "$record_id"
+        check_duration_and_status "$src" "$filepath" "$expected_duration" "$start_ts" "$end_ts"
 
         if [ "$_status" == "skip" ]; then
             rm -f "$filepath"
@@ -942,10 +934,11 @@ execute_timelapse_pipeline() {
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
                     local current_ts=$(date +%s)
+                    local msg_b64=$(echo "Timelapse Sent" | base64 -w 0)
                     
-                    handle_recovery_actions "$src" "$record_id"
+                    handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                    db_exec "INSERT OR IGNORE INTO timelapse_history (camera, range_id, created_at) VALUES ('$src', '$record_id', $current_ts);"
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual);"
                     log "[$src] Timelapse saved to history."
                     pipeline_success=1
                 fi
@@ -985,8 +978,8 @@ process_time_window() {
         return
     fi
 
-    # Query DB to find gaps in coverage within the master window
-    local existing_clips=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "SELECT start_ts, end_ts FROM sent_ranges WHERE camera='$src' AND end_ts > $master_start_ts AND start_ts < $master_end_ts ORDER BY start_ts ASC;")
+    # Query DB to find gaps in coverage within the master window (Using unified events table)
+    local existing_clips=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "SELECT start_ts, end_ts FROM events WHERE camera='$src' AND type='RECORD' AND status='SUCCESS' AND end_ts > $master_start_ts AND start_ts < $master_end_ts ORDER BY start_ts ASC;")
     
     local cursor=$master_start_ts
 
@@ -1085,10 +1078,9 @@ execute_timelapse_cycle() {
             local offset=$(( i * duration_sec ))
             local slot_end_ts=$(( master_end_ts - offset ))
             local slot_start_ts=$(( slot_end_ts - duration_sec ))
-            local range_id="${src}_${slot_start_ts}_${slot_end_ts}"
-
-            # DB Check #2 - redundancy check before attempting generation
-            local exists=$(db_count "SELECT count(*) FROM timelapse_history WHERE camera='$src' AND range_id='$range_id';")
+            
+            # DB Check #2 - redundancy check before attempting generation (Unified events table)
+            local exists=$(db_count "SELECT count(*) FROM events WHERE camera='$src' AND start_ts=$slot_start_ts AND end_ts=$slot_end_ts AND type='TIMELAPSE' AND status='SUCCESS';")
             
             if [ "$exists" -eq 0 ]; then
                 log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
