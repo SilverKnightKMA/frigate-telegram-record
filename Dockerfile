@@ -1,6 +1,9 @@
 FROM alpine:latest
 
-# Install system dependencies
+# [MỚI] Khai báo biến TARGETARCH để Docker biết đang build cho chip nào (amd64 hay arm64)
+ARG TARGETARCH
+
+# 1. Cài đặt các thư viện CHUNG (có trên cả Intel và ARM)
 RUN apk add --no-cache \
     bash \
     curl \
@@ -11,15 +14,18 @@ RUN apk add --no-cache \
     ca-certificates \
     coreutils \
     jq \
-    libva-utils \
-    intel-media-driver \
-    intel-gmmlib
+    libva-utils
+
+# 2. [QUAN TRỌNG] Chỉ cài driver Intel nếu đang build trên kiến trúc amd64
+# Nếu là arm64 (như Raspberry Pi), đoạn này sẽ được bỏ qua -> Không còn lỗi.
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        apk add --no-cache intel-media-driver intel-gmmlib; \
+    fi
 
 # Setup Application Directory
 WORKDIR /app
 
 # Copy Application Files
-# We copy the lib directory and the main script
 COPY lib /app/lib
 COPY app.sh /app/app.sh
 
@@ -29,9 +35,6 @@ RUN chmod +x /app/app.sh && \
     mkdir -p /app/data /app/config
 
 # [Ops] Healthcheck Configuration
-# Purpose: Monitor application liveness by checking the heartbeat file age.
-# ENV HEARTBEAT_MAX_AGE_SEC: Threshold in seconds before declaring unhealthy (Default: 300s/5m).
-# Note: --interval can only be set at build time, but the logic inside CMD uses the ENV var.
 ENV HEARTBEAT_MAX_AGE_SEC=300
 
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
