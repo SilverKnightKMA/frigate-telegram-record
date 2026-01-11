@@ -89,42 +89,118 @@ def get_visualization_data():
         conn = get_db_connection()
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
+        
+        # Lấy dữ liệu 24h qua
         start_time = int((datetime.now() - timedelta(hours=24)).timestamp())
         
-        # --- PERFORMANCE FIX: REDUCE LIMIT TO 300 ---
-        cursor.execute("SELECT camera, start_ts, end_ts FROM sent_ranges WHERE start_ts > ? ORDER BY start_ts DESC LIMIT 300", (start_time,))
-        camera_ranges = {}
-        for row in cursor.fetchall():
-            c = row['camera']
-            if c not in camera_ranges: camera_ranges[c] = []
-            camera_ranges[c].append({'x': c, 'y': [row['start_ts']*1000, row['end_ts']*1000], 'fillColor': '#00E396'})
+        # 1. LẤY RAW DATA (Không LIMIT quá thấp nữa, vì ta sẽ gộp lại)
+        # Lấy tối đa 5000 dòng để đảm bảo không bỏ sót, sau đó Python sẽ nén lại còn vài chục dòng
+        cursor.execute("""
+            SELECT camera, start_ts, end_ts 
+            FROM sent_ranges 
+            WHERE start_ts > ? 
+            ORDER BY camera, start_ts ASC
+            LIMIT 5000
+        """, (start_time,))
+        
+        raw_rows = cursor.fetchall()
+        
+        # 2. THUẬT TOÁN GỘP (DOWNSAMPLING)
+        # Logic: Nếu (Start hiện tại) <= (End trước đó + tolerance), thì gộp chung.
+        merged_data = {}
+        tolerance = 30 # Cho phép sai số 30 giây (gap nhỏ hơn 30s coi như liền mạch)
 
-        cursor.execute("SELECT camera, created_at, alert_text FROM alert_history WHERE created_at > ? ORDER BY created_at DESC LIMIT 200", (start_time,))
+        for row in raw_rows:
+            cam = row['camera']
+            start = row['start_ts']
+            end = row['end_ts']
+
+            if cam not in merged_data:
+                merged_data[cam] = []
+
+            # Lấy block cuối cùng của cam này
+            if merged_data[cam]:
+                last_block = merged_data[cam][-1]
+                # Kiểm tra tính liên tục
+                if start <= (last_block['end'] + tolerance):
+                    # Gộp: Chỉ cần cập nhật thời gian kết thúc của block cũ
+                    # (Lấy max để đề phòng dữ liệu chồng lấn)
+                    last_block['end'] = max(last_block['end'], end)
+                else:
+                    # Có gap lớn -> Tạo block mới
+                    merged_data[cam].append({'start': start, 'end': end})
+            else:
+                # Block đầu tiên
+                merged_data[cam].append({'start': start, 'end': end})
+
+        # 3. CHUYỂN ĐỔI SANG FORMAT APEXCHARTS
+        timeline_series = []
+        for cam, blocks in merged_data.items():
+            data_points = []
+            for b in blocks:
+                data_points.append({
+                    'x': cam,
+                    'y': [b['start'] * 1000, b['end'] * 1000],
+                    'fillColor': '#00E396' # Xanh lá
+                })
+            timeline_series.append({'name': cam, 'data': data_points})
+
+        # 4. XỬ LÝ LỖI (Vẫn giữ Limit thấp để highlight điểm lỗi)
+        cursor.execute("""
+            SELECT camera, created_at, alert_text 
+            FROM alert_history 
+            WHERE created_at > ?
+            ORDER BY created_at DESC 
+            LIMIT 200
+        """, (start_time,))
+        
         error_dist = {}
+        
+        # Thêm các điểm lỗi vào timeline (Màu đỏ)
+        # Ta tìm series tương ứng để chèn vào
         for row in cursor.fetchall():
-            c = row['camera']
+            cam = row['camera']
             ts = row['created_at']
+            
+            # Tìm series của camera này
+            cam_series = next((item for item in timeline_series if item["name"] == cam), None)
+            if not cam_series:
+                cam_series = {'name': cam, 'data': []}
+                timeline_series.append(cam_series)
+            
+            # Thêm điểm đỏ (độ rộng 1 phút để dễ nhìn)
+            cam_series['data'].append({
+                'x': cam,
+                'y': [ts * 1000, (ts + 60) * 1000],
+                'fillColor': '#FF4560'
+            })
+
+            # Phân loại lỗi cho biểu đồ tròn
             try: alert = base64.b64decode(row['alert_text']).decode('utf-8')
             except: alert = str(row['alert_text'])
-            
-            if c not in camera_ranges: camera_ranges[c] = []
-            camera_ranges[c].append({'x': c, 'y': [ts*1000, (ts+60)*1000], 'fillColor': '#FF4560'})
             
             cat = "Other"
             if "404" in alert: cat = "404 Not Found"
             elif "Validation" in alert: cat = "Validation Failed"
-            elif "Partial" in alert: cat = "Partial Rec"
-            elif "Network" in alert: cat = "Network Err"
-            elif "Timelapse" in alert: cat = "Timelapse Err"
+            elif "Partial" in alert: cat = "Partial Recording"
+            elif "Network" in alert: cat = "Network Error"
+            elif "Timelapse" in alert: cat = "Timelapse Error"
+            
             error_dist[cat] = error_dist.get(cat, 0) + 1
 
         conn.close()
+        
         return jsonify({
             'success': True, 
-            'timeline': [{'name': k, 'data': v} for k, v in camera_ranges.items()], 
-            'errors': {'labels': list(error_dist.keys()), 'series': list(error_dist.values())}
+            'timeline': timeline_series, 
+            'errors': {
+                'labels': list(error_dist.keys()), 
+                'series': list(error_dist.values())
+            }
         })
-    except Exception as e: return jsonify({'success': False, 'error': str(e)}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recent_activity')
 def get_recent_activity():
