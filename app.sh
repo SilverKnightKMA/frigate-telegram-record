@@ -14,32 +14,41 @@ source /app/lib/06-pipelines.sh
 source /app/lib/07-scheduler.sh
 
 # 2. Validation
+log_debug "Starting validation process..."
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
     log "CRITICAL: No cameras configured."
     exit 1
 fi
 
+log_debug "Environment check: MODE=$MODE, TZ=$TZ, DATA_DIR=$DATA_DIR"
 echo "[INFO] System Timezone: $TZ"
 
 # 3. Init Database
+log_debug "Initializing database schema..."
 init_db
 
 # 4. Main Execution Switch
 if [ "$MODE" == "test" ]; then
     log ">>> STARTING TEST MODE <<<"
+    log_debug "Executing single cycle for duration: ${TEST_REC_DURATION_MIN}m"
     execute_cycle "$TEST_REC_DURATION_MIN" "test"
     exit 0
 
 elif [ "$MODE" == "record" ]; then
     log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
     while true; do
+        log_debug "--- NEW RECORDING LOOP START ---"
         execute_cycle "$REC_DURATION_MIN" "record"
+        
         current_ts=$(date +%s)
         duration_sec=$((REC_DURATION_MIN * 60))
+        
         # Calculate sleep time to align with next interval
         seconds_into_cycle=$(( current_ts % duration_sec ))
         seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
         final_sleep=$(( seconds_to_sleep + 20 ))
+        
+        log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
         log "Sleeping ${final_sleep}s..."
         sleep "$final_sleep"
     done
@@ -55,9 +64,11 @@ elif [ "$MODE" == "timelapse" ]; then
     log ">>> STARTING TIMELAPSE DAEMON (Block: ${TIMELAPSE_HOURS}h) <<<"
 
     while true; do
+        log_debug "--- NEW TIMELAPSE LOOP START ---"
         # Run cycle and capture exit status
         execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
         CYCLE_STATUS=$?
+        log_debug "Timelapse cycle finished with exit status: $CYCLE_STATUS"
 
         # === RETRY LOGIC ===
         if [ $CYCLE_STATUS -ne 0 ]; then
@@ -92,7 +103,12 @@ elif [ "$MODE" == "timelapse" ]; then
         seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
         final_sleep=$(( seconds_to_sleep + 30 ))
         
-        if [ "$final_sleep" -gt 43200 ]; then final_sleep=3600; fi
+        log_debug "Timelapse Sleep Math: local_ts=$local_ts, into_cycle=${seconds_into_cycle}s, final_sleep=${final_sleep}s"
+        
+        if [ "$final_sleep" -gt 43200 ]; then 
+            log_debug "Final sleep exceeds 12h, capping to 1h per safety logic."
+            final_sleep=3600 
+        fi
 
         sleep_h=$((final_sleep / 3600))
         sleep_m=$(( (final_sleep % 3600) / 60 ))
