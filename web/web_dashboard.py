@@ -166,27 +166,30 @@ def get_timeline():
         view_duration = ts_end - ts_start
         dynamic_threshold = max(30.0, view_duration / float(TARGET_BLOCKS))
 
+        # Select 'type' and order by type to group timeline rows correctly
         query = """
-            SELECT camera, start_ts, end_ts, status, fail_type, message
+            SELECT camera, type, start_ts, end_ts, status, fail_type, message
             FROM events 
             WHERE (status = 'SUCCESS' OR status = 'FAILED')
             AND start_ts >= ? AND end_ts <= ?
-            ORDER BY camera, start_ts
+            ORDER BY camera, type, start_ts
         """
         rows = cursor.execute(query, (ts_start, ts_end)).fetchall()
         
         grouped_data = {}
         
         for r in rows:
+            # Create unique row key combining Camera Name and Event Type
             cam = r['camera']
-            if cam not in grouped_data:
-                grouped_data[cam] = []
+            evt_type = r['type'] if r['type'] else 'record'
+            row_key = f"{cam} ({evt_type})"
+            
+            if row_key not in grouped_data:
+                grouped_data[row_key] = []
             
             status_code = 1 if r['status'] == 'SUCCESS' else 0
             
-            # FIX: Handle NULL fail_type in DB converting to None in Python.
-            # Use 'Unknown' string to prevent "TypeError: '<' not supported between instances of 'str' and 'NoneType'"
-            # when jsonify tries to sort dictionary keys.
+            # Ensure fail_type is not None for dictionary operations
             fail_type = (r['fail_type'] or "Unknown") if status_code == 0 else None
             
             meta = None
@@ -204,9 +207,9 @@ def get_timeline():
                 meta
             ]
 
-            last_idx = len(grouped_data[cam]) - 1
+            last_idx = len(grouped_data[row_key]) - 1
             if last_idx >= 0:
-                last_block = grouped_data[cam][last_idx]
+                last_block = grouped_data[row_key][last_idx]
                 prev_status = last_block[2]
                 prev_end = last_block[1] / 1000
                 curr_start = r['start_ts']
@@ -219,9 +222,9 @@ def get_timeline():
                         current_count = last_block[3]['breakdown'].get(fail_type, 0)
                         last_block[3]['breakdown'][fail_type] = current_count + 1
                 else:
-                    grouped_data[cam].append(current_block)
+                    grouped_data[row_key].append(current_block)
             else:
-                grouped_data[cam].append(current_block)
+                grouped_data[row_key].append(current_block)
 
         return jsonify({'data': grouped_data})
     finally:
