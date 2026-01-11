@@ -450,7 +450,8 @@ send_telegram_video() {
         if [ $curl_exit -ne 0 ]; then
             log "[$src] Curl failed (Exit Code: $curl_exit)."
             rm -f "$response_body"
-            # Change: Pass fail_type 'TELEGRAM' explicitly
+            # Note: handle_error here only logs, does NOT save to DB. 
+            # The 'fail_type' is handled by the caller (execute_clip_pipeline) via trigger_failure_alert.
             handle_error "[TELEGRAM] Network Error (Curl Exit $curl_exit)" "SEND|$src"
             return 1
         fi
@@ -473,12 +474,10 @@ send_telegram_video() {
         fi
 
         rm -f "$response_body"
-        # Change: Pass fail_type 'TELEGRAM' explicitly
         handle_error "[TELEGRAM] API Error ($http_code): $response_content" "SEND|$src"
         return 1
     done
     rm -f "$response_body"
-    # Change: Pass fail_type 'TELEGRAM' explicitly
     handle_error "[TELEGRAM] Timeout after $MAX_RETRIES retries" "SEND_TIMEOUT|$src"
     return 1
 }
@@ -596,7 +595,7 @@ trigger_failure_alert() {
     local src="$1"
     local start_ts="$2"
     local end_ts="$3"
-    # Change: Added fail_type argument
+    # Change: Added fail_type argument (Position #4)
     local fail_type="$4"
     local reason="$5"
     local run_mode="$6"
@@ -745,7 +744,7 @@ execute_clip_pipeline() {
                     
                     # 5a. FAILURE HANDLING (Partial)
                     if [ "$_status" == "partial" ]; then
-                        # Change: Pass fail_type 'DURATION'
+                        # Change: Pass fail_type 'DURATION' (Arg #4)
                         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
@@ -762,16 +761,20 @@ execute_clip_pipeline() {
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
+            else
+                # Change: Added ELSE block to handle Telegram Failure in Record Mode
+                # This ensures [TELEGRAM] error is saved to DB
+                trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual"
             fi
         else
-            # Change: Pass fail_type 'VALIDATION'
+            # Change: Pass fail_type 'VALIDATION' (Arg #4)
             trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
         fi
     elif [ "$http_code" == "404" ]; then
-        # Change: Pass fail_type 'DOWNLOAD'
+        # Change: Pass fail_type 'DOWNLOAD' (Arg #4)
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0"
     else
-        # Change: Pass fail_type 'DOWNLOAD'
+        # Change: Pass fail_type 'DOWNLOAD' (Arg #4)
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0"
     fi
     
@@ -950,7 +953,7 @@ execute_timelapse_pipeline() {
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                     # Change: Pass fail_type 'DURATION'
+                     # Change: Pass fail_type 'DURATION' (Arg #4)
                      trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                      pipeline_success=0
                 else
@@ -970,12 +973,12 @@ execute_timelapse_pipeline() {
                 pipeline_success=1
             fi
         else
-             # Change: Pass fail_type 'TELEGRAM'
+             # Change: Pass fail_type 'TELEGRAM' (Arg #4)
              trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual"
              pipeline_success=0
         fi
     else
-        # Change: Pass fail_type 'RENDER'
+        # Change: Pass fail_type 'RENDER' (Arg #4)
         trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0"
         pipeline_success=0
     fi
