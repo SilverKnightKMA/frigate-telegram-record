@@ -196,14 +196,16 @@ generate_timelapse_video() {
         local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
 
         # FFMPEG Command: VAAPI HW Accel, scaling, and timestamp modification
+        # [CHANGE] Replaced hardcoded 'h264_vaapi' with TIMELAPSE_CODEC env var
+        # [CHANGE] Replaced hardcoded 'nv12' with TIMELAPSE_PIXEL_FORMAT env var
         ffmpeg -y -v error \
             -hwaccel vaapi \
             -hwaccel_device "$VAAPI_DEVICE" \
             -hwaccel_output_format vaapi \
             -i "$url" \
-            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=nv12" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=$TIMELAPSE_PIXEL_FORMAT" \
             -r "$TIMELAPSE_FPS" \
-            -c:v h264_vaapi \
+            -c:v "$TIMELAPSE_CODEC" \
             -qp "$TIMELAPSE_QUALITY" \
             -an \
             "$chunk_file"

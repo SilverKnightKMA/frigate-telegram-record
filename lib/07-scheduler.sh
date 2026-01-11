@@ -36,7 +36,8 @@ process_time_window() {
     for row in $existing_clips; do
         IFS='|' read -r ex_start ex_end <<< "$row"
         if [ "$ex_start" -gt "$cursor" ]; then
-            if [ $((ex_start - cursor)) -gt 10 ]; then
+            # [CHANGE] Replaced hardcoded '10' with SCHEDULER_GAP_THRESHOLD_SEC env var
+            if [ $((ex_start - cursor)) -gt $SCHEDULER_GAP_THRESHOLD_SEC ]; then
                 log "[$src] 💡 Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$ex_start '+%H:%M')"
                 execute_clip_pipeline "$cam_name" "$src" "$cursor" "$ex_start" "$run_mode" "$tid" "$chat_id"
             fi
@@ -46,7 +47,8 @@ process_time_window() {
 
     # Check for tail gap
     if [ "$cursor" -lt "$master_end_ts" ]; then
-         if [ $((master_end_ts - cursor)) -gt 10 ]; then
+          # [CHANGE] Replaced hardcoded '10' with SCHEDULER_GAP_THRESHOLD_SEC env var
+          if [ $((master_end_ts - cursor)) -gt $SCHEDULER_GAP_THRESHOLD_SEC ]; then
             log "[$src] 💡 Tail Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$master_end_ts '+%H:%M')"
             execute_clip_pipeline "$cam_name" "$src" "$cursor" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
          fi

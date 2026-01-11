@@ -22,13 +22,15 @@ log_debug() {
 # Executes SQL with a timeout to prevent 'database is locked' errors
 db_exec() {
     log_debug "DB_EXEC: $1"
-    sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1"
+    # [CHANGE] Replaced hardcoded '30000' with DB_TIMEOUT_MS env var
+    sqlite3 -cmd ".timeout $DB_TIMEOUT_MS" "$DB_FILE" "$1"
 }
 
 # Returns a single numeric value from SQL, defaulting to 0 on failure
 db_count() {
     log_debug "DB_COUNT: $1"
-    local result=$(sqlite3 -cmd ".timeout 30000" "$DB_FILE" "$1" 2>/dev/null)
+    # [CHANGE] Replaced hardcoded '30000' with DB_TIMEOUT_MS env var
+    local result=$(sqlite3 -cmd ".timeout $DB_TIMEOUT_MS" "$DB_FILE" "$1" 2>/dev/null)
     if [[ ! "$result" =~ ^[0-9]+$ ]]; then
         log_debug "DB_COUNT result invalid: '$result', returning 0"
         echo "0"

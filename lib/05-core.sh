@@ -93,7 +93,7 @@ check_source_gatekeeper() {
         local ideal_timelapse_duration=$(( expected_duration / speed ))
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
         
-        # Xử lý riêng cho Timelapse quá ngắn (Smart Skip)
+        # [CHANGE] Replaced hardcoded '60' with TIMELAPSE_MIN_DURATION_SEC env var (Smart Skip)
         if [ "$vod_duration" -lt "$TIMELAPSE_MIN_DURATION_SEC" ]; then
             if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
                 return 1
@@ -140,8 +140,9 @@ validate_video() {
     local filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
     log_debug "File size: ${filesize} bytes"
     
-    if [ "$filesize" -lt 1024 ]; then 
-        log_debug "Validation failed: File too small (< 1KB)"
+    # [CHANGE] Replaced hardcoded '1024' with MIN_FILESIZE_BYTES env var
+    if [ "$filesize" -lt "$MIN_FILESIZE_BYTES" ]; then 
+        log_debug "Validation failed: File too small (< $MIN_FILESIZE_BYTES bytes)"
         return 1
     fi
     

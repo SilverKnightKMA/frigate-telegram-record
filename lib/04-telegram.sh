@@ -96,7 +96,8 @@ handle_error() {
         fi
 
         local attempt=1
-        local max_alert_retries=3
+        # [CHANGE] Replaced hardcoded '3' with TELEGRAM_MAX_ALERT_RETRIES env var
+        local max_alert_retries=${TELEGRAM_MAX_ALERT_RETRIES}
         local response_body=$(mktemp)
 
         while [ $attempt -le $max_alert_retries ]; do

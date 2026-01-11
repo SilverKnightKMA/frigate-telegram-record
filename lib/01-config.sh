@@ -48,7 +48,12 @@ ALERT_REPEAT="${ALERT_REPEAT:-false}" # Controls if alerts are resent for the sa
 LOOKBACK_HOURS="${LOOKBACK_HOURS:-168}"
 MAX_CONCURRENT_TASKS="${MAX_CONCURRENT_TASKS:-5}" # Limit concurrent background jobs
 PADDING_SEC="${PADDING_SEC:-5}"
-MAX_RETRIES="${MAX_RETRIES:-5}"
+MAX_RETRIES="${MAX_RETRIES:-5}" # Retries for Video Upload
+
+# [NEW] Validation & System Tuning
+MIN_FILESIZE_BYTES="${MIN_FILESIZE_BYTES:-1024}" # Minimum valid video size in bytes
+DB_TIMEOUT_MS="${DB_TIMEOUT_MS:-30000}" # SQLite busy timeout in milliseconds
+SCHEDULER_GAP_THRESHOLD_SEC="${SCHEDULER_GAP_THRESHOLD_SEC:-10}" # Min gap size to trigger gap-fill recording
 
 REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
 TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
@@ -69,7 +74,14 @@ TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-3600}"
 TIMELAPSE_LOOKBACK_HOURS="${TIMELAPSE_LOOKBACK_HOURS:-720}"
 TIMELAPSE_RETRY_SLEEP_SEC="${TIMELAPSE_RETRY_SLEEP_SEC:-3600}"
 TIMELAPSE_STRICT_RETRY="${TIMELAPSE_STRICT_RETRY:-false}"
-TIMELAPSE_MIN_DURATION_SEC="${TIMELAPSE_MIN_DURATION_SEC:-60}" # Minimum source duration to attempt processing
+
+# [NEW] Timelapse Advanced Tuning
+TIMELAPSE_MIN_DURATION_SEC="${TIMELAPSE_MIN_DURATION_SEC:-60}" # Smart Skip threshold
+TIMELAPSE_CODEC="${TIMELAPSE_CODEC:-h264_vaapi}" # Encoder codec (e.g., h264_vaapi, hevc_vaapi)
+TIMELAPSE_PIXEL_FORMAT="${TIMELAPSE_PIXEL_FORMAT:-nv12}" # Pixel format for scaling filter
+
+# [NEW] Telegram Tuning
+TELEGRAM_MAX_ALERT_RETRIES="${TELEGRAM_MAX_ALERT_RETRIES:-3}" # Retries for Error Text Alerts
 
 # Global variables to store Telegram Message IDs for recovery logic
 SENT_ERROR_MSG_ID=""
