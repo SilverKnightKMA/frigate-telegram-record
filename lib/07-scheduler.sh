@@ -70,6 +70,11 @@ process_camera_batch() {
         local total_slots=$(( (LOOKBACK_HOURS * 60) / duration_min ))
         log "[$src] Checking status..."
         for (( i=0; i<total_slots; i++ )); do
+            # [Ops] Keep-Alive during intensive loops
+            # Reason: Checking many slots for history can take time. Touching heartbeat here
+            # ensures Docker knows the process is still active and not hung.
+            touch "$DATA_DIR/.heartbeat"
+
             local offset=$(( i * duration_sec ))
             local slot_end_ts=$(( master_end_ts - offset ))
             local slot_start_ts=$(( slot_end_ts - duration_sec ))
@@ -89,6 +94,10 @@ execute_cycle() {
     log "--- CYCLE START ($run_mode) ---"
 
     for cam_info in "${CAMERA_ARRAY[@]}"; do
+        # [Ops] Heartbeat Refresh
+        # Reason: Prevents healthcheck timeout if the cycle takes > 5 mins (due to multiple cameras).
+        touch "$DATA_DIR/.heartbeat"
+
         cam_info=$(echo "$cam_info" | xargs)
         # Limit background jobs
         while [ "$(jobs -r | wc -l)" -ge "$MAX_CONCURRENT_TASKS" ]; do sleep 1; done
@@ -110,6 +119,11 @@ execute_timelapse_cycle() {
     log "--- TIMELAPSE CYCLE START ($run_mode) ---"
 
     for cam_info in "${CAMERA_ARRAY[@]}"; do
+        # [Ops] Heartbeat Refresh
+        # Reason: Timelapse generation is CPU/GPU intensive and slow. Touching heartbeat per camera
+        # guarantees the container stays healthy during the long render process.
+        touch "$DATA_DIR/.heartbeat"
+
         cam_info=$(echo "$cam_info" | xargs)
         IFS='|' read -r name src tid chat_id <<< "$cam_info"
         
@@ -138,6 +152,11 @@ execute_timelapse_cycle() {
                 # [LOGGING] Included Date in the log to identify which day the missing slot belongs to
                 log "[$src] 🔍 Found missing slot: $(date -d @$slot_start_ts '+%Y-%m-%d %H:%M') - $(date -d @$slot_end_ts '+%H:%M')"
                 
+                # [Ops] Heartbeat Refresh (Deep)
+                # Reason: If a single timelapse render takes a very long time, we touch heartbeat
+                # right before execution to reset the healthcheck timer.
+                touch "$DATA_DIR/.heartbeat"
+
                 if ! execute_timelapse_pipeline "$name" "$src" "$slot_start_ts" "$slot_end_ts" "timelapse" "$tid" "$chat_id"; then
                     log "[$src] ❌ Failed to process slot. Will retry later."
                     cycle_has_error=1
