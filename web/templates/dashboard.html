@@ -449,8 +449,10 @@
                 tooltip: { 
                     custom: function({series, seriesIndex, dataPointIndex, w}) {
                         const data = w.config.series[seriesIndex].data[dataPointIndex];
+                        // Calculates localized string for start time
                         const start = new Date(data.y[0]).toLocaleString('vi-VN');
-                        const end = new Date(data.y[1]).toLocaleTimeString('vi-VN');
+                        // Calculates localized string for end time (Full date + time for precision)
+                        const end = new Date(data.y[1]).toLocaleString('vi-VN');
                         const color = data.fillColor;
                         const status = data.statusStr;
                         const countInfo = data.meta ? `(${data.meta.count} events)` : '';
