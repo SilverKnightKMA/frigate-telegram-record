@@ -137,6 +137,7 @@ jobs:
             type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/web-') }}
             type=semver,pattern=v{{version}},enable=${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/web-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=v${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
             type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
             type=raw,value=${{ github.sha }},enable=true
             type=raw,value=edge,enable=${{ github.event_name == 'pull_request' }}
