@@ -94,7 +94,7 @@ check_source_gatekeeper() {
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
         
         # Xử lý riêng cho Timelapse quá ngắn (Smart Skip)
-        if [ "$vod_duration" -lt 60 ]; then
+        if [ "$vod_duration" -lt "$TIMELAPSE_MIN_DURATION_SEC" ]; then
             if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
                 return 1
             fi
