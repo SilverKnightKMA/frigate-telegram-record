@@ -128,17 +128,16 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta-web
-        uses: dock${{ env.REGISTRY }}/${{ github.repository_owner }}/frigate-telegram-record-web
-
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/frigate-telegram-record-web
           tags: |
             type=raw,value=dev,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
             type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/web-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=raw,value=${{ github.sha }},enable=true
             type=raw,value=edge,enable=${{ github.event_name == 'pull_request' }}
-            type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}nt_name == 'pull_request' }}
             type=ref,event=branch,enable=${{ !endsWith(github.ref, 'main') }}
-            type=match,pattern=\d.\d.\d$,priority=901
 
       - name: Build and push Web Dashboard image
         uses: docker/build-push-action@v6
