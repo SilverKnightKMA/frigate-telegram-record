@@ -115,19 +115,19 @@ check_source_gatekeeper() {
     prev_fail_duration=${prev_fail_duration:-0}
     prev_alert_sent=${prev_alert_sent:-0}
 
-    # [FIX] Tính toán thời lượng output ước tính để so sánh công bằng
+    # [FIX] Calculate estimated output duration to ensure valid comparison with DB history
+    # Reason: Timelapse duration is (Source / Speed), while Record is (Source).
     local estimated_output=$vod_duration
     if [ "$mode" == "timelapse" ]; then
         local speed=${TIMELAPSE_SPEED:-60}
-        # Chia cho speed để ra output duration ước tính
         estimated_output=$(( vod_duration / speed ))
-        
-        # [FIX CRITICAL] Chặn ngay nếu output ước tính = 0s
-        # Lý do: Dù VOD có dữ liệu (ví dụ 400s), nhưng nếu chia cho speed (x600) ra 0s thì chạy làm gì?
-        if [ "$estimated_output" -eq 0 ]; then
-             log "[$src] [$mode] Gatekeeper: Skipping (Est. Output is 0s - VOD: ${vod_duration}s)."
-             return 1
-        fi
+    fi
+
+    # [FIX] Immediate block if estimated output is 0s
+    # Reason: Prevents "Best Effort" execution when result is guaranteed to be 0s.
+    if [ "$estimated_output" -eq 0 ]; then
+        log "[$src] [$mode] Gatekeeper: Skipping (No valid source data found - Est: 0s)."
+        return 1
     fi
 
     # [Debug] Log so sánh để dễ kiểm tra
@@ -136,6 +136,7 @@ check_source_gatekeeper() {
     fi
 
     # Logic chặn: Nếu đã cảnh báo và dữ liệu Output ước tính không tăng thêm
+    # [FIX] Use estimated_output instead of vod_duration
     if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
         log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
         return 1
@@ -161,6 +162,7 @@ check_source_gatekeeper() {
         fi
     fi
 
+    # [FIX] Use estimated_output for threshold comparison
     if [ "$estimated_output" -lt "$threshold" ]; then
         log "[$src] [$mode] Gatekeeper: Insufficient data (Est. ${estimated_output}s < ${threshold}s), proceeding best-effort."
     fi
@@ -244,8 +246,8 @@ check_duration_and_status() {
         actual=0
     fi
 
-    # [FIX] CHẶN NGAY NẾU DURATION = 0
-    # Lý do: Video 0s là file lỗi/rỗng, gửi đi chỉ làm phiền user.
+    # [FIX] Block immediately if video is empty/corrupt (0s)
+    # Reason: Prevents logic flow from considering 0s as a valid partial success.
     if [ "$actual" -eq 0 ]; then
         log "[$src] 🚫 Video duration is 0s (Corrupt/Empty). Skipping immediately."
         _status="skip"
