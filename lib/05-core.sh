@@ -13,7 +13,15 @@ get_last_fail_metric() {
     local end_ts="$3"
     local metric="$4" # 'duration' or 'filesize'
 
-    local value=$(sqlite3 "$DB_FILE" "SELECT $metric FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    # [CHANGE] Updated SQL formatting from script 2 for readability
+    local value=$(sqlite3 "$DB_FILE" \
+        "SELECT $metric FROM events 
+         WHERE camera='$src' 
+           AND start_ts=$start_ts 
+           AND end_ts=$end_ts 
+           AND status='FAILED' 
+         ORDER BY id DESC 
+         LIMIT 1;")
     echo "${value:-0}"
 }
 
@@ -117,8 +125,15 @@ handle_recovery_actions() {
     local start_ts="$2"
     local end_ts="$3"
     
-    # Select from unified 'events' table
-    local db_row=$(sqlite3 "$DB_FILE" "SELECT msg_id, message FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    # [CHANGE] Updated SQL formatting from script 2
+    local db_row=$(sqlite3 "$DB_FILE" \
+        "SELECT msg_id, message FROM events 
+         WHERE camera='$src' 
+           AND start_ts=$start_ts 
+           AND end_ts=$end_ts 
+           AND status='FAILED' 
+         ORDER BY id DESC 
+         LIMIT 1;")
     
     # If no record exists, exit immediately (No-op)
     if [ -z "$db_row" ]; then
@@ -152,6 +167,7 @@ $body_text"
     fi
 
     # Delete failed event after recovery
+    # [CHANGE] Updated SQL formatting
     db_exec "DELETE FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED';"
 }
 
@@ -176,15 +192,21 @@ trigger_failure_alert() {
         return
     fi
 
-    local existing_id=$(db_count "SELECT id FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND type='$type_code' AND status='FAILED' LIMIT 1;")
+    local existing_id=$(db_count \
+        "SELECT id FROM events 
+         WHERE camera='$src' 
+           AND start_ts=$start_ts 
+           AND end_ts=$end_ts 
+           AND type='$type_code' 
+           AND status='FAILED' 
+         LIMIT 1;")
+
     local alert_repeat=$(echo "${ALERT_REPEAT:-false}" | tr '[:upper:]' '[:lower:]')
     local duration_val="${duration:-0}"
     local filesize_val="${filesize:-0}"
     local process_sec_val="${process_sec:-0}"
 
-    # Optimization: Retrieve previous duration and alert_sent flag to decide on update policy
     local prev_duration=0
-    # Reason: Retrieve alert_sent flag to determine if notification was already sent
     local prev_alert_sent=0
     if [ "$existing_id" -gt 0 ]; then
         prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE id=$existing_id;")
@@ -194,15 +216,10 @@ trigger_failure_alert() {
     fi
 
     # --- DECISION 1: SHOULD WE UPDATE DB? ---
-    # We update DB if:
-    # 1. New entry (First fail).
-    # 2. Alert Repeat is ON.
-    # 3. Video was sent (Partial Success) -> We need to record this even if duration is same.
-    # 4. Improvement found.
+    # [CHANGE] Applied logic from script 2: Removed check for SENT_VIDEO_MSG_ID
     local should_update="false"
     if [ "$existing_id" -eq 0 ]; then should_update="true";
     elif [ "$alert_repeat" == "true" ]; then should_update="true";
-    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then should_update="true";
     elif [ "$duration_val" -gt "$prev_duration" ]; then should_update="true";
     fi
 
@@ -211,71 +228,75 @@ trigger_failure_alert() {
           return
     fi
 
-    # Prepare Alert Text
-    local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
-    local alert_text="🚨 <b>EXECUTION FAILED</b>
+    # [CHANGE] Clean search text is now derived only from $reason (from script 2)
+    local clean_search_text=$(echo "$reason" | sed 's/<[^>]*>//g' | sed "s/['\"]//g" | tr -d '\n\r')
+
+    # --- DECISION 2: SHOULD WE SEND TELEGRAM ALERT? ---
+    # [CHANGE] Logic flow updated to match script 2
+    local should_send_alert="false"
+    if [ "$existing_id" -eq 0 ]; then should_send_alert="true"; 
+    elif [ "$duration_val" -gt "$prev_duration" ]; then should_send_alert="true";
+    elif [ "$prev_alert_sent" -eq 0 ]; then should_send_alert="true";
+    elif [ "$alert_repeat" == "true" ]; then should_send_alert="true"; 
+    fi
+
+    local alert_sent_now=0
+    local msg_id_to_save="0"
+
+    # [CHANGE] Prepare Alert Text only if sending alert (Optimization from script 2)
+    if [ "$should_send_alert" == "true" ]; then
+        local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
+        local alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
 <b>Context:</b> $mode_upper|$src
 <b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
-
-    # [CHANGE] Sanitize text for search_text column
-    # Remove HTML tags, quotes, and newlines to prevent SQL errors and ensure clean text search
-    local clean_search_text=$(echo "$alert_text" | sed 's/<[^>]*>//g' | sed "s/['\"]//g" | tr -d '\n\r')
-
-    # --- DECISION 2: SHOULD WE SEND TELEGRAM ALERT? ---
-    # Send alert if:
-    # 1. New error.
-    # 2. Improvement.
-    # 3. Alert Repeat is ON.
-    # 4. No alert was sent previously (alert_sent = 0).
-    
-    local should_send_alert="false"
-    if [ "$existing_id" -eq 0 ]; then should_send_alert="true"; fi
-    if [ "$duration_val" -gt "$prev_duration" ]; then should_send_alert="true"; fi
-    if [ "$prev_alert_sent" -eq 0 ]; then should_send_alert="true"; fi
-    if [ "$alert_repeat" == "true" ]; then should_send_alert="true"; fi
-
-    # Reason: Track if alert was successfully sent in this execution
-    local alert_sent_now=0
-    if [ "$should_send_alert" == "true" ]; then
+        
         handle_error "$alert_text" "$mode_upper|$src"
+        
         if [ -n "$SENT_ERROR_MSG_ID" ] && [ "$SENT_ERROR_MSG_ID" -ne 0 ]; then
             alert_sent_now=1
+            msg_id_to_save="$SENT_ERROR_MSG_ID"
         fi
-    fi
-    
-    # Determine MSG_ID to save
-    local msg_id_to_save="0"
-    
-    # Priority 1: The Alert Message ID (if we just sent it)
-    if [ -n "$SENT_ERROR_MSG_ID" ] && [ "$SENT_ERROR_MSG_ID" -ne 0 ]; then
-         msg_id_to_save="$SENT_ERROR_MSG_ID"
-    # Priority 2: Keep existing ID if we didn't send a new alert (to avoid losing the thread)
-    elif [ "$existing_id" -gt 0 ]; then
-         msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
-    # Priority 3: If new record but no alert sent (rare), use Video ID if available
-    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
-         msg_id_to_save="$SENT_VIDEO_MSG_ID"
+    else
+        # If not sending new alert, try to preserve existing ID
+        if [ "$existing_id" -gt 0 ]; then
+             msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
+        fi
     fi
     
     # Save/Update DB
     local current_ts=$(date +%s)
-    local b64_text=$(echo "$alert_text" | base64 -w 0)
+    # [CHANGE] No longer saving Base64 text to DB (matches Script 2 logic)
 
-    # [Dashboard Update] Included process_sec in INSERT and UPDATE
-    # [CHANGE] Added search_text to SQL queries
-    # Reason: Preserve alert_sent flag across updates, set to 1 if alert sent in this execution
     local final_alert_sent=$prev_alert_sent
     if [ "$alert_sent_now" -eq 1 ]; then
         final_alert_sent=1
     fi
 
     if [ "$existing_id" -gt 0 ]; then
-         # Update existing record
-         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val, search_text='$clean_search_text', alert_sent=$final_alert_sent WHERE id=$existing_id;"
+         # [CHANGE] Removed 'message' from UPDATE, fixed quoting, removed SENT_VIDEO_MSG_ID logic
+         db_exec \
+            "UPDATE events 
+             SET created_at=$current_ts, 
+                 msg_id=$msg_id_to_save, 
+                 duration=$duration_val, 
+                 fail_type='$fail_type', 
+                 filesize=$filesize_val, 
+                 process_sec=$process_sec_val, 
+                 search_text='$clean_search_text', 
+                 alert_sent=$final_alert_sent 
+             WHERE id=$existing_id;"
     else
-         # Insert new failure record
-         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec, search_text, alert_sent) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, '$clean_search_text', $final_alert_sent);"
+         # [CHANGE] Removed 'message' from INSERT, fixed quoting
+         db_exec \
+            "INSERT INTO events 
+             (camera, type, status, start_ts, end_ts, created_at, 
+              msg_id, duration, fail_type, filesize, process_sec, 
+              search_text, alert_sent) 
+             VALUES 
+             ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, 
+              $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, 
+              '$clean_search_text', $final_alert_sent);"
     fi
 }
