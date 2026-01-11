@@ -34,7 +34,7 @@ services:
       - FRIGATE_HOST=http://192.168.1.x:5000
 
   frigate-web-dashboard:
-    image: ghcr.io/silverknightkma/frigate-telegram-record-web:1.0.7
+    image: ghcr.io/silverknightkma/frigate-telegram-record-web:1.1.5
     container_name: frigate-web-dashboard
     restart: unless-stopped
     ports:
