@@ -23,8 +23,18 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit SIGTERM SIGINT
 
+# [Ops] Startup Recovery & Cleanup
+# Purpose: Cleans temp directory on boot to remove artifacts from previous crashes (OOM kills, power loss),
+# ensuring a fresh state before validation starts.
+rm -rf "$TEMP_DIR"/*
+
 # 2. Validation
 log_debug "Starting validation process..."
+
+# [Ops] Fail-Fast Dependency Check
+# Purpose: Verify all required tools exist before proceeding to main loops.
+verify_system_dependencies
+
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
     log "CRITICAL: No cameras configured."
     exit 1

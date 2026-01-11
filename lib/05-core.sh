@@ -5,6 +5,26 @@
 # Purpose: Video validation, duration checks, recovery actions, and alert triggers.
 # ==============================================================================
 
+# [Ops] System Dependency Check
+# Purpose: Performs a fail-fast verification of required binaries at startup.
+# Prevents the application from running in a broken environment.
+verify_system_dependencies() {
+    local dependencies=("ffmpeg" "ffprobe" "curl" "sqlite3" "file" "jq")
+    local missing_deps=0
+
+    for cmd in "${dependencies[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            log "CRITICAL: Required system dependency '$cmd' is missing."
+            missing_deps=$((missing_deps + 1))
+        fi
+    done
+
+    if [ "$missing_deps" -gt 0 ]; then
+        exit 1
+    fi
+    log_debug "All system dependencies verified."
+}
+
 # Calculates the total duration of available footage for a given time range
 # by querying Frigate's VOD playlist API without downloading the full video.
 # Purpose: Used to pre-check if sufficient source data exists before expensive operations.

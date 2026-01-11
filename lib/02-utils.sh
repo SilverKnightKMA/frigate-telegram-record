@@ -9,8 +9,18 @@
 mkdir -p "$DATA_DIR"
 mkdir -p "$TEMP_DIR"
 
+# [Ops] Enhanced Logging
+# Purpose: Routes CRITICAL/ERROR messages to STDERR for container monitoring systems,
+# while keeping standard INFO messages on STDOUT.
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [INFO] $1"
+    local ts=$(date '+%Y-%m-%d %H:%M:%S')
+    local msg="$1"
+    
+    if [[ "$msg" == *"CRITICAL"* ]] || [[ "$msg" == *"ERROR"* ]]; then
+        echo "[$ts] [PID:$$] [ERROR] $msg" >&2
+    else
+        echo "[$ts] [PID:$$] [INFO] $msg"
+    fi
 }
 
 log_debug() {
