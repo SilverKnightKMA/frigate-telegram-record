@@ -52,6 +52,8 @@ def format_timestamp(ts):
     return dt_local.strftime('%Y-%m-%d %H:%M:%S')
 
 def decode_message(b64_msg):
+    # Still kept for display purposes if needed, 
+    # or strictly for backward compatibility with old rows lacking search_text
     if not b64_msg: return ""
     try:
         return base64.b64decode(b64_msg).decode('utf-8', errors='replace')
@@ -135,11 +137,6 @@ def get_overview():
 
 @app.route('/api/timeline')
 def get_timeline():
-    """
-    API endpoint: Timeline Tab
-    Optimized for Visualization Performance.
-    Target: ~300 blocks per camera row regardless of time range.
-    """
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -166,7 +163,6 @@ def get_timeline():
         view_duration = ts_end - ts_start
         dynamic_threshold = max(30.0, view_duration / float(TARGET_BLOCKS))
 
-        # Select 'type' and order by type to group timeline rows correctly
         query = """
             SELECT camera, type, start_ts, end_ts, status, fail_type, message
             FROM events 
@@ -179,7 +175,6 @@ def get_timeline():
         grouped_data = {}
         
         for r in rows:
-            # Create unique row key combining Camera Name and Event Type
             cam = r['camera']
             evt_type = r['type'] if r['type'] else 'record'
             row_key = f"{cam} ({evt_type})"
@@ -188,8 +183,6 @@ def get_timeline():
                 grouped_data[row_key] = []
             
             status_code = 1 if r['status'] == 'SUCCESS' else 0
-            
-            # Ensure fail_type is not None for dictionary operations
             fail_type = (r['fail_type'] or "Unknown") if status_code == 0 else None
             
             meta = None
@@ -216,7 +209,6 @@ def get_timeline():
 
                 if status_code == prev_status and (curr_start - prev_end) <= dynamic_threshold:
                     last_block[1] = current_block[1]
-                    
                     if status_code == 0:
                         last_block[3]['count'] += 1
                         current_count = last_block[3]['breakdown'].get(fail_type, 0)
@@ -236,7 +228,6 @@ def get_logs():
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    # Capture filter parameters from request
     status = request.args.get('status', 'all')
     camera = request.args.get('camera', 'all')
     event_type = request.args.get('type', 'all')
@@ -245,13 +236,13 @@ def get_logs():
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
 
+    # Note: Added search_text to the SELECT for potential use
     base_query = """
-        SELECT id, camera, type, status, created_at, message, duration, filesize, fail_type 
+        SELECT id, camera, type, status, created_at, message, search_text, duration, filesize, fail_type 
         FROM events WHERE 1=1
     """
     params = []
 
-    # Apply conditional filters based on parameters
     if status != 'all':
         base_query += " AND status = ?"
         params.append(status.upper())
@@ -266,8 +257,10 @@ def get_logs():
         params.append(fail_type)
     
     if search:
-        base_query += " AND (camera LIKE ? OR fail_type LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
+        # PURE NATIVE SQL SEARCH
+        # Using the plain text column 'search_text' instead of decoding on-the-fly
+        base_query += " AND (camera LIKE ? OR fail_type LIKE ? OR search_text LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
     base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -277,6 +270,10 @@ def get_logs():
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
+            
+            # Prioritize using search_text for display if available to avoid Python decoding
+            display_msg = r['search_text'] if r['search_text'] else decode_message(r['message'])
+
             data.append({
                 'id': r['id'],
                 'time': format_timestamp(r['created_at']),
@@ -286,7 +283,7 @@ def get_logs():
                 'duration': f"{r['duration']}s" if r['duration'] else "-",
                 'size': f"{size_mb:.2f} MB",
                 'error_type': r['fail_type'] or "-",
-                'message': decode_message(r['message'])
+                'message': display_msg
             })
         return jsonify({'data': data, 'count': len(data)})
     finally:
@@ -331,10 +328,6 @@ def get_performance():
 
 @app.route('/api/filters')
 def get_filters():
-    """
-    Fetch distinct values for filters: Cameras, Event Types, and Failure Reasons.
-    Used to populate UI dropdowns dynamically.
-    """
     conn = get_db_connection()
     if not conn: return jsonify({'cameras': [], 'types': [], 'errors': []})
     try:

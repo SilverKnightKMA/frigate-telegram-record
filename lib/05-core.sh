@@ -189,21 +189,17 @@ trigger_failure_alert() {
         prev_duration=${prev_duration:-0}
     fi
 
-    # Logic: 
-    # 1. Update if it's a "Partial Update" (Video sent).
-    # 2. Update if duration has improved (Current > Prev), bypassing ALERT_REPEAT check.
-    # 3. Otherwise, respect ALERT_REPEAT setting.
-    
+    # --- DECISION 1: SHOULD WE UPDATE DB? ---
+    # We update DB if:
+    # 1. New entry (First fail).
+    # 2. Alert Repeat is ON.
+    # 3. Video was sent (Partial Success) -> We need to record this even if duration is same.
+    # 4. Improvement found.
     local should_update="false"
-    if [ "$existing_id" -eq 0 ]; then
-        should_update="true" # First time fail -> Always insert
-    elif [ "$alert_repeat" == "true" ]; then
-        should_update="true" # Repeat on -> Always update
-    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
-        should_update="true" # Video Sent -> Always update (Partial Success)
-    elif [ "$duration_val" -gt "$prev_duration" ]; then
-        should_update="true" # Improvement -> Always update
-        log "[$src] Duration improved ($duration_val > $prev_duration). Bypassing Silent Fail to update DB."
+    if [ "$existing_id" -eq 0 ]; then should_update="true";
+    elif [ "$alert_repeat" == "true" ]; then should_update="true";
+    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then should_update="true";
+    elif [ "$duration_val" -gt "$prev_duration" ]; then should_update="true";
     fi
 
     if [ "$should_update" != "true" ]; then
@@ -219,21 +215,34 @@ trigger_failure_alert() {
 <b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
-    # Send Alert
+    # --- DECISION 2: SHOULD WE SEND TELEGRAM ALERT? ---
+    # User Request: Only send alert if:
+    # 1. New error (existing_id == 0)
+    # 2. Improvement (duration_val > prev_duration)
+    # 3. Alert Repeat is ON
+    
+    local should_send_alert="false"
+    if [ "$existing_id" -eq 0 ]; then should_send_alert="true"; fi
+    if [ "$duration_val" -gt "$prev_duration" ]; then should_send_alert="true"; fi
+    if [ "$alert_repeat" == "true" ]; then should_send_alert="true"; fi
+
+    # Execute Alert Sending
+    if [ "$should_send_alert" == "true" ]; then
+        handle_error "$alert_text" "$mode_upper|$src"
+    fi
+    
+    # Determine MSG_ID to save
     local msg_id_to_save="0"
     
-    if [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
-        # If we sent a video (Partial Success), we use that message ID
-        msg_id_to_save="$SENT_VIDEO_MSG_ID"
-    else
-        # Otherwise send a text alert
-        handle_error "$alert_text" "$mode_upper|$src"
-        # If we updated an existing alert, keep the old ID, otherwise use the new one
-        if [ "$existing_id" -gt 0 ] && [ -z "$SENT_ERROR_MSG_ID" ]; then
-             msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
-        else
-             msg_id_to_save="${SENT_ERROR_MSG_ID:-0}"
-        fi
+    # Priority 1: The Alert Message ID (if we just sent it)
+    if [ -n "$SENT_ERROR_MSG_ID" ] && [ "$SENT_ERROR_MSG_ID" -ne 0 ]; then
+         msg_id_to_save="$SENT_ERROR_MSG_ID"
+    # Priority 2: Keep existing ID if we didn't send a new alert (to avoid losing the thread)
+    elif [ "$existing_id" -gt 0 ]; then
+         msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
+    # Priority 3: If new record but no alert sent (rare), use Video ID if available
+    elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then
+         msg_id_to_save="$SENT_VIDEO_MSG_ID"
     fi
     
     # Save/Update DB

@@ -16,6 +16,7 @@ init_db() {
     # - fail_type: Categorizes errors for the 'Failure Analysis' chart.
     # - filesize: Used to calculate 'Total Storage' used metric.
     # - process_sec: Used to visualize 'System Performance' trends over time.
+    # - search_text: Stores sanitized text for easier searching and error prevention.
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -29,13 +30,17 @@ init_db() {
         duration INTEGER DEFAULT 0,
         fail_type TEXT,   -- DOWNLOAD, RENDER, DURATION, TELEGRAM, VALIDATION
         filesize INTEGER DEFAULT 0, -- Bytes
-        process_sec INTEGER DEFAULT 0 -- Processing duration (Performance metric)
+        process_sec INTEGER DEFAULT 0, -- Processing duration (Performance metric)
+        search_text TEXT  -- Sanitized content for searching
     );"
 
     # [Migrations] Ensure schema compatibility with older DB versions
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN fail_type TEXT;" 2>/dev/null || true
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN filesize INTEGER DEFAULT 0;" 2>/dev/null || true
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN process_sec INTEGER DEFAULT 0;" 2>/dev/null || true
+    
+    # [New Migration] Add search_text column if missing
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN search_text TEXT;" 2>/dev/null || true
 
     # [Dashboard Indexes] Optimized for common Dashboard queries
     
@@ -84,9 +89,16 @@ init_db() {
     GROUP BY day, hour, camera, type, status;"
 
     # [Cleanup] Maintain DB size to keep Dashboard queries fast
-    local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
-    db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND created_at < $sent_cleanup_ts;"
+    # CHANGE: Added conditional check. If retention is set to 0 or less, cleanup is skipped.
+    # This prevents accidental data loss if the user wants to keep history or disable auto-cleanup.
+    
+    if [ "$RETENTION_DAYS" -gt 0 ]; then
+        local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
+        db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND created_at < $sent_cleanup_ts;"
+    fi
 
-    local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
-    db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
+    if [ "$ALERT_RETENTION_HOURS" -gt 0 ]; then
+        local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
+        db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
+    fi
 }
