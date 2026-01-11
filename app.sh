@@ -224,7 +224,7 @@ send_reply() {
         -H "Content-Type: application/json" \
         -d "{
             \"chat_id\": $chat_id,
-            \" $extra_params
+            $extra_params
             \"text\": \"$text\",
             \"reply_parameters\": {
                 \"message_id\": $msg_id
@@ -623,11 +623,12 @@ trigger_failure_alert() {
         # Prepare Alert Text
         local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
         
+        # Change: Use dynamic $reason as the Error header instead of generic static text
+        # Reason: Improves searchability in Telegram by putting the specific error code in the subject
         local alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
 <b>Context:</b> $mode_upper|$src
-<b>Error:</b> Failed to process video/timelapse.
-<b>Reason:</b> $reason
+<b>Error:</b> $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
         # Send Alert
