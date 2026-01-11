@@ -340,8 +340,7 @@ echo "[INFO] System Timezone: $TZ"
 # ==============================================================================
 
 init_db() {
-    # Change: Use unified 'events' table
-    # Reason: Single source of truth for all events, reduces schema complexity
+    # Change: Added 'fail_type' column for structured error categorization
     db_exec "CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         camera TEXT,
@@ -352,8 +351,13 @@ init_db() {
         created_at INTEGER,
         message TEXT,     -- Base64 Encoded
         msg_id INTEGER,
-        duration INTEGER DEFAULT 0
+        duration INTEGER DEFAULT 0,
+        fail_type TEXT    -- New column: DOWNLOAD, RENDER, DURATION, etc.
     );"
+
+    # Change: Auto-migration for existing databases
+    # Reason: Ensures users with older DB versions get the new column without manual intervention
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN fail_type TEXT;" 2>/dev/null || true
 
     # Change: Added indexes
     # Reason: Speeds up the frequent SELECT queries in process_time_window
@@ -446,7 +450,7 @@ send_telegram_video() {
         if [ $curl_exit -ne 0 ]; then
             log "[$src] Curl failed (Exit Code: $curl_exit)."
             rm -f "$response_body"
-            # Change: Added [TELEGRAM] tag for error classification
+            # Change: Pass fail_type 'TELEGRAM' explicitly
             handle_error "[TELEGRAM] Network Error (Curl Exit $curl_exit)" "SEND|$src"
             return 1
         fi
@@ -469,12 +473,12 @@ send_telegram_video() {
         fi
 
         rm -f "$response_body"
-        # Change: Added [TELEGRAM] tag for error classification
+        # Change: Pass fail_type 'TELEGRAM' explicitly
         handle_error "[TELEGRAM] API Error ($http_code): $response_content" "SEND|$src"
         return 1
     done
     rm -f "$response_body"
-    # Change: Added [TELEGRAM] tag for error classification
+    # Change: Pass fail_type 'TELEGRAM' explicitly
     handle_error "[TELEGRAM] Timeout after $MAX_RETRIES retries" "SEND_TIMEOUT|$src"
     return 1
 }
@@ -592,9 +596,11 @@ trigger_failure_alert() {
     local src="$1"
     local start_ts="$2"
     local end_ts="$3"
-    local reason="$4"
-    local run_mode="$5"
-    local duration="$6"
+    # Change: Added fail_type argument
+    local fail_type="$4"
+    local reason="$5"
+    local run_mode="$6"
+    local duration="$7"
 
     # Determine Type based on run_mode
     local type_code="RECORD"
@@ -626,12 +632,11 @@ trigger_failure_alert() {
         # Prepare Alert Text
         local mode_upper=$(echo "$run_mode" | tr '[:lower:]' '[:upper:]')
         
-        # Change: Use dynamic $reason as the Error header instead of generic static text
-        # Reason: Improves searchability in Telegram by putting the specific error code in the subject
+        # Change: Use fail_type in the notification text for clarity
         local alert_text="🚨 <b>EXECUTION FAILED</b>
 <b>Time:</b> $(date '+%Y-%m-%d %H:%M:%S')
 <b>Context:</b> $mode_upper|$src
-<b>Error:</b> $reason
+<b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
         # Send Alert
@@ -650,11 +655,11 @@ trigger_failure_alert() {
         local duration_val="${duration:-0}"
 
         if [ "$existing_id" -gt 0 ] && [ "$alert_repeat" == "true" ]; then
-             # If repeat is on, we update timestamp and Msg ID
-             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val WHERE id=$existing_id;"
+             # If repeat is on, we update timestamp and Msg ID (fail_type might change on retry)
+             db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type' WHERE id=$existing_id;"
         else
-             # Change: Insert into 'events'
-             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val);"
+             # Change: Insert into 'events' with separate fail_type column
+             db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type');"
         fi
     fi
 }
@@ -740,8 +745,8 @@ execute_clip_pipeline() {
                     
                     # 5a. FAILURE HANDLING (Partial)
                     if [ "$_status" == "partial" ]; then
-                        # Change: Added [DURATION] tag
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "[DURATION] Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                        # Change: Pass fail_type 'DURATION'
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
                         local current_ts=$(date +%s)
@@ -759,15 +764,15 @@ execute_clip_pipeline() {
                 fi
             fi
         else
-            # Change: Added [VALIDATION] tag
-            trigger_failure_alert "$src" "$start_ts" "$end_ts" "[VALIDATION] File Check Failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
+            # Change: Pass fail_type 'VALIDATION'
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "VALIDATION" "File Check Failed (Size: $(stat -c%s "$filepath" 2>/dev/null)b)" "$run_mode" "0"
         fi
     elif [ "$http_code" == "404" ]; then
-        # Change: Added [DOWNLOAD] tag
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "[DOWNLOAD] Frigate 404 (Video Not Found)" "$run_mode" "0"
+        # Change: Pass fail_type 'DOWNLOAD'
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "Frigate 404 (Video Not Found)" "$run_mode" "0"
     else
-        # Change: Added [DOWNLOAD] tag
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "[DOWNLOAD] HTTP Error $http_code" "$run_mode" "0"
+        # Change: Pass fail_type 'DOWNLOAD'
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "HTTP Error $http_code" "$run_mode" "0"
     fi
     
     rm -f "$filepath"
@@ -945,8 +950,8 @@ execute_timelapse_pipeline() {
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                     # Change: Added [DURATION] tag
-                     trigger_failure_alert "$src" "$start_ts" "$end_ts" "[DURATION] Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
+                     # Change: Pass fail_type 'DURATION'
+                     trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual"
                      pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
@@ -965,13 +970,13 @@ execute_timelapse_pipeline() {
                 pipeline_success=1
             fi
         else
-             # Change: Added [TELEGRAM] tag
-             trigger_failure_alert "$src" "$start_ts" "$end_ts" "[TELEGRAM] Failed to send Timelapse" "$run_mode" "$_actual"
+             # Change: Pass fail_type 'TELEGRAM'
+             trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual"
              pipeline_success=0
         fi
     else
-        # Change: Added [RENDER] tag
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "[RENDER] Failed to generate Timelapse" "$run_mode" "0"
+        # Change: Pass fail_type 'RENDER'
+        trigger_failure_alert "$src" "$start_ts" "$end_ts" "RENDER" "Failed to generate Timelapse" "$run_mode" "0"
         pipeline_success=0
     fi
 
