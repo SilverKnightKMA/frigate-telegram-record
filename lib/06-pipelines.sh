@@ -40,13 +40,12 @@ execute_clip_pipeline() {
     log_debug "[$src] execute_clip_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
     # 1. CORE GATEKEEPER CHECK
-    # Check if enough footage exists and history allows processing
     if ! check_source_gatekeeper "$src" "$start_ts" "$end_ts" "record"; then return; fi
 
     # 2. SETUP & IDENTIFICATION
     local date_file=$(date -d @$start_ts '+%Y%m%d')
     local start_file=$(date -d @$start_ts '+%H%M')
-    local end_file=$(date -d @$end_ts '+%H:%M')
+    local end_file=$(date -d @$end_ts '+%H%M')
     local filename="${src}_${date_file}_${start_file}_${end_file}_${run_mode}.mp4"
     local filepath="$TEMP_DIR/$filename"
     local display_date=$(date -d @$start_ts '+%Y-%m-%d')
