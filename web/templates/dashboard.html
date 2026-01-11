@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -422,123 +422,116 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>ðŸ“¹ Frigate Telegram Record Dashboard</h1>
-            <p class="subtitle">GiÃ¡m sÃ¡t camera vÃ  lá»‹ch sá»­ ghi hÃ¬nh</p>
+            <h1>📹 Frigate Telegram Record Dashboard</h1>
+            <p class="subtitle">Camera Monitoring and Recording History</p>
             <p class="subtitle" id="lastUpdated" style="margin-top: 10px; font-size: 0.9em;"></p>
         </div>
         
         <div id="loading" class="loading">
-            Äang táº£i dá»¯ liá»‡u...
+            Loading data...
         </div>
         
         <div id="error" style="display: none;"></div>
         
         <div id="content" style="display: none;">
-            <!-- Overall Stats -->
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="label">Tá»•ng sá»‘ Camera</div>
+                    <div class="label">Total Cameras</div>
                     <div class="value" id="totalCameras">0</div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Video thÃ nh cÃ´ng</div>
+                    <div class="label">Successful Videos</div>
                     <div class="value" id="totalRecords">0</div>
-                    <div class="subvalue" id="recentRecords">0 trong 24h qua</div>
+                    <div class="subvalue" id="recentRecords">0 in the last 24h</div>
                 </div>
                 <div class="stat-card">
                     <div class="label">Timelapse</div>
                     <div class="value" id="totalTimelapses">0</div>
-                    <div class="subvalue" id="recentTimelapses">0 trong 24h qua</div>
+                    <div class="subvalue" id="recentTimelapses">0 in the last 24h</div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Lá»—i/Tháº¥t báº¡i</div>
+                    <div class="label">Errors/Failures</div>
                     <div class="value" style="color: #f44336;" id="totalFailures">0</div>
-                    <div class="subvalue" id="recentFailures">0 trong 24h qua</div>
+                    <div class="subvalue" id="recentFailures">0 in the last 24h</div>
                 </div>
             </div>
             
-            <!-- Cameras Table -->
             <div class="cameras-section">
-                <h2>ðŸ“Š Thá»‘ng kÃª theo Camera</h2>
+                <h2>📊 Camera Statistics</h2>
                 <div class="camera-table-wrapper">
                 <table class="camera-table">
                     <thead>
                         <tr>
                             <th>Camera</th>
-                            <th>Video thÃ nh cÃ´ng</th>
+                            <th>Successful Videos</th>
                             <th>Timelapse</th>
-                            <th>Lá»—i</th>
-                            <th>Tá»•ng thá»i lÆ°á»£ng</th>
-                            <th>Láº§n Ä‘áº§u ghi</th>
-                            <th>Láº§n gáº§n nháº¥t</th>
+                            <th>Errors</th>
+                            <th>Total Duration</th>
+                            <th>First Record</th>
+                            <th>Last Record</th>
                         </tr>
                     </thead>
                     <tbody id="cameraTableBody">
-                        <!-- Will be populated by JavaScript -->
-                    </tbody>
+                        </tbody>
                 </table>
                 </div>
             </div>
             
-            <!-- Recent Activity -->
             <div class="activity-section">
-                <h2>ðŸ“ Hoáº¡t Ä‘á»™ng gáº§n Ä‘Ã¢y</h2>
+                <h2>📝 Recent Activity</h2>
                 
-                <!-- Activity Filters -->
                 <div class="activity-filters">
                     <div class="filter-group">
-                        <label class="filter-label">Cháº¿ Ä‘á»™:</label>
+                        <label class="filter-label">Mode:</label>
                         <select id="filterMode" class="filter-select">
-                            <option value="all">Táº¥t cáº£</option>
+                            <option value="all">All</option>
                             <option value="record">Record</option>
                             <option value="timelapse">Timelapse</option>
                         </select>
                     </div>
                     
                     <div class="filter-group">
-                        <label class="filter-label">Tráº¡ng thÃ¡i:</label>
+                        <label class="filter-label">Status:</label>
                         <select id="filterStatus" class="filter-select">
-                            <option value="all">Táº¥t cáº£</option>
-                            <option value="success">ThÃ nh cÃ´ng</option>
-                            <option value="failed">Tháº¥t báº¡i</option>
+                            <option value="all">All</option>
+                            <option value="success">Success</option>
+                            <option value="failed">Failed</option>
                         </select>
                     </div>
                     
                     <div class="filter-group">
                         <label class="filter-label">Camera:</label>
                         <select id="filterCamera" class="filter-select">
-                            <option value="all">Táº¥t cáº£</option>
-                            <!-- Will be populated by JavaScript -->
-                        </select>
+                            <option value="all">All</option>
+                            </select>
                     </div>
                     
                     <div class="filter-group">
-                        <label class="filter-label">Tá»« ngÃ y:</label>
+                        <label class="filter-label">From Date:</label>
                         <input type="date" id="filterStartDate" class="filter-input">
                     </div>
                     
                     <div class="filter-group">
-                        <label class="filter-label">Äáº¿n ngÃ y:</label>
+                        <label class="filter-label">To Date:</label>
                         <input type="date" id="filterEndDate" class="filter-input">
                     </div>
                     
                     <div class="filter-group">
-                        <label class="filter-label">TÃ¬m kiáº¿m:</label>
-                        <input type="text" id="filterSearch" class="filter-input" placeholder="Nháº­p tá»« khÃ³a...">
+                        <label class="filter-label">Search:</label>
+                        <input type="text" id="filterSearch" class="filter-input" placeholder="Enter keywords...">
                     </div>
                     
-                    <button id="applyFilters" class="filter-btn">Lá»c</button>
-                    <button id="clearFilters" class="filter-btn clear">XÃ³a bá»™ lá»c</button>
+                    <button id="applyFilters" class="filter-btn">Filter</button>
+                    <button id="clearFilters" class="filter-btn clear">Clear Filters</button>
                 </div>
                 
                 <div class="activity-list" id="activityList">
-                    <!-- Will be populated by JavaScript -->
-                </div>
+                    </div>
             </div>
         </div>
         
         <div class="refresh-info">
-            Tá»± Ä‘á»™ng lÃ m má»›i sau <span id="countdown">30</span> giÃ¢y
+            Auto refresh in <span id="countdown">30</span> seconds
         </div>
     </div>
     
@@ -565,10 +558,10 @@
                 document.getElementById('totalRecords').textContent = data.overall.total_records;
                 document.getElementById('totalTimelapses').textContent = data.overall.total_timelapses;
                 document.getElementById('totalFailures').textContent = data.overall.total_failures;
-                document.getElementById('recentRecords').textContent = `${data.overall.recent_records_24h} trong 24h qua`;
-                document.getElementById('recentTimelapses').textContent = `${data.overall.recent_timelapses_24h} trong 24h qua`;
-                document.getElementById('recentFailures').textContent = `${data.overall.recent_failures_24h} trong 24h qua`;
-                document.getElementById('lastUpdated').textContent = `Cáº­p nháº­t lÃºc: ${data.last_updated}`;
+                document.getElementById('recentRecords').textContent = `${data.overall.recent_records_24h} in the last 24h`;
+                document.getElementById('recentTimelapses').textContent = `${data.overall.recent_timelapses_24h} in the last 24h`;
+                document.getElementById('recentFailures').textContent = `${data.overall.recent_failures_24h} in the last 24h`;
+                document.getElementById('lastUpdated').textContent = `Last updated: ${data.last_updated}`;
                 
                 // Update cameras table
                 const tbody = document.getElementById('cameraTableBody');
@@ -595,7 +588,7 @@
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error').style.display = 'block';
                 document.getElementById('error').className = 'error';
-                document.getElementById('error').textContent = `Lá»—i: ${error.message}`;
+                document.getElementById('error').textContent = `Error: ${error.message}`;
             }
         }
         
@@ -634,7 +627,7 @@
         function populateCameraFilter() {
             const cameraSelect = document.getElementById('filterCamera');
             // Keep the "All" option
-            cameraSelect.innerHTML = '<option value="all">Táº¥t cáº£</option>';
+            cameraSelect.innerHTML = '<option value="all">All</option>';
             
             // Add camera options
             Array.from(availableCameras).sort().forEach(camera => {
@@ -650,7 +643,7 @@
             activityList.innerHTML = '';
             
             if (activities.length === 0) {
-                activityList.innerHTML = '<div style="text-align: center; padding: 30px; color: #999;">KhÃ´ng tÃ¬m tháº¥y hoáº¡t Ä‘á»™ng nÃ o</div>';
+                activityList.innerHTML = '<div style="text-align: center; padding: 30px; color: #999;">No activity found</div>';
                 return;
             }
             
