@@ -3,800 +3,380 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Frigate Telegram Record Dashboard</title>
+    <title>Frigate Telegram NVR Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --bg: #f4f6f9;
+            --card-bg: #ffffff;
+            --text-main: #333;
+            --text-muted: #666;
+            --success: #00E396;
+            --warning: #FEB019;
+            --danger: #FF4560;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text-main);
             padding: 20px;
         }
         
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+        .container { max-width: 1600px; margin: 0 auto; }
         
         .header {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 30px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 2.5em;
-        }
-        
-        .header .subtitle {
-            color: #666;
-            font-size: 1.1em;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-        }
-        
-        .stat-card .label {
-            font-size: 0.9em;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 10px;
-        }
-        
-        .stat-card .value {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #667eea;
-        }
-        
-        .stat-card .subvalue {
-            font-size: 0.9em;
-            color: #999;
-            margin-top: 5px;
-        }
-        
-        .cameras-section {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 30px;
-        }
-        
-        .cameras-section h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 1.8em;
-        }
-        
-        .camera-table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: auto;
-        }
-        
-        .camera-table-wrapper {
-            overflow-x: auto;
-            display: block;
-        }
-        
-        .camera-table thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
-        }
-        
-        .camera-table th,
-        .camera-table td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .camera-table tbody tr:hover {
-            background-color: #f5f5f5;
-        }
-        
-        .badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: bold;
-        }
-        
-        .badge-success {
-            background-color: #4caf50;
-            color: white;
-        }
-        
-        .badge-warning {
-            background-color: #ff9800;
-            color: white;
-        }
-        
-        .badge-error {
-            background-color: #f44336;
-            color: white;
-        }
-        
-        .activity-section {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        
-        .activity-section h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 1.8em;
-        }
-        
-        .activity-filters {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #f5f5f5;
-            border-radius: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        
-        .filter-label {
-            font-size: 0.85em;
-            font-weight: bold;
-            color: #666;
-        }
-        
-        .filter-select,
-        .filter-input {
-            padding: 8px 12px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            background: white;
-            color: #333;
-            font-size: 0.95em;
-            min-width: 150px;
-        }
-        
-        .filter-select:focus,
-        .filter-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .filter-btn {
-            padding: 8px 16px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: all 0.3s;
-            margin-top: auto;
-        }
-        
-        .filter-btn:hover {
-            background: #764ba2;
-        }
-        
-        .filter-btn.clear {
-            background: #999;
-        }
-        
-        .filter-btn.clear:hover {
-            background: #777;
-        }
-        
-        .activity-list {
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        
-        .activity-item {
-            padding: 15px;
-            border-left: 4px solid #667eea;
-            background: #f9f9f9;
-            margin-bottom: 10px;
-            border-radius: 5px;
-        }
-        
-        .activity-item.failed {
-            border-left-color: #f44336;
-        }
-        
-        .activity-item .camera-name {
-            font-weight: bold;
-            color: #333;
-        }
-        
-        .activity-item .timestamp {
-            font-size: 0.85em;
-            color: #999;
-            float: right;
-        }
-        
-        .activity-item .details {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-            word-wrap: break-word;
-            white-space: pre-wrap;
-        }
-        
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            animation: fadeIn 0.3s;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        @keyframes flash {
-            0%, 100% { background: transparent; }
-            50% { background: rgba(255, 193, 7, 0.3); }
-        }
-        
-        .modal-content {
-            background-color: white;
-            margin: 10% auto;
-            padding: 30px;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 600px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            animation: slideDown 0.3s;
-        }
-        
-        @keyframes slideDown {
-            from {
-                transform: translateY(-50px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-        
-        .modal-header {
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #667eea;
+        }
+
+        .header h1 { font-size: 1.5rem; }
+        .header-meta { text-align: right; font-size: 0.9rem; opacity: 0.9; }
+
+        /* KPI Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
         }
         
-        .modal-header h3 {
-            margin: 0;
-            color: #333;
-            font-size: 1.5em;
-        }
-        
-        .close-btn {
-            font-size: 28px;
-            font-weight: bold;
-            color: #999;
-            cursor: pointer;
-            transition: color 0.3s;
-        }
-        
-        .close-btn:hover {
-            color: #333;
-        }
-        
-        .modal-body {
-            font-size: 1em;
-        }
-        
-        .detail-row {
-            display: flex;
-            padding: 10px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        
-        .detail-label {
-            font-weight: bold;
-            color: #667eea;
-            width: 150px;
-            flex-shrink: 0;
-        }
-        
-        .detail-value {
-            color: #333;
-            flex-grow: 1;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 0.9em;
-        }
-        
-        .status-badge.success {
-            background: #4caf50;
-            color: white;
-        }
-        
-        .status-badge.failed {
-            background: #f44336;
-            color: white;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 50px;
-            color: white;
-            font-size: 1.5em;
-        }
-        
-        .error {
-            background: #f44336;
-            color: white;
+        .stat-card {
+            background: var(--card-bg);
             padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            text-align: center;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 4px solid var(--primary);
         }
         
-        .refresh-info {
-            text-align: center;
-            color: white;
-            margin-top: 20px;
-            font-size: 0.9em;
+        .stat-card.danger { border-left-color: var(--danger); }
+        .stat-card.success { border-left-color: var(--success); }
+        
+        .stat-card .label { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 2rem; font-weight: 700; margin: 5px 0; color: var(--text-main); }
+        .stat-card .subvalue { font-size: 0.85rem; color: var(--text-muted); }
+
+        /* Visualization Section */
+        .viz-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .chart-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            min-height: 400px;
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--text-main);
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        /* Tables & Lists */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 25px;
         }
         
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 1.8em;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .camera-table {
-                font-size: 0.9em;
-            }
-            
-            .camera-table th,
-            .camera-table td {
-                padding: 10px;
-            }
+        .section-card {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .table-responsive { overflow-x: auto; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px; border-bottom: 2px solid #eee; color: var(--text-muted); font-size: 0.9rem; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 0.95rem; }
+        tr:hover { background-color: #f8f9fa; }
+        
+        .badge {
+            padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; color: white;
+        }
+        .badge-success { background: var(--success); }
+        .badge-warning { background: var(--warning); }
+        .badge-danger { background: var(--danger); }
+
+        /* Activity Feed */
+        .activity-list { max-height: 400px; overflow-y: auto; }
+        .activity-item {
+            padding: 12px;
+            border-left: 3px solid #ddd;
+            background: #fdfdfd;
+            margin-bottom: 8px;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.9rem;
+        }
+        .activity-item.failed { border-left-color: var(--danger); background: #fff5f5; }
+        .activity-item .top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .activity-item .time { font-size: 0.8rem; color: var(--text-muted); }
+        .activity-item .cam { font-weight: 600; }
+        
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000;
+        }
+
+        @media (max-width: 1024px) {
+            .viz-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
+    <div class="loading-overlay" id="loader">
+        <h2>Loading Dashboard...</h2>
+    </div>
+
     <div class="container">
         <div class="header">
-            <h1>📹 Frigate Telegram Record Dashboard</h1>
-            <p class="subtitle">Camera Monitoring and Recording History</p>
-            <p class="subtitle" id="lastUpdated" style="margin-top: 10px; font-size: 0.9em;"></p>
-        </div>
-        
-        <div id="loading" class="loading">
-            Loading data...
-        </div>
-        
-        <div id="error" style="display: none;"></div>
-        
-        <div id="content" style="display: none;">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="label">Total Cameras</div>
-                    <div class="value" id="totalCameras">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Successful Videos</div>
-                    <div class="value" id="totalRecords">0</div>
-                    <div class="subvalue" id="recentRecords">0 in the last 24h</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Timelapse</div>
-                    <div class="value" id="totalTimelapses">0</div>
-                    <div class="subvalue" id="recentTimelapses">0 in the last 24h</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Errors/Failures</div>
-                    <div class="value" style="color: #f44336;" id="totalFailures">0</div>
-                    <div class="subvalue" id="recentFailures">0 in the last 24h</div>
-                </div>
+            <div>
+                <h1>📹 Frigate Telegram NVR</h1>
+                <div style="font-size: 0.9rem; opacity: 0.8;">Monitoring & Automation Dashboard</div>
             </div>
-            
-            <div class="cameras-section">
-                <h2>📊 Camera Statistics</h2>
-                <div class="camera-table-wrapper">
-                <table class="camera-table">
-                    <thead>
-                        <tr>
-                            <th>Camera</th>
-                            <th>Successful Videos</th>
-                            <th>Timelapse</th>
-                            <th>Errors</th>
-                            <th>Total Duration</th>
-                            <th>First Record</th>
-                            <th>Last Record</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cameraTableBody">
-                        </tbody>
-                </table>
-                </div>
-            </div>
-            
-            <div class="activity-section">
-                <h2>📝 Recent Activity</h2>
-                
-                <div class="activity-filters">
-                    <div class="filter-group">
-                        <label class="filter-label">Mode:</label>
-                        <select id="filterMode" class="filter-select">
-                            <option value="all">All</option>
-                            <option value="record">Record</option>
-                            <option value="timelapse">Timelapse</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">Status:</label>
-                        <select id="filterStatus" class="filter-select">
-                            <option value="all">All</option>
-                            <option value="success">Success</option>
-                            <option value="failed">Failed</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">Camera:</label>
-                        <select id="filterCamera" class="filter-select">
-                            <option value="all">All</option>
-                            </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">From Date:</label>
-                        <input type="date" id="filterStartDate" class="filter-input">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">To Date:</label>
-                        <input type="date" id="filterEndDate" class="filter-input">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">Search:</label>
-                        <input type="text" id="filterSearch" class="filter-input" placeholder="Enter keywords...">
-                    </div>
-                    
-                    <button id="applyFilters" class="filter-btn">Filter</button>
-                    <button id="clearFilters" class="filter-btn clear">Clear Filters</button>
-                </div>
-                
-                <div class="activity-list" id="activityList">
-                    </div>
+            <div class="header-meta">
+                <div id="lastUpdated">Updated: -</div>
+                <div id="countdown" style="font-weight: bold;">30s</div>
             </div>
         </div>
-        
-        <div class="refresh-info">
-            Auto refresh in <span id="countdown">30</span> seconds
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Cameras</div>
+                <div class="value" id="totalCameras">0</div>
+            </div>
+            <div class="stat-card success">
+                <div class="label">24h Recordings</div>
+                <div class="value" id="recentRecords">0</div>
+                <div class="subvalue">Total: <span id="totalRecords">0</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">24h Timelapses</div>
+                <div class="value" id="recentTimelapses">0</div>
+                <div class="subvalue">Total: <span id="totalTimelapses">0</span></div>
+            </div>
+            <div class="stat-card danger">
+                <div class="label">24h Failures</div>
+                <div class="value" id="recentFailures">0</div>
+                <div class="subvalue">Total: <span id="totalFailures">0</span></div>
+            </div>
+        </div>
+
+        <div class="viz-grid">
+            <div class="chart-card">
+                <div class="chart-title">Timeline Coverage (Last 24h)</div>
+                <div id="timelineChart"></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">Error Distribution</div>
+                <div id="errorChart"></div>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="section-card">
+                <div class="chart-title">📊 Camera Status</div>
+                <div class="table-responsive">
+                    <table id="cameraTable">
+                        <thead>
+                            <tr>
+                                <th>Camera</th>
+                                <th>Videos</th>
+                                <th>Timelapse</th>
+                                <th>Failures</th>
+                                <th>Total Duration</th>
+                                <th>Last Activity</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section-card">
+                <div class="chart-title">📝 Activity Log</div>
+                <div class="activity-list" id="activityList"></div>
+            </div>
         </div>
     </div>
-    
+
     <script>
-        let countdownTimer = 30;
-        let countdownInterval;
-        
-      // Initialize app
-        loadStats();
-        loadActivity();
-        startCountdown();
-        
-        async function loadStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                
-                if (!data.success) {
-                    throw new Error(data.error);
-                }
-                
-                // Update overall stats
-                document.getElementById('totalCameras').textContent = data.overall.total_cameras;
-                document.getElementById('totalRecords').textContent = data.overall.total_records;
-                document.getElementById('totalTimelapses').textContent = data.overall.total_timelapses;
-                document.getElementById('totalFailures').textContent = data.overall.total_failures;
-                document.getElementById('recentRecords').textContent = `${data.overall.recent_records_24h} in the last 24h`;
-                document.getElementById('recentTimelapses').textContent = `${data.overall.recent_timelapses_24h} in the last 24h`;
-                document.getElementById('recentFailures').textContent = `${data.overall.recent_failures_24h} in the last 24h`;
-                document.getElementById('lastUpdated').textContent = `Last updated: ${data.last_updated}`;
-                
-                // Update cameras table
-                const tbody = document.getElementById('cameraTableBody');
-                tbody.innerHTML = '';
-                
-                data.cameras.forEach(camera => {
-                    const row = tbody.insertRow();
-                    row.innerHTML = `
-                        <td><strong>${camera.name}</strong></td>
-                        <td><span class="badge badge-success">${camera.success_count}</span></td>
-                        <td><span class="badge badge-warning">${camera.timelapse_count}</span></td>
-                        <td><span class="badge badge-error">${camera.failed_count}</span></td>
-                        <td>${camera.total_duration}</td>
-                        <td>${camera.first_record}</td>
-                        <td>${camera.last_record}</td>
-                    `;
-                });
-                
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'none';
-                document.getElementById('content').style.display = 'block';
-                
-            } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
-                document.getElementById('error').className = 'error';
-                document.getElementById('error').textContent = `Error: ${error.message}`;
-            }
-        }
-        
-        let allActivities = []; // Store all activities for filtering
-        let availableCameras = new Set(); // Store unique camera names
-        
-        async function loadActivity() {
-            try {
-                const response = await fetch('/api/recent_activity');
-                const data = await response.json();
-                
-                if (!data.success) {
-                    return;
-                }
-                
-                // Store all activities
-                allActivities = data.activities;
-                
-                // Extract unique camera names
-                availableCameras.clear();
-                data.activities.forEach(activity => {
-                    availableCameras.add(activity.camera);
-                });
-                
-                // Populate camera filter dropdown
-                populateCameraFilter();
-                
-                // Display all activities initially
-                displayActivities(allActivities);
-                
-            } catch (error) {
-                console.error('Error loading activity:', error);
-            }
-        }
-        
-        function populateCameraFilter() {
-            const cameraSelect = document.getElementById('filterCamera');
-            // Keep the "All" option
-            cameraSelect.innerHTML = '<option value="all">All</option>';
-            
-            // Add camera options
-            Array.from(availableCameras).sort().forEach(camera => {
-                const option = document.createElement('option');
-                option.value = camera;
-                option.textContent = camera;
-                cameraSelect.appendChild(option);
-            });
-        }
-        
-        function displayActivities(activities) {
-            const activityList = document.getElementById('activityList');
-            activityList.innerHTML = '';
-            
-            if (activities.length === 0) {
-                activityList.innerHTML = '<div style="text-align: center; padding: 30px; color: #999;">No activity found</div>';
-                return;
-            }
-            
-            activities.forEach(activity => {
-                const item = document.createElement('div');
-                item.className = `activity-item ${activity.status === 'failed' ? 'failed' : ''}`;
-                item.innerHTML = `
-                    <span class="timestamp">${activity.timestamp}</span>
-                    <div class="camera-name">${activity.camera} - ${activity.type}</div>
-                    <div class="details">${escapeHtml(activity.details)}</div>
-                `;
-                activityList.appendChild(item);
-            });
-        }
-        
-        function applyActivityFilters() {
-            const modeFilter = document.getElementById('filterMode').value;
-            const statusFilter = document.getElementById('filterStatus').value;
-            const cameraFilter = document.getElementById('filterCamera').value;
-            const startDate = document.getElementById('filterStartDate').value;
-            const endDate = document.getElementById('filterEndDate').value;
-            const searchText = document.getElementById('filterSearch').value.toLowerCase();
-            
-            let filtered = allActivities.filter(activity => {
-                // Mode filter - search in Context field of details
-                if (modeFilter !== 'all') {
-                    const contextMatch = activity.details.match(/<b>Context:<\/b>\s*(\w+)/);
-                    if (!contextMatch) {
-                        return false;
-                    }
-                    const contextMode = contextMatch[1].toLowerCase();
-                    if (contextMode !== modeFilter) {
-                        return false;
-                    }
-                }
-                
-                // Status filter
-                if (statusFilter !== 'all') {
-                    if (activity.status !== statusFilter) {
-                        return false;
-                    }
-                }
-                
-                // Camera filter
-                if (cameraFilter !== 'all' && activity.camera !== cameraFilter) {
-                    return false;
-                }
-                
-                // Date range filter
-                if (startDate || endDate) {
-                    // Parse activity timestamp (format: "DD/MM/YYYY HH:MM:SS")
-                    const activityDate = parseActivityDate(activity.timestamp);
-                    
-                    if (startDate) {
-                        const filterStart = new Date(startDate);
-                        filterStart.setHours(0, 0, 0, 0);
-                        if (activityDate < filterStart) {
-                            return false;
-                        }
-                    }
-                    
-                    if (endDate) {
-                        const filterEnd = new Date(endDate);
-                        filterEnd.setHours(23, 59, 59, 999);
-                        if (activityDate > filterEnd) {
-                            return false;
-                        }
-                    }
-                }
-                
-                // Search filter
-                if (searchText) {
-                    const searchableText = (
-                        activity.camera + ' ' + 
-                        activity.type + ' ' + 
-                        activity.details + ' ' + 
-                        activity.timestamp
-                    ).toLowerCase();
-                    
-                    if (!searchableText.includes(searchText)) {
-                        return false;
-                    }
-                }
-                
-                return true;
-            });
-            
-            displayActivities(filtered);
-        }
-        
-        function parseActivityDate(timestamp) {
-            // Parse "DD/MM/YYYY HH:MM:SS" format
-            const parts = timestamp.match(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/);
-            if (parts) {
-                const day = parseInt(parts[1]);
-                const month = parseInt(parts[2]) - 1; // JS months are 0-indexed
-                const year = parseInt(parts[3]);
-                const hour = parseInt(parts[4]);
-                const minute = parseInt(parts[5]);
-                const second = parseInt(parts[6]);
-                return new Date(year, month, day, hour, minute, second);
-            }
-            return new Date();
-        }
-        
-        function clearActivityFilters() {
-            document.getElementById('filterMode').value = 'all';
-            document.getElementById('filterStatus').value = 'all';
-            document.getElementById('filterCamera').value = 'all';
-            document.getElementById('filterStartDate').value = '';
-            document.getElementById('filterEndDate').value = '';
-            document.getElementById('filterSearch').value = '';
-            displayActivities(allActivities);
-        }
-        
-        // Setup filter event listeners
-        document.getElementById('applyFilters').addEventListener('click', applyActivityFilters);
-        document.getElementById('clearFilters').addEventListener('click', clearActivityFilters);
-        
-        // Apply filters on Enter key in search box
-        document.getElementById('filterSearch').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                applyActivityFilters();
-            }
-        });
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function startCountdown() {
-            countdownTimer = 30;
-            document.getElementById('countdown').textContent = countdownTimer;
-            
-            if (countdownInterval) {
-                clearInterval(countdownInterval);
-            }
-            
-            countdownInterval = setInterval(() => {
-                countdownTimer--;
-                document.getElementById('countdown').textContent = countdownTimer;
-                
-                if (countdownTimer <= 0) {
-                    loadStats();
-                    loadActivity();
-                    startCountdown();
+        // --- Chart Instances ---
+        let timelineChart = null;
+        let errorChart = null;
+        let countdownVal = 30;
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+            setInterval(() => {
+                countdownVal--;
+                document.getElementById('countdown').innerText = countdownVal + 's';
+                if(countdownVal <= 0) {
+                    fetchData();
+                    countdownVal = 30;
                 }
             }, 1000);
+        });
+
+        async function fetchData() {
+            try {
+                // 1. Fetch Basic Stats
+                const statsRes = await fetch('/api/stats');
+                const statsData = await statsRes.json();
+                
+                if(statsData.success) updateStatsUI(statsData);
+
+                // 2. Fetch Visualization Data
+                const vizRes = await fetch('/api/visualization');
+                const vizData = await vizRes.json();
+
+                if(vizData.success) updateCharts(vizData);
+
+                // 3. Fetch Activity Log
+                const actRes = await fetch('/api/recent_activity');
+                const actData = await actRes.json();
+
+                if(actData.success) updateActivityUI(actData.activities);
+
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('lastUpdated').innerText = 'Updated: ' + new Date().toLocaleTimeString();
+
+            } catch (e) {
+                console.error("Fetch Error", e);
+            }
         }
-        
-        startCountdown();
+
+        function updateStatsUI(data) {
+            const ov = data.overall;
+            document.getElementById('totalCameras').innerText = ov.total_cameras;
+            document.getElementById('recentRecords').innerText = ov.recent_records_24h;
+            document.getElementById('totalRecords').innerText = ov.total_records;
+            document.getElementById('recentTimelapses').innerText = ov.recent_timelapses_24h;
+            document.getElementById('totalTimelapses').innerText = ov.total_timelapses;
+            document.getElementById('recentFailures').innerText = ov.recent_failures_24h;
+            document.getElementById('totalFailures').innerText = ov.total_failures;
+
+            const tbody = document.querySelector('#cameraTable tbody');
+            tbody.innerHTML = '';
+            data.cameras.forEach(cam => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${cam.name}</strong></td>
+                        <td><span class="badge badge-success">${cam.success_count}</span></td>
+                        <td><span class="badge badge-warning">${cam.timelapse_count}</span></td>
+                        <td><span class="badge badge-danger">${cam.failed_count}</span></td>
+                        <td>${cam.total_duration}</td>
+                        <td>${cam.last_record}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function updateCharts(data) {
+            // --- Timeline Chart ---
+            const timelineOptions = {
+                series: data.timeline, // Expected format from backend
+                chart: {
+                    height: 350,
+                    type: 'rangeBar',
+                    toolbar: { show: false }
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: true,
+                        barHeight: '80%',
+                        rangeBarGroupRows: true 
+                    }
+                },
+                colors: ['#00E396', '#FF4560'], // Default colors if not overridden
+                fill: { type: 'solid' },
+                xaxis: {
+                    type: 'datetime',
+                    labels: { datetimeFormatter: { hour: 'HH:mm' } }
+                },
+                tooltip: {
+                    x: { format: 'dd MMM HH:mm' }
+                },
+                legend: { show: false }
+            };
+
+            if(timelineChart) {
+                timelineChart.updateSeries(data.timeline);
+            } else {
+                timelineChart = new ApexCharts(document.querySelector("#timelineChart"), timelineOptions);
+                timelineChart.render();
+            }
+
+            // --- Error Donut Chart ---
+            const hasErrors = data.errors.series.length > 0;
+            const errorOptions = {
+                series: hasErrors ? data.errors.series : [1],
+                labels: hasErrors ? data.errors.labels : ['No Errors'],
+                chart: { type: 'donut', height: 320 },
+                colors: hasErrors ? ['#FF4560', '#FEB019', '#775DD0', '#008FFB', '#00E396'] : ['#E0E0E0'],
+                dataLabels: { enabled: hasErrors },
+                legend: { position: 'bottom' },
+                plotOptions: { pie: { donut: { labels: { show: true, total: { show: true } } } } }
+            };
+
+            if(errorChart) {
+                errorChart.updateOptions(errorOptions);
+            } else {
+                errorChart = new ApexCharts(document.querySelector("#errorChart"), errorOptions);
+                errorChart.render();
+            }
+        }
+
+        function updateActivityUI(activities) {
+            const list = document.getElementById('activityList');
+            list.innerHTML = '';
+            
+            if(activities.length === 0) {
+                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">No recent activity</div>';
+                return;
+            }
+
+            activities.forEach(act => {
+                const isFailed = act.status === 'failed';
+                const html = `
+                    <div class="activity-item ${isFailed ? 'failed' : ''}">
+                        <div class="top">
+                            <span class="cam">${act.camera} <span style="font-weight:normal; color:#666;">• ${act.type}</span></span>
+                            <span class="time">${act.timestamp.split(' ')[1]}</span>
+                        </div>
+                        <div style="color: ${isFailed ? '#d32f2f' : '#555'}; font-size: 0.85rem;">
+                            ${act.details}
+                        </div>
+                    </div>
+                `;
+                list.innerHTML += html;
+            });
+        }
     </script>
 </body>
 </html>
