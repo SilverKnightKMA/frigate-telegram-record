@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Frigate Telegram Record - Web Dashboard (Client-Side Zoom Optimized)
+Frigate Telegram Record - Web Dashboard (Aggregated & Optimized)
 """
 
 import os
@@ -49,13 +49,14 @@ def dashboard(): return render_template('dashboard.html')
 
 @app.route('/api/stats')
 def get_stats():
+    """Lightweight stats endpoint"""
     try:
         conn = get_db_connection()
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
         cameras = {}
-        # Success Stats
+        # Simple aggregations
         cursor.execute("SELECT camera, COUNT(*) as total, MAX(created_at) as last_ts, SUM(end_ts - start_ts) as dur FROM sent_ranges GROUP BY camera")
         for row in cursor.fetchall():
             cameras[row['camera']] = {
@@ -81,103 +82,150 @@ def get_stats():
         return jsonify({'success': True, 'cameras': list(cameras.values()), 'overall': stats})
     except Exception as e: return jsonify({'success': False, 'error': str(e)}), 500
 
+# --- CORE LOGIC: SERVER-SIDE DOWNSAMPLING ---
+def compact_ranges(raw_rows, tolerance=30):
+    """
+    Gộp các block liên tiếp thành 1 block lớn.
+    tolerance: Khoảng cách tối đa (giây) giữa 2 block để được coi là liền mạch.
+    """
+    if not raw_rows: return []
+    
+    # Sort by Start Time (Critical for merging)
+    raw_rows.sort(key=lambda x: x['start_ts'])
+    
+    merged = []
+    current_blk = None
+
+    for row in raw_rows:
+        start = row['start_ts']
+        end = row['end_ts']
+        
+        if current_blk is None:
+            current_blk = {'x': row['camera'], 'y': [start*1000, end*1000], 'fillColor': '#00E396'}
+            continue
+            
+        # Check continuity: If (NewStart) <= (OldEnd + Tolerance) -> Merge
+        prev_end_ms = current_blk['y'][1]
+        if (start * 1000) <= (prev_end_ms + (tolerance * 1000)):
+            # Update End Time
+            current_blk['y'][1] = max(prev_end_ms, end * 1000)
+        else:
+            # Gap detected -> Push current and start new
+            merged.append(current_blk)
+            current_blk = {'x': row['camera'], 'y': [start*1000, end*1000], 'fillColor': '#00E396'}
+            
+    if current_blk: merged.append(current_blk)
+    return merged
+
 @app.route('/api/visualization')
 def get_visualization_data():
+    """Heavy logic handled here, returning lightweight JSON"""
     try:
         conn = get_db_connection()
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
-        # LOGIC MỚI: Lấy 48h (2 ngày) để làm bộ đệm cho Zoom Out
-        # Giúp trải nghiệm zoom mượt mà, không cần load lại API
+        # Load last 48h to support zoom out
         start_time = int((datetime.now() - timedelta(hours=48)).timestamp())
         
-        # LIMIT 2000: Đủ cho khoảng 3-4 ngày dữ liệu của 4 camera (mỗi clip 15p)
-        # Không dùng thuật toán gộp nữa để giữ nguyên block 15m
-        cursor.execute("""
-            SELECT camera, start_ts, end_ts 
-            FROM sent_ranges 
-            WHERE start_ts > ? 
-            ORDER BY start_ts DESC 
-            LIMIT 2000
-        """, (start_time,))
+        # 1. Fetch RAW (Might be 5000+ rows)
+        cursor.execute("SELECT camera, start_ts, end_ts FROM sent_ranges WHERE start_ts > ? ORDER BY camera, start_ts", (start_time,))
+        raw_data = cursor.fetchall()
         
-        camera_ranges = {}
-        for row in cursor.fetchall():
+        # 2. GROUP & COMPACT (Reduce to ~50-100 rows)
+        grouped_by_cam = {}
+        for row in raw_data:
             c = row['camera']
-            if c not in camera_ranges: camera_ranges[c] = []
-            camera_ranges[c].append({
-                'x': c,
-                'y': [row['start_ts']*1000, row['end_ts']*1000],
-                'fillColor': '#00E396'
-            })
+            if c not in grouped_by_cam: grouped_by_cam[c] = []
+            grouped_by_cam[c].append(row)
+            
+        final_timeline = []
+        for cam, rows in grouped_by_cam.items():
+            # Apply Downsampling Algorithm
+            merged_blocks = compact_ranges(rows)
+            final_timeline.append({'name': cam, 'data': merged_blocks})
 
-        # Lấy lỗi cũng trong 48h
-        cursor.execute("""
-            SELECT camera, created_at, alert_text 
-            FROM alert_history 
-            WHERE created_at > ? 
-            ORDER BY created_at DESC 
-            LIMIT 300
-        """, (start_time,))
+        # 3. Add Errors (Keep them distinct points)
+        cursor.execute("SELECT camera, created_at, alert_text FROM alert_history WHERE created_at > ? ORDER BY created_at DESC LIMIT 200", (start_time,))
         
         error_dist = {}
         for row in cursor.fetchall():
             c = row['camera']
             ts = row['created_at']
+            
+            # Find Series
+            series = next((s for s in final_timeline if s['name'] == c), None)
+            if not series:
+                series = {'name': c, 'data': []}
+                final_timeline.append(series)
+            
+            # Add Error Point (1 min width)
+            series['data'].append({
+                'x': c, 
+                'y': [ts*1000, (ts+60)*1000], 
+                'fillColor': '#FF4560' # Red
+            })
+            
             try: alert = base64.b64decode(row['alert_text']).decode('utf-8')
             except: alert = str(row['alert_text'])
-            
-            if c not in camera_ranges: camera_ranges[c] = []
-            camera_ranges[c].append({'x': c, 'y': [ts*1000, (ts+60)*1000], 'fillColor': '#FF4560'})
             
             cat = "Other"
             if "404" in alert: cat = "404 Not Found"
             elif "Validation" in alert: cat = "Validation Failed"
-            elif "Partial" in alert: cat = "Partial Rec"
             elif "Network" in alert: cat = "Network Err"
-            elif "Timelapse" in alert: cat = "Timelapse Err"
+            elif "Partial" in alert: cat = "Partial Rec"
+            
             error_dist[cat] = error_dist.get(cat, 0) + 1
 
         conn.close()
         return jsonify({
             'success': True, 
-            'timeline': [{'name': k, 'data': v} for k, v in camera_ranges.items()], 
+            'timeline': final_timeline, 
             'errors': {'labels': list(error_dist.keys()), 'series': list(error_dist.values())}
         })
     except Exception as e: return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recent_activity')
 def get_recent_activity():
+    """Separate endpoint for text logs"""
     try:
         conn = get_db_connection()
         if not conn: return jsonify({'success': False}), 500
         cursor = conn.cursor()
         
+        # Optimized query: Just get last 100 items mixed
+        # Avoid heavy base64 decoding loop for huge datasets
+        
         acts = []
-        cursor.execute("SELECT camera, created_at, 'Record' as type, 'success' as status, (start_ts || '-' || end_ts) as det FROM sent_ranges ORDER BY created_at DESC LIMIT 200")
-        for r in cursor.fetchall(): acts.append(dict(r))
-
-        cursor.execute("SELECT camera, created_at, 'Alert' as type, 'failed' as status, alert_text FROM alert_history ORDER BY created_at DESC LIMIT 200")
+        # Get Failures
+        cursor.execute("SELECT camera, created_at, 'failed' as status, alert_text FROM alert_history ORDER BY created_at DESC LIMIT 50")
         for r in cursor.fetchall():
-            d = dict(r)
-            try: d['det'] = base64.b64decode(r['alert_text']).decode('utf-8')
-            except: d['det'] = "Error content unreadable"
-            acts.append(d)
+            try: txt = base64.b64decode(r['alert_text']).decode('utf-8')
+            except: txt = "Error"
+            # Truncate text on server to save bandwidth
+            acts.append({
+                'camera': r['camera'], 'type': 'Alert', 'status': 'failed',
+                'ts': r['created_at'], 'det': txt[:200]
+            })
 
-        cursor.execute("SELECT camera, created_at, 'Timelapse' as type, 'success' as status, range_id as det FROM timelapse_history ORDER BY created_at DESC LIMIT 50")
-        for r in cursor.fetchall(): acts.append(dict(r))
+        # Get Success (Just a sample)
+        cursor.execute("SELECT camera, created_at, (start_ts || '-' || end_ts) as val FROM sent_ranges ORDER BY created_at DESC LIMIT 50")
+        for r in cursor.fetchall():
+            acts.append({
+                'camera': r['camera'], 'type': 'Record', 'status': 'success',
+                'ts': r['created_at'], 'det': 'Success'
+            })
             
-        acts.sort(key=lambda x: x['created_at'], reverse=True)
+        acts.sort(key=lambda x: x['ts'], reverse=True)
         
         final = []
-        for a in acts[:300]: 
+        for a in acts:
             final.append({
                 'camera': a['camera'],
                 'type': a['type'],
                 'status': a['status'],
-                'timestamp': datetime.fromtimestamp(a['created_at']).strftime('%Y-%m-%d %H:%M:%S'),
-                'time_short': datetime.fromtimestamp(a['created_at']).strftime('%H:%M'),
+                'timestamp': datetime.fromtimestamp(a['ts']).strftime('%Y-%m-%d %H:%M:%S'),
+                'time_short': datetime.fromtimestamp(a['ts']).strftime('%H:%M'),
                 'details': a['det']
             })
             
