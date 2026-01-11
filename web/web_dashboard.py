@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Frigate Telegram Recorder - Web Dashboard Backend
-Architecture: Flask API + SQLite (Read-Only Mode)
+Architecture: Flask API + SQLite (Standard Mode)
 Description: Provides API endpoints for the Dashboard, handles SQLite data retrieval.
 """
 
@@ -15,25 +15,27 @@ from flask import Flask, render_template, jsonify, request
 app = Flask(__name__)
 
 # System Configuration
-DB_FILE = os.environ.get('DB_FILE', '/app/data/video_history.sqlite')
+# Ensure absolute path to avoid relative path issues
+DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
 PORT = int(os.environ.get('WEB_PORT', '8080'))
 LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
 def get_db_connection():
     """
     Establishes a connection to the SQLite Database.
-    Validates file integrity and permissions before returning the connection object.
+    Switched to standard connection (non-URI) to handle WAL mode locks better in Docker.
     """
-    # Ensure the path is a file, not a directory (common Docker mount issue)
     if not os.path.isfile(DB_FILE):
         return None
 
     conn = None
     try:
-        conn = sqlite3.connect(f"file:{DB_FILE}?mode=ro", uri=True, timeout=5.0)
+        # Change: Use standard path instead of URI to avoid strict RO/WAL permission conflicts
+        # Increased timeout to 15s to wait for recorder locks to release
+        conn = sqlite3.connect(DB_FILE, timeout=15.0)
         conn.row_factory = sqlite3.Row
         
-        # Execute a lightweight query to verify read access and DB validity immediately
+        # Validation query
         conn.execute("SELECT 1")
         return conn
     except sqlite3.OperationalError:
