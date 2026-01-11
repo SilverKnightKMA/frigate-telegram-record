@@ -163,27 +163,37 @@ def get_overview():
 def get_timeline():
     """
     API endpoint: Timeline Tab
-    Optimized for heavy datasets: Returns simplified structure grouped by camera.
-    Payload structure: { 'CameraName': [[start_ts, end_ts, status_code], ...] }
+    Optimized for dynamic loading and heavy datasets merging.
+    Accepts explicit start/end timestamps to support zooming outside the initial day.
     """
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    date_str = request.args.get('date', datetime.now(LOCAL_TZ).strftime('%Y-%m-%d'))
-    
-    try:
-        local_dt_start = datetime.strptime(date_str, '%Y-%m-%d')
-        local_dt_start = LOCAL_TZ.localize(local_dt_start)
-        ts_start = local_dt_start.timestamp()
-        ts_end = (local_dt_start + timedelta(days=1)).timestamp()
-    except ValueError:
-        return jsonify({'error': 'Invalid date format'}), 400
+    # Determine time range (priority: explicit timestamps > date param > default 24h)
+    start_ts_arg = request.args.get('start', type=float)
+    end_ts_arg = request.args.get('end', type=float)
+    date_str = request.args.get('date')
+
+    if start_ts_arg and end_ts_arg:
+        # Frontend is requesting a specific zoom range
+        ts_start = start_ts_arg
+        ts_end = end_ts_arg
+    else:
+        # Fallback to date selection (Default behavior)
+        target_date = date_str if date_str else datetime.now(LOCAL_TZ).strftime('%Y-%m-%d')
+        try:
+            local_dt_start = datetime.strptime(target_date, '%Y-%m-%d')
+            local_dt_start = LOCAL_TZ.localize(local_dt_start)
+            ts_start = local_dt_start.timestamp()
+            ts_end = (local_dt_start + timedelta(days=1)).timestamp()
+        except ValueError:
+            return jsonify({'error': 'Invalid date format'}), 400
 
     try:
-        # Fetch raw data sorted by camera
+        # Fetch detailed error info only for FAILED events to minimize IO
         query = """
-            SELECT camera, start_ts, end_ts, status
+            SELECT camera, start_ts, end_ts, status, fail_type, message
             FROM events 
             WHERE (status = 'SUCCESS' OR status = 'FAILED')
             AND start_ts >= ? AND end_ts <= ?
@@ -191,22 +201,47 @@ def get_timeline():
         """
         rows = cursor.execute(query, (ts_start, ts_end)).fetchall()
         
-        # Group data into a minimal structure to save bandwidth and JSON parsing time
-        # Status code: 1 = SUCCESS, 0 = FAILED
         grouped_data = {}
         
+        # Threshold for merging SUCCESS blocks (e.g., gap < 60 seconds is considered continuous)
+        MERGE_THRESHOLD = 60 
+
         for r in rows:
             cam = r['camera']
             if cam not in grouped_data:
                 grouped_data[cam] = []
             
             status_code = 1 if r['status'] == 'SUCCESS' else 0
-            # Append as tuple/list for compactness [start_ms, end_ms, status]
-            grouped_data[cam].append([
+            # Additional meta data for click interaction (only needed for failures)
+            meta = {
+                'error': r['fail_type'],
+                'msg': decode_message(r['message'])
+            } if status_code == 0 else None
+
+            current_block = [
                 r['start_ts'] * 1000, 
                 r['end_ts'] * 1000, 
-                status_code
-            ])
+                status_code,
+                meta
+            ]
+
+            # Merging Logic: 
+            # If current is SUCCESS and previous was SUCCESS and they are adjacent, merge them.
+            # FAILED events are never merged to preserve error details.
+            last_idx = len(grouped_data[cam]) - 1
+            if last_idx >= 0:
+                last_block = grouped_data[cam][last_idx]
+                prev_status = last_block[2]
+                prev_end = last_block[1] / 1000 # convert back to sec for comparison
+                curr_start = r['start_ts']
+
+                if status_code == 1 and prev_status == 1 and (curr_start - prev_end) <= MERGE_THRESHOLD:
+                    # Extend the previous block's end time
+                    last_block[1] = current_block[1]
+                else:
+                    grouped_data[cam].append(current_block)
+            else:
+                grouped_data[cam].append(current_block)
 
         return jsonify({'data': grouped_data})
     finally:

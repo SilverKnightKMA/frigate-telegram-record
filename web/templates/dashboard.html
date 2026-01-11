@@ -202,6 +202,7 @@
         // --- Global State ---
         let charts = {};
         let updateTimer = null;
+        let timelineDebounce = null;
         let logOffset = 0;
         const LOG_LIMIT = 50;
 
@@ -222,6 +223,7 @@
             document.getElementById(`tab-${tabId}`).classList.add('active');
             event.target.classList.add('active');
 
+            // Initial load for timeline without params (uses date input)
             if(tabId === 'timeline') loadTimeline();
             if(tabId === 'logs') resetAndLoadLogs();
             if(tabId === 'perf') loadPerformance();
@@ -252,23 +254,36 @@
             } catch (e) { console.error("Load Overview Error", e); }
         }
 
-        async function loadTimeline() {
+        async function loadTimeline(minTs = null, maxTs = null) {
             const date = document.getElementById('timeline-date').value;
-            const res = await fetch(`/api/timeline?date=${date}`);
+            let url = `/api/timeline?date=${date}`;
+            
+            // If explicit bounds are provided (from zoom/scroll), request specific range
+            if (minTs && maxTs) {
+                // Convert ms (chart) to seconds (api)
+                url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
+            }
+
+            const res = await fetch(url);
             const json = await res.json();
             
-            // Client-side mapping to reduce JSON payload and server processing
-            // Input Format: { "CameraName": [ [start, end, status_code], ... ] }
             const series = Object.keys(json.data).map(cam => ({
                 name: cam,
                 data: json.data[cam].map(item => ({
                     x: cam,
-                    y: [item[0], item[1]], // Timestamps
-                    fillColor: item[2] === 1 ? '#10b981' : '#ef4444' // 1: Success, 0: Failed
+                    y: [item[0], item[1]], // Timestamps in ms
+                    fillColor: item[2] === 1 ? '#10b981' : '#ef4444',
+                    meta: item[3] // Contains error info if failed
                 }))
             }));
 
-            // Configuration optimized for Performance
+            // Update existing chart if it exists and we have bounds (dynamic update)
+            if (charts.timeline && minTs) {
+                charts.timeline.updateSeries(series);
+                return;
+            }
+
+            // Configuration for new chart
             const options = {
                 series: series,
                 chart: { 
@@ -276,27 +291,40 @@
                     type: 'rangeBar', 
                     toolbar: { show: true },
                     background: '#e5e7eb',
-                    // Disable all animations for heavy datasets
-                    animations: { enabled: false },
-                    selection: { enabled: false },
-                    zoom: { enabled: true }
+                    animations: { enabled: false }, // Disabled for performance
+                    zoom: { enabled: true },
+                    events: {
+                        // Handle clicking on "Failed" blocks
+                        dataPointSelection: function(event, chartContext, config) {
+                            const dp = config.w.config.series[config.seriesIndex].data[config.dataPointIndex];
+                            // Check if it's a failed block (item[2] == 0 from server, mapped to meta)
+                            if (dp.meta) {
+                                showModal({
+                                    camera: dp.x,
+                                    time: new Date(dp.y[0]).toLocaleString('vi-VN'),
+                                    message: `Type: ${dp.meta.error}\nDetail: ${dp.meta.msg}`
+                                });
+                            }
+                        },
+                        // Dynamic Loading triggers
+                        beforeZoom: function(chartContext, { xaxis }) {
+                            debounceTimelineUpdate(xaxis.min, xaxis.max);
+                        },
+                        scrolled: function(chartContext, { xaxis }) {
+                            debounceTimelineUpdate(xaxis.min, xaxis.max);
+                        }
+                    }
                 },
                 plotOptions: { 
                     bar: { 
                         horizontal: true, 
                         barHeight: '70%', 
                         rangeBarGroupRows: true,
-                        borderRadius: 0, // Remove radius calculation for performance
-                        dataLabels: { enabled: false } // Disable labels on bars
+                        borderRadius: 0, 
+                        dataLabels: { enabled: false } 
                     } 
                 },
                 xaxis: { type: 'datetime' },
-                // Simplified states to prevent heavy re-renders on hover
-                states: {
-                    normal: { filter: { type: 'none' } },
-                    hover: { filter: { type: 'none' } },
-                    active: { filter: { type: 'none' } }
-                },
                 tooltip: { 
                     enabled: true,
                     x: { format: 'HH:mm:ss' }
@@ -307,7 +335,6 @@
                 }
             };
 
-            // Explicitly destroy old instance to free memory
             if(charts.timeline) {
                 charts.timeline.destroy();
                 charts.timeline = null;
@@ -315,6 +342,14 @@
             
             charts.timeline = new ApexCharts(document.querySelector("#chart-timeline"), options);
             charts.timeline.render();
+        }
+
+        function debounceTimelineUpdate(min, max) {
+            clearTimeout(timelineDebounce);
+            // Wait 500ms after user stops moving to fetch new data
+            timelineDebounce = setTimeout(() => {
+                loadTimeline(min, max);
+            }, 500);
         }
 
         function resetAndLoadLogs() {
