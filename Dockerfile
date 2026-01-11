@@ -29,4 +29,4 @@ RUN chmod +x /app/app.sh && \
     mkdir -p /app/data /app/config
 
 # Define Entrypoint
-ENTRYPOINT ["/app/app.sh"]
+ENTRYPOINT ["/bin/bash", "/app/app.sh"]
