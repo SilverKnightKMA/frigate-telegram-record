@@ -66,6 +66,8 @@
 
         /* Modal Styles */
         dialog { 
+            /* Centers the modal viewport within the window context using automatic margins */
+            margin: auto;
             border: none; border-radius: 12px; padding: 0; width: 80%; max-width: 800px;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); 
         }
@@ -195,7 +197,7 @@
             <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
                 <span style="display:inline-block;width:12px;height:12px;background:#10b981;margin-right:5px;border-radius:2px;"></span>Success
                 <span style="display:inline-block;width:12px;height:12px;background:#ef4444;margin-right:5px;margin-left:10px;border-radius:2px;"></span>Failed
-                <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data (Gap)
+                <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data
             </div>
             <div id="chart-timeline" style="min-height: 500px;"></div>
         </div>
@@ -212,6 +214,13 @@
                 <select id="f-camera" onchange="resetAndLoadLogs()">
                     <option value="all">Tất cả Camera</option>
                 </select>
+                <select id="f-type" onchange="resetAndLoadLogs()">
+                    <option value="all">Tất cả Event</option>
+                </select>
+                <select id="f-error" onchange="resetAndLoadLogs()">
+                    <option value="all">Tất cả Lỗi</option>
+                </select>
+                
                 <input type="text" id="f-search" placeholder="Tìm kiếm camera, lỗi..." onkeyup="debounceLoadLogs()">
                 <button class="action-btn" onclick="resetAndLoadLogs()">Làm mới</button>
             </div>
@@ -276,7 +285,7 @@
             timelineState.start = now.getTime() - (24 * 60 * 60 * 1000);
             syncTimelineInputs(); 
 
-            loadCameras();
+            loadFilters(); // Updated from loadCameras to load all filters
             loadOverview();
             
             setInterval(loadOverview, 60000);
@@ -491,8 +500,11 @@
         }
 
         async function loadLogs(isAppend = false) {
+            // Collect filter values for API request
             const status = document.getElementById('f-status').value;
             const cam = document.getElementById('f-camera').value;
+            const type = document.getElementById('f-type').value;
+            const error = document.getElementById('f-error').value;
             const search = document.getElementById('f-search').value;
             const btnLoad = document.getElementById('btn-load-more');
             
@@ -503,7 +515,9 @@
             if (!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
 
             try {
-                const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}&limit=${LOG_LIMIT}&offset=${logOffset}`);
+                // Pass new filter params to API
+                const query = `status=${status}&camera=${cam}&type=${type}&error=${error}&search=${search}&limit=${LOG_LIMIT}&offset=${logOffset}`;
+                const res = await fetch(`/api/logs?${query}`);
                 const json = await res.json();
                 
                 if (!isAppend) tbody.innerHTML = '';
@@ -581,15 +595,23 @@
         }
 
         // --- Helpers ---
-        async function loadCameras() {
-            const res = await fetch('/api/cameras');
-            const cams = await res.json();
-            const sel = document.getElementById('f-camera');
-            cams.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c; opt.innerText = c;
-                sel.appendChild(opt);
-            });
+        async function loadFilters() {
+            // Replaces loadCameras() to fetch all filter options at once
+            const res = await fetch('/api/filters');
+            const data = await res.json();
+            
+            const fillSelect = (id, items) => {
+                const sel = document.getElementById(id);
+                items.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item; opt.innerText = item;
+                    sel.appendChild(opt);
+                });
+            };
+
+            fillSelect('f-camera', data.cameras);
+            fillSelect('f-type', data.types);
+            fillSelect('f-error', data.errors);
         }
 
         function showModal(data) {

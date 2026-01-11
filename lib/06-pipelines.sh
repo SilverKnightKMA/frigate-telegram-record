@@ -102,21 +102,20 @@ execute_clip_pipeline() {
 
     if [ "$vod_duration" -lt "$threshold" ]; then
         # Logic: Check previous failure duration.
-        # If current vod_duration <= previous failure, skip (no improvement).
-        # If current vod_duration > previous failure, trigger alert (update DB).
         local prev_fail_duration=$(get_last_fail_metric "$src" "$start_ts" "$end_ts" "duration")
         
-        # [Dashboard Update] Calculate elapsed time for early exit
-        local pipe_duration=$(( $(date +%s) - pipe_start ))
-
+        # If current vod_duration <= previous failure, skip (no improvement).
+        # This prevents spamming retries for known bad slots.
         if [ "$vod_duration" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -gt 0 ]; then
              log "[$src] ⏭️ Skipping Download: Insufficient VOD (${vod_duration}s) & No improvement over last fail (${prev_fail_duration}s)."
              return
         fi
 
-        log "[$src] ⚠️ Skipping Download: Insufficient VOD data (${vod_duration}s < ${threshold}s). Recording failure."
-        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Pre-check Insufficient VOD (${vod_duration}s)" "$run_mode" "$vod_duration" "0" "$pipe_duration"
-        return
+        # [CHANGE] Previously, this block triggered an alert and returned immediately.
+        # NOW: We verify it's either the first run (prev=0) or an improvement.
+        # We allow the flow to continue to 'download_clip' so the video is actually generated and sent.
+        # The 'check_duration_and_status' function later will handle marking it as 'partial' failure.
+        log "[$src] ⚠️ Insufficient VOD data (${vod_duration}s < ${threshold}s). Proceeding to download (First Run or Improvement)."
     fi
     # ========================================
 

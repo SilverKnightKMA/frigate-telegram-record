@@ -236,8 +236,11 @@ def get_logs():
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
+    # Capture filter parameters from request
     status = request.args.get('status', 'all')
     camera = request.args.get('camera', 'all')
+    event_type = request.args.get('type', 'all')
+    fail_type = request.args.get('error', 'all')
     search = request.args.get('search', '')
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
@@ -248,12 +251,20 @@ def get_logs():
     """
     params = []
 
+    # Apply conditional filters based on parameters
     if status != 'all':
         base_query += " AND status = ?"
         params.append(status.upper())
     if camera != 'all':
         base_query += " AND camera = ?"
         params.append(camera)
+    if event_type != 'all':
+        base_query += " AND type = ?"
+        params.append(event_type)
+    if fail_type != 'all':
+        base_query += " AND fail_type = ?"
+        params.append(fail_type)
+    
     if search:
         base_query += " AND (camera LIKE ? OR fail_type LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
@@ -318,13 +329,24 @@ def get_performance():
     finally:
         conn.close()
 
-@app.route('/api/cameras')
-def get_cameras():
+@app.route('/api/filters')
+def get_filters():
+    """
+    Fetch distinct values for filters: Cameras, Event Types, and Failure Reasons.
+    Used to populate UI dropdowns dynamically.
+    """
     conn = get_db_connection()
-    if not conn: return jsonify([])
+    if not conn: return jsonify({'cameras': [], 'types': [], 'errors': []})
     try:
         cams = conn.execute("SELECT DISTINCT camera FROM events ORDER BY camera").fetchall()
-        return jsonify([c[0] for c in cams])
+        types = conn.execute("SELECT DISTINCT type FROM events ORDER BY type").fetchall()
+        errors = conn.execute("SELECT DISTINCT fail_type FROM events WHERE fail_type IS NOT NULL ORDER BY fail_type").fetchall()
+        
+        return jsonify({
+            'cameras': [c[0] for c in cams],
+            'types': [t[0] for t in types if t[0]],
+            'errors': [e[0] for e in errors]
+        })
     finally:
         conn.close()
 
