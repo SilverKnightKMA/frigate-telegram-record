@@ -22,6 +22,9 @@ LOCK_FILE="/tmp/app_${MODE}.lock"
 # Purpose: Terminates background jobs and cleans resources to ensure safe container stop.
 cleanup_on_exit() {
     log "Received termination signal. Stopping background tasks..."
+    # [Ops] Status Update on Exit
+    update_service_status "STOPPING" "Signal received. Shutting down."
+    
     # Send SIGTERM to all active background jobs spawned by this shell
     jobs -p | xargs -r kill -SIGTERM
     wait
@@ -36,6 +39,8 @@ trap cleanup_on_exit SIGTERM SIGINT
 # Purpose: Cleans temp directory on boot to remove artifacts from previous crashes (OOM kills, power loss),
 # ensuring a fresh state before validation starts.
 rm -rf "$TEMP_DIR"/*
+# [Ops] Status Update on Boot
+update_service_status "STARTING" "Initializing application..."
 
 # [Ops] Single Instance Enforcement
 # Purpose: Prevents multiple script instances of the SAME MODE from running simultaneously.
@@ -77,6 +82,7 @@ init_db
 # 4. Main Execution Switch
 if [ "$MODE" == "test" ]; then
     log ">>> STARTING TEST MODE <<<"
+    update_service_status "RUNNING" "Test mode execution"
     log_debug "Executing single cycle for duration: ${TEST_REC_DURATION_MIN}m"
     execute_cycle "$TEST_REC_DURATION_MIN" "test"
     rm -f "$LOCK_FILE"
@@ -86,12 +92,15 @@ elif [ "$MODE" == "record" ]; then
     log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
     while true; do
         log_debug "--- NEW RECORDING LOOP START ---"
+        # [Ops] Status Update: Processing
+        update_service_status "RUNNING" "Processing recording cycle"
         
         # [Ops] Pre-Flight System Checks
         # Purpose: Validate resources (log size, disk space/writability) before starting a new cycle.
         rotate_log_file
         if ! check_disk_space; then
             log "⚠️ Pausing cycle due to storage issues. Retrying in 5 minutes..."
+            update_service_status "ERROR" "Disk space critical. Paused."
             smart_wait 300
             continue
         fi
@@ -113,6 +122,9 @@ elif [ "$MODE" == "record" ]; then
         log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
         log "Sleeping ${final_sleep}s..."
         
+        # [Ops] Status Update: Sleeping
+        update_service_status "SLEEPING" "Waiting for next cycle (${final_sleep}s)"
+        
         # [Ops] Smart Wait
         # Purpose: Keep container 'healthy' during wait time.
         smart_wait "$final_sleep"
@@ -122,6 +134,7 @@ elif [ "$MODE" == "record" ]; then
 
 elif [ "$MODE" == "test_timelapse" ]; then
     log ">>> STARTING TIMELAPSE TEST MODE (Last $TIMELAPSE_HOURS hours) <<<"
+    update_service_status "RUNNING" "Test timelapse execution"
     execute_timelapse_cycle "test_timelapse" "$TIMELAPSE_HOURS"
     rm -f "$LOCK_FILE"
     exit 0
@@ -131,12 +144,15 @@ elif [ "$MODE" == "timelapse" ]; then
 
     while true; do
         log_debug "--- NEW TIMELAPSE LOOP START ---"
+        # [Ops] Status Update: Processing
+        update_service_status "RUNNING" "Processing timelapse block"
 
         # [Ops] Pre-Flight System Checks
         # Purpose: Validate resources (log size, disk space/writability) before starting intensive rendering tasks.
         rotate_log_file
         if ! check_disk_space; then
             log "⚠️ Pausing timelapse cycle due to storage issues. Retrying in 5 minutes..."
+            update_service_status "ERROR" "Disk space critical. Paused."
             smart_wait 300
             continue
         fi
@@ -155,6 +171,8 @@ elif [ "$MODE" == "timelapse" ]; then
             if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
                 log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
                 log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
+                
+                update_service_status "RETRY" "Cycle error. Retrying in ${TIMELAPSE_RETRY_SLEEP_SEC}s"
                 
                 # [Ops] Smart Wait for Retry
                 smart_wait "$TIMELAPSE_RETRY_SLEEP_SEC"
@@ -198,6 +216,9 @@ elif [ "$MODE" == "timelapse" ]; then
         sleep_s=$((final_sleep % 60))
         
         log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
+        
+        # [Ops] Status Update: Sleeping
+        update_service_status "SLEEPING" "Caught up. Waiting ${sleep_h}h ${sleep_m}m"
         
         # [Ops] Smart Wait until next block
         smart_wait "$final_sleep"

@@ -20,10 +20,9 @@ download_clip() {
     log_debug "[$src] Downloading clip from: $url"
     log_debug "[$src] Saving to: $filepath"
     
-    # [Ops] Network Timeout Enforcement
-    # Reason: Prevents indefinite hangs if the connection stalls but stays open.
-    # Uses --max-time 600 (10 minutes) as a safety net.
-    local http_code=$(curl -s -L --max-time 600 -o "$filepath" --write-out "%{http_code}" "$url")
+    # [Ops] Process Priority & Network Timeout
+    # Purpose: Use 'nice' to prevent download I/O from blocking main system threads.
+    local http_code=$(nice -n 10 curl -s -L --max-time 600 -o "$filepath" --write-out "%{http_code}" "$url")
     
     # Check if curl timed out (exit code 28)
     if [ $? -eq 28 ]; then
@@ -212,10 +211,10 @@ generate_timelapse_video() {
         local chunk_file="$job_temp_dir/part_${count}.mp4"
         local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
 
-        # [Ops] Execution Timeout & Log Capture
-        # Reason: FFmpeg can hang on GPU locks or corrupt streams. 'timeout' kills it after 1h (3600s).
-        # We also capture stderr to analyze WHY it failed (OOM, Invalid Data, etc).
-        timeout 3600 ffmpeg -y -v error \
+        # [Ops] Execution Timeout & Resource Control
+        # Purpose: Wrap FFmpeg with 'nice' to protect system responsiveness.
+        # 'timeout' kills it after 1h (3600s).
+        nice -n 10 timeout 3600 ffmpeg -y -v error \
             -hwaccel vaapi \
             -hwaccel_device "$VAAPI_DEVICE" \
             -hwaccel_output_format vaapi \
@@ -250,8 +249,8 @@ generate_timelapse_video() {
     # Concatenate all processed chunks into final file
     if [ -f "$concat_list" ] && [ -s "$concat_list" ]; then
         log "[$camera_name] Concatenating timelapse parts..."
-        # Wrap concatenation in timeout as well
-        timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" > "$ffmpeg_log" 2>&1
+        # Wrap concatenation in timeout and nice as well
+        nice -n 10 timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" > "$ffmpeg_log" 2>&1
         if [ $? -eq 0 ]; then 
             success=1
         else

@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # UTILITIES MODULE
-# Purpose: Helper functions for logging, DB access, and data formatting.
+# Purpose: Helper functions for logging, DB access, data formatting, and monitoring.
 # ==============================================================================
 
 # System preparation
@@ -27,6 +27,19 @@ log_debug() {
     if [ "${DEBUG}" == "true" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] [DEBUG] $1" >&2
     fi
+}
+
+# [Ops] Service Status Export
+# Purpose: Writes current operational state to a JSON file for external monitoring agents.
+# Consumers: Zabbix, Home Assistant, or Custom Dashboards.
+update_service_status() {
+    local state="$1" # RUNNING, SLEEPING, ERROR, STARTING
+    local message="$2"
+    local timestamp=$(date +%s)
+    
+    # Atomic write to avoid partial reads by external tools
+    echo "{\"timestamp\": $timestamp, \"state\": \"$state\", \"message\": \"$message\", \"pid\": $$}" > "$DATA_DIR/status.json.tmp" && \
+    mv "$DATA_DIR/status.json.tmp" "$DATA_DIR/status.json"
 }
 
 # [Ops] Log Rotation Logic
