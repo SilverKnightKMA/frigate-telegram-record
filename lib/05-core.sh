@@ -215,6 +215,10 @@ trigger_failure_alert() {
 <b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
+    # [CHANGE] Sanitize text for search_text column
+    # Remove HTML tags, quotes, and newlines to prevent SQL errors and ensure clean text search
+    local clean_search_text=$(echo "$alert_text" | sed 's/<[^>]*>//g' | sed "s/['\"]//g" | tr -d '\n\r')
+
     # --- DECISION 2: SHOULD WE SEND TELEGRAM ALERT? ---
     # User Request: Only send alert if:
     # 1. New error (existing_id == 0)
@@ -250,11 +254,12 @@ trigger_failure_alert() {
     local b64_text=$(echo "$alert_text" | base64 -w 0)
 
     # [Dashboard Update] Included process_sec in INSERT and UPDATE
+    # [CHANGE] Added search_text to SQL queries
     if [ "$existing_id" -gt 0 ]; then
          # Update existing record
-         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val WHERE id=$existing_id;"
+         db_exec "UPDATE events SET created_at=$current_ts, msg_id=$msg_id_to_save, message='$b64_text', duration=$duration_val, fail_type='$fail_type', filesize=$filesize_val, process_sec=$process_sec_val, search_text='$clean_search_text' WHERE id=$existing_id;"
     else
          # Insert new failure record
-         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val);"
+         db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, fail_type, filesize, process_sec, search_text) VALUES ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, '$b64_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, '$clean_search_text');"
     fi
 }

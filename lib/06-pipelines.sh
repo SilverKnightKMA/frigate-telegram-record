@@ -111,10 +111,6 @@ execute_clip_pipeline() {
              return
         fi
 
-        # [CHANGE] Previously, this block triggered an alert and returned immediately.
-        # NOW: We verify it's either the first run (prev=0) or an improvement.
-        # We allow the flow to continue to 'download_clip' so the video is actually generated and sent.
-        # The 'check_duration_and_status' function later will handle marking it as 'partial' failure.
         log "[$src] ⚠️ Insufficient VOD data (${vod_duration}s < ${threshold}s). Proceeding to download (First Run or Improvement)."
     fi
     # ========================================
@@ -203,7 +199,8 @@ execute_clip_pipeline() {
                         handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
                         # [Dashboard Update] Insert record with process_sec
-                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration);"
+                        # [CHANGE] Include 'search_text' ('Record Sent') in INSERT
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Record Sent');"
                         log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
                     fi
                 else
@@ -393,7 +390,8 @@ execute_timelapse_pipeline() {
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
                     # [Dashboard Update] Insert record with process_sec
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration);"
+                    # [CHANGE] Include 'search_text' ('Timelapse Sent') in INSERT
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent');"
                     log "[$src] Timelapse saved to history (Process: ${pipe_duration}s)."
                     pipeline_success=1
                 fi
