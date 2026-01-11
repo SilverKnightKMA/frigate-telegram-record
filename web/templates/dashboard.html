@@ -3,19 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ thống Giám sát Camera (Frigate Monitor)</title>
+    <title>Frigate Telegram Monitor Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
         :root {
-            --primary: #2563eb; --bg: #f3f4f6; --card: #ffffff; 
-            --text-main: #1f2937; --text-sub: #6b7280;
-            --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+            --primary: #2563eb; 
+            --bg: #f3f4f6; 
+            --card: #ffffff; 
+            --text-main: #1f2937; 
+            --text-sub: #6b7280;
+            --success: #10b981; 
+            --danger: #ef4444; 
+            --warning: #f59e0b;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
-        body { background: var(--bg); color: var(--text-main); padding: 20px; }
+        body { background: var(--bg); color: var(--text-main); padding: 20px; font-size: 14px; }
 
-        /* Navigation Tabs */
-        .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: var(--card); padding: 10px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        /* Navigation Styles */
+        .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: var(--card); padding: 10px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .tab-btn {
             padding: 10px 20px; border: none; background: transparent; cursor: pointer;
             font-weight: 600; color: var(--text-sub); border-radius: 6px; transition: all 0.2s;
@@ -23,92 +28,92 @@
         .tab-btn:hover { background: #eff6ff; color: var(--primary); }
         .tab-btn.active { background: var(--primary); color: white; }
 
-        /* Layout Content */
-        .tab-content { display: none; animation: fadeIn 0.3s; }
-        .tab-content.active { display: block; }
+        /* Container & Grid */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Dashboard Overview Grid */
         .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 20px; }
-        .card { background: var(--card); padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .metric-title { font-size: 0.85rem; color: var(--text-sub); text-transform: uppercase; margin-bottom: 5px; }
-        .metric-value { font-size: 1.8rem; font-weight: bold; color: var(--text-main); }
-        .metric-sub { font-size: 0.8rem; margin-top: 5px; }
-
-        /* Charts Layout */
         .chart-row { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
         @media (max-width: 1024px) { .chart-row { grid-template-columns: 1fr; } }
 
-        /* Tables */
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; width: 100%; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
-        th { background: #f9fafb; font-weight: 600; color: var(--text-sub); }
+        /* Card Component */
+        .card { background: var(--card); padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); height: 100%; }
+        .metric-title { font-size: 0.8rem; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .metric-value { font-size: 1.8rem; font-weight: 700; color: var(--text-main); }
+        .metric-sub { font-size: 0.8rem; margin-top: 5px; color: var(--text-sub); }
+
+        /* Data Table */
+        .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f9fafb; font-weight: 600; color: var(--text-sub); font-size: 0.85rem; }
         tr:hover { background: #f9fafb; cursor: pointer; }
         
-        /* Badges */
-        .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+        /* Status Badges */
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
         .badge.success { background: #d1fae5; color: #065f46; }
         .badge.failed { background: #fee2e2; color: #991b1b; }
 
-        /* Modal */
+        /* Modal Styles */
         dialog { 
-            border: none; border-radius: 12px; padding: 0; width: 90%; max-width: 800px;
-            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); 
+            border: none; border-radius: 12px; padding: 0; width: 80%; max-width: 800px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); 
         }
-        dialog::backdrop { background: rgba(0,0,0,0.4); }
+        dialog::backdrop { background: rgba(0,0,0,0.5); }
         .modal-header { padding: 15px 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb; }
-        .modal-body { padding: 20px; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; font-family: monospace; background: #1e1e1e; color: #e5e7eb; }
+        .modal-body { padding: 20px; max-height: 60vh; overflow-y: auto; white-space: pre-wrap; font-family: monospace; background: #1e1e1e; color: #e5e7eb; line-height: 1.5; }
         
-        /* Filters */
-        .filter-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        /* Controls */
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
         select, input { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; }
-
-        .loading { text-align: center; color: var(--text-sub); padding: 20px; }
+        button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; }
+        
+        .loading-row { text-align: center; color: var(--text-sub); padding: 20px; }
     </style>
 </head>
 <body>
 
     <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchTab('overview')">Tổng quan</button>
-        <button class="tab-btn" onclick="switchTab('timeline')">Dòng thời gian & Gaps</button>
+        <button class="tab-btn" onclick="switchTab('timeline')">Timeline & Gaps</button>
         <button class="tab-btn" onclick="switchTab('logs')">Lịch sử chi tiết</button>
         <button class="tab-btn" onclick="switchTab('perf')">Hiệu năng</button>
         <div style="margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--text-sub);">
-            Cập nhật: <span id="last-updated">-</span>
+            Cập nhật lần cuối: <span id="last-updated" style="font-weight:600">-</span>
         </div>
     </div>
 
     <div id="tab-overview" class="tab-content active">
         <div class="grid-4">
             <div class="card">
-                <div class="metric-title">Tỷ lệ thành công</div>
+                <div class="metric-title">Tỷ lệ thành công (24h)</div>
                 <div class="metric-value" id="m-health">-%</div>
                 <div class="metric-sub" id="m-total">trên tổng 0 job</div>
             </div>
             <div class="card">
-                <div class="metric-title">Dung lượng sử dụng</div>
+                <div class="metric-title">Dung lượng lưu trữ</div>
                 <div class="metric-value" id="m-storage">0 MB</div>
                 <div class="metric-sub">trong 24h qua</div>
             </div>
             <div class="card">
-                <div class="metric-title">Tốc độ xử lý TB</div>
+                <div class="metric-title">Thời gian xử lý TB</div>
                 <div class="metric-value" id="m-process">0s</div>
                 <div class="metric-sub">giây / video</div>
             </div>
             <div class="card">
                 <div class="metric-title">Trạng thái hệ thống</div>
-                <div class="metric-value" id="m-status" style="color:var(--success)">Ổn định</div>
+                <div class="metric-value" id="m-status">Checking...</div>
             </div>
         </div>
 
         <div class="chart-row">
             <div class="card">
-                <h3>Tỷ lệ Record (Success/Fail)</h3>
+                <h3 style="margin-bottom:15px">Thống kê Record (Success/Failed)</h3>
                 <div id="chart-daily"></div>
             </div>
             <div class="card">
-                <h3>Phân loại lỗi</h3>
+                <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
                 <div id="chart-reasons"></div>
             </div>
         </div>
@@ -116,26 +121,40 @@
 
     <div id="tab-timeline" class="tab-content">
         <div class="card">
-            <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+            <div class="controls" style="justify-content: space-between;">
                 <h3>Timeline Ghi hình (Phát hiện khoảng trống)</h3>
                 <input type="date" id="timeline-date" onchange="loadTimeline()">
             </div>
-            <div id="chart-timeline" style="min-height: 400px;"></div>
+            <div id="chart-timeline" style="min-height: 500px;"></div>
         </div>
     </div>
 
     <div id="tab-logs" class="tab-content">
         <div class="card">
-            <div class="filter-bar">
-                <select id="f-status" onchange="loadLogs()"><option value="all">Tất cả trạng thái</option><option value="SUCCESS">Success</option><option value="FAILED">Failed</option></select>
-                <select id="f-camera" onchange="loadLogs()"><option value="all">Tất cả Camera</option></select>
-                <input type="text" id="f-search" placeholder="Tìm kiếm..." onkeyup="debounceLoadLogs()">
-                <button onclick="loadLogs()" style="padding:8px 15px; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer">Làm mới</button>
+            <div class="controls">
+                <select id="f-status" onchange="loadLogs()">
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="SUCCESS">Success</option>
+                    <option value="FAILED">Failed</option>
+                </select>
+                <select id="f-camera" onchange="loadLogs()">
+                    <option value="all">Tất cả Camera</option>
+                </select>
+                <input type="text" id="f-search" placeholder="Tìm kiếm camera, lỗi..." onkeyup="debounceLoadLogs()">
+                <button class="action-btn" onclick="loadLogs()">Làm mới</button>
             </div>
             <div class="table-container">
                 <table id="log-table">
                     <thead>
-                        <tr><th>Thời gian</th><th>Camera</th><th>Type</th><th>Trạng thái</th><th>Duration</th><th>Size</th><th>Lỗi</th></tr>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Camera</th>
+                            <th>Type</th>
+                            <th>Trạng thái</th>
+                            <th>Duration</th>
+                            <th>Size</th>
+                            <th>Lỗi</th>
+                        </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
@@ -145,11 +164,11 @@
 
     <div id="tab-perf" class="tab-content">
         <div class="card" style="margin-bottom: 20px;">
-            <h3>Tương quan: Độ dài Video vs Thời gian Xử lý</h3>
+            <h3 style="margin-bottom:15px">Tương quan: Độ dài Video vs Thời gian Xử lý</h3>
             <div id="chart-perf-line"></div>
         </div>
         <div class="card">
-            <h3>Xu hướng tiêu thụ dung lượng đĩa</h3>
+            <h3 style="margin-bottom:15px">Xu hướng tiêu thụ dung lượng đĩa (7 ngày)</h3>
             <div id="chart-storage-bar"></div>
         </div>
     </div>
@@ -167,51 +186,58 @@
         let charts = {};
         let updateTimer = null;
 
-        // --- Init ---
+        // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Set date picker default to today
+            // Set date picker mặc định là hôm nay
             document.getElementById('timeline-date').valueAsDate = new Date();
             
             // Load initial data
             loadCameras();
             loadOverview();
             
-            // Auto refresh overview every 60s
+            // Auto refresh overview mỗi 60s
             setInterval(loadOverview, 60000);
         });
 
         function switchTab(tabId) {
+            // Xử lý chuyển tab
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             
             document.getElementById(`tab-${tabId}`).classList.add('active');
             event.target.classList.add('active');
 
+            // Lazy load dữ liệu khi mở tab
             if(tabId === 'timeline') loadTimeline();
             if(tabId === 'logs') loadLogs();
             if(tabId === 'perf') loadPerformance();
         }
 
-        // --- API Calls ---
+        // --- API Functions ---
 
         async function loadOverview() {
             try {
-                const res = await fetch('/api/overview');
+                const res = await fetch('/api/overview?days=1');
                 const data = await res.json();
-                
-                // Update Metrics
                 const m = data.metrics;
+
+                // Update Metrics
                 document.getElementById('m-health').innerText = `${m.success_rate}%`;
                 document.getElementById('m-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
                 document.getElementById('m-total').innerText = `trên tổng ${m.total} job`;
                 document.getElementById('m-storage').innerText = m.storage;
                 document.getElementById('m-process').innerText = m.avg_process;
-                document.getElementById('last-updated').innerText = new Date().toLocaleTimeString();
+                document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
+                
+                const statusEl = document.getElementById('m-status');
+                statusEl.innerText = m.success_rate > 95 ? 'Ổn định' : 'Cần kiểm tra';
+                statusEl.style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
 
                 // Render Charts
                 renderStackedBar(data.charts.daily);
                 renderDonut(data.charts.reasons);
-            } catch (e) { console.error("Load Overview Failed", e); }
+
+            } catch (e) { console.error("Load Overview Error", e); }
         }
 
         async function loadTimeline() {
@@ -219,12 +245,13 @@
             const res = await fetch(`/api/timeline?date=${date}`);
             const data = await res.json();
             
+            // Cấu hình Gantt Chart
             const options = {
                 series: data.series,
-                chart: { height: 450, type: 'rangeBar', toolbar: {show: true} },
-                plotOptions: { bar: { horizontal: true, barHeight: '60%' } },
+                chart: { height: 500, type: 'rangeBar', toolbar: {show: true} },
+                plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
                 xaxis: { type: 'datetime' },
-                fill: { type: 'solid', colors: ['#10b981'] }, // Green for success
+                fill: { type: 'solid', colors: ['#10b981'] }, // Màu xanh cho Success
                 tooltip: { x: { format: 'HH:mm:ss' } },
                 grid: { row: { colors: ['#f3f4f6', 'transparent'], opacity: 0.5 } }
             };
@@ -240,26 +267,35 @@
             const search = document.getElementById('f-search').value;
             
             const tbody = document.querySelector('#log-table tbody');
-            tbody.innerHTML = '<tr><td colspan="7" class="loading">Đang tải...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
 
-            const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}`);
-            const json = await res.json();
-            
-            tbody.innerHTML = '';
-            json.data.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${row.time}</td>
-                    <td><strong>${row.camera}</strong></td>
-                    <td>${row.type}</td>
-                    <td><span class="badge ${row.status.toLowerCase()}">${row.status}</span></td>
-                    <td>${row.duration}</td>
-                    <td>${row.size}</td>
-                    <td style="color:var(--danger)">${row.error_type}</td>
-                `;
-                tr.onclick = () => showModal(row);
-                tbody.appendChild(tr);
-            });
+            try {
+                const res = await fetch(`/api/logs?status=${status}&camera=${cam}&search=${search}`);
+                const json = await res.json();
+                
+                tbody.innerHTML = '';
+                if(json.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+                    return;
+                }
+
+                json.data.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.time}</td>
+                        <td><strong>${row.camera}</strong></td>
+                        <td>${row.type}</td>
+                        <td><span class="badge ${row.status.toLowerCase()}">${row.status}</span></td>
+                        <td>${row.duration}</td>
+                        <td>${row.size}</td>
+                        <td style="color:var(--danger)">${row.error_type}</td>
+                    `;
+                    tr.onclick = () => showModal(row);
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Lỗi kết nối server</td></tr>';
+            }
         }
 
         async function loadPerformance() {
@@ -270,13 +306,17 @@
             const optLine = {
                 series: [
                     { name: 'Duration (s)', type: 'line', data: data.performance.duration },
-                    { name: 'Processing Time (s)', type: 'line', data: data.performance.processing }
+                    { name: 'Processing (s)', type: 'line', data: data.performance.processing }
                 ],
-                chart: { height: 350, type: 'line' },
+                chart: { height: 350, type: 'line', zoom: { enabled: false } },
                 stroke: { width: [2, 2], curve: 'smooth' },
                 labels: data.performance.categories,
-                xaxis: { type: 'category', labels: { show: false } }, // Hide too many labels
-                colors: ['#2563eb', '#f59e0b']
+                xaxis: { type: 'category', labels: { show: false } },
+                colors: ['#2563eb', '#f59e0b'],
+                yaxis: [
+                    { title: { text: "Video Duration" } },
+                    { opposite: true, title: { text: "Processing Time" } }
+                ]
             };
             if(charts.perfLine) charts.perfLine.destroy();
             charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optLine);
@@ -287,7 +327,8 @@
                 series: [{ name: 'Storage (MB)', data: data.storage.sizes }],
                 chart: { height: 350, type: 'bar' },
                 xaxis: { categories: data.storage.dates },
-                colors: ['#8b5cf6']
+                colors: ['#8b5cf6'],
+                dataLabels: { enabled: false }
             };
             if(charts.storeBar) charts.storeBar.destroy();
             charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);
@@ -307,7 +348,7 @@
         }
 
         function showModal(row) {
-            document.getElementById('modal-title').innerText = `${row.camera} - ${row.time}`;
+            document.getElementById('modal-title').innerText = `${row.camera} (${row.time})`;
             document.getElementById('modal-content').innerText = row.message || "No content";
             document.getElementById('msg-modal').showModal();
         }
@@ -317,17 +358,17 @@
             updateTimer = setTimeout(loadLogs, 500);
         }
 
-        // --- Chart Renderers ---
+        // --- Render Charts Utils ---
         function renderStackedBar(data) {
-            const dates = data.map(d => d.date);
-            const success = data.map(d => d.success);
-            const failed = data.map(d => d.failed);
-
             const options = {
-                series: [{ name: 'Success', data: success }, { name: 'Failed', data: failed }],
+                series: [
+                    { name: 'Success', data: data.map(d => d.success) }, 
+                    { name: 'Failed', data: data.map(d => d.failed) }
+                ],
                 chart: { type: 'bar', height: 350, stacked: true },
                 colors: ['#10b981', '#ef4444'],
-                xaxis: { categories: dates }
+                xaxis: { categories: data.map(d => d.date) },
+                plotOptions: { bar: { borderRadius: 4, columnWidth: '40%' } }
             };
             if(charts.daily) charts.daily.destroy();
             charts.daily = new ApexCharts(document.querySelector("#chart-daily"), options);
@@ -339,7 +380,8 @@
                 series: data.series,
                 labels: data.labels,
                 chart: { type: 'donut', height: 350 },
-                colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6']
+                colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
+                plotOptions: { pie: { donut: { size: '65%' } } }
             };
             if(charts.reasons) charts.reasons.destroy();
             charts.reasons = new ApexCharts(document.querySelector("#chart-reasons"), options);

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Frigate Telegram Recorder - Dashboard Backend
-Kiến trúc: Flask API + SQLite (Read-Only)
-Chức năng: Cung cấp API endpoint cho Frontend, xử lý Timezone và Decoding.
+Frigate Telegram Recorder - Web Dashboard Backend
+Architecture: Flask API + SQLite (Read-Only Mode)
+Description: Cung cấp API endpoints phục vụ Dashboard, xử lý dữ liệu từ database SQLite.
 """
 
 import os
@@ -21,69 +21,61 @@ LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
 def get_db_connection():
     """
-    Thiết lập kết nối SQLite ở chế độ Read-Only (URI mode).
-    Đảm bảo không lock database khi script ghi đang chạy.
+    Thiết lập kết nối đến SQLite Database.
+    Sử dụng chế độ URI 'mode=ro' để đảm bảo Read-Only, cho phép đọc song song với tiến trình ghi (WAL mode).
     """
     try:
-        # Sử dụng URI file:...?mode=ro để force read-only
         conn = sqlite3.connect(f"file:{DB_FILE}?mode=ro", uri=True, timeout=5.0)
         conn.row_factory = sqlite3.Row
         return conn
     except sqlite3.OperationalError:
-        # Fallback nếu file chưa tồn tại
         return None
 
 def format_timestamp(ts):
     """
-    Chuyển đổi Unix Timestamp sang định dạng YYYY-MM-DD HH:MM:SS (Asia/Ho_Chi_Minh).
+    Chuyển đổi Unix Timestamp (UTC) sang chuỗi thời gian định dạng Local (GMT+7).
     """
     if not ts: return ""
     dt_utc = datetime.fromtimestamp(ts, pytz.utc)
     dt_local = dt_utc.astimezone(LOCAL_TZ)
     return dt_local.strftime('%Y-%m-%d %H:%M:%S')
 
-def format_size(size_bytes):
-    """
-    Chuyển đổi Bytes sang MB hoặc GB.
-    """
-    if not size_bytes: return "0 MB"
-    mb = size_bytes / (1024 * 1024)
-    if mb >= 1024:
-        return f"{mb/1024:.2f} GB"
-    return f"{mb:.2f} MB"
-
 def decode_message(b64_msg):
     """
-    Giải mã nội dung log từ Base64 sang UTF-8 String.
+    Giải mã nội dung log từ Base64 sang UTF-8.
+    Xử lý ngoại lệ nếu chuỗi input không hợp lệ.
     """
     if not b64_msg: return ""
     try:
-        return base64.b64decode(b64_msg).decode('utf-8')
+        return base64.b64decode(b64_msg).decode('utf-8', errors='replace')
     except Exception:
         return str(b64_msg)
 
+# --- Routes ---
+
 @app.route('/')
 def index():
-    """Render giao diện chính (SPA Container)."""
+    """Render giao diện Dashboard chính (SPA)."""
     return render_template('dashboard.html')
 
 @app.route('/api/overview')
 def get_overview():
     """
-    API cho Tab A: Overview.
-    Trả về: Metrics cards, Biểu đồ Success/Fail, Biểu đồ Failure Reasons.
+    API endpoint: Overview Tab
+    Trả về: Metrics tổng quan, dữ liệu biểu đồ Stacked Bar và Donut Chart trong khoảng thời gian chỉ định.
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'Database not found'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
     
     cursor = conn.cursor()
     
-    # Lấy tham số filter thời gian (mặc định 24h)
+    # Filter theo số ngày (mặc định 1 ngày)
     days = request.args.get('days', 1, type=int)
-    cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=days)).timestamp()
+    cutoff_dt = datetime.now(pytz.utc) - timedelta(days=days)
+    cutoff_ts = cutoff_dt.timestamp()
 
     try:
-        # 1. Metrics tổng quan
+        # Tổng hợp Metrics (Health, Storage, Processing Time)
         query_metrics = """
             SELECT 
                 COUNT(*) as total_jobs,
@@ -95,11 +87,11 @@ def get_overview():
         """
         metrics = cursor.execute(query_metrics, (cutoff_ts,)).fetchone()
         
-        # 2. Last update check
-        last_update = cursor.execute("SELECT MAX(created_at) FROM events").fetchone()[0]
+        # Lấy thời gian cập nhật mới nhất
+        last_update_row = cursor.execute("SELECT MAX(created_at) FROM events").fetchone()
+        last_update = last_update_row[0] if last_update_row else None
 
-        # 3. Chart: Success vs Failure theo ngày (cho Stacked Bar)
-        # SQLite strftime %J là Julian day, ta group theo ngày local
+        # Data cho Stacked Bar Chart (Success vs Failed theo ngày)
         query_daily = """
             SELECT 
                 date(created_at, 'unixepoch', 'localtime') as day_str,
@@ -112,7 +104,7 @@ def get_overview():
         """
         daily_stats = cursor.execute(query_daily, (cutoff_ts,)).fetchall()
 
-        # 4. Chart: Failure Reasons (cho Donut Chart)
+        # Data cho Donut Chart (Phân loại lỗi)
         query_reasons = """
             SELECT fail_type, COUNT(*) as count 
             FROM events 
@@ -121,17 +113,29 @@ def get_overview():
         """
         fail_reasons = cursor.execute(query_reasons, (cutoff_ts,)).fetchall()
 
+        # Tính toán tỷ lệ thành công
+        total = metrics['total_jobs'] or 0
+        success_count = metrics['success_jobs'] or 0
+        success_rate = round((success_count / total * 100), 1) if total > 0 else 0
+        
+        # Convert Storage bytes -> MB/GB
+        storage_bytes = metrics['total_storage'] or 0
+        storage_fmt = f"{storage_bytes/1024**3:.2f} GB" if storage_bytes > 1024**3 else f"{storage_bytes/1024**2:.2f} MB"
+
         return jsonify({
             'metrics': {
-                'total': metrics['total_jobs'] or 0,
-                'success_rate': round((metrics['success_jobs'] or 0) / (metrics['total_jobs'] or 1) * 100, 1),
-                'storage': format_size(metrics['total_storage']),
+                'total': total,
+                'success_rate': success_rate,
+                'storage': storage_fmt,
                 'avg_process': round(metrics['avg_process'] or 0, 2),
                 'last_update': format_timestamp(last_update)
             },
             'charts': {
                 'daily': [{'date': r['day_str'], 'success': r['success'], 'failed': r['failed']} for r in daily_stats],
-                'reasons': {'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons], 'series': [r['count'] for r in fail_reasons]}
+                'reasons': {
+                    'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons],
+                    'series': [r['count'] for r in fail_reasons]
+                }
             }
         })
     finally:
@@ -140,24 +144,27 @@ def get_overview():
 @app.route('/api/timeline')
 def get_timeline():
     """
-    API cho Tab B: Timeline & Gaps.
-    Trả về dữ liệu để vẽ Gantt Chart/Heatmap xác định khoảng trống.
+    API endpoint: Timeline Tab
+    Mục tiêu: Cung cấp dữ liệu cho biểu đồ Gantt/Heatmap để phát hiện khoảng trống ghi hình (Gap).
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'DB Error'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    # Lấy dữ liệu 24h gần nhất mặc định
+    # Nhận ngày từ client, mặc định là ngày hiện tại
     date_str = request.args.get('date', datetime.now(LOCAL_TZ).strftime('%Y-%m-%d'))
     
-    # Tính timestamp đầu ngày và cuối ngày theo Local Time
-    local_dt = datetime.strptime(date_str, '%Y-%m-%d')
-    local_dt = LOCAL_TZ.localize(local_dt)
-    ts_start = local_dt.timestamp()
-    ts_end = (local_dt + timedelta(days=1)).timestamp()
+    # Tính toán khoảng start/end timestamp cho ngày đó (theo Local Time)
+    try:
+        local_dt_start = datetime.strptime(date_str, '%Y-%m-%d')
+        local_dt_start = LOCAL_TZ.localize(local_dt_start)
+        ts_start = local_dt_start.timestamp()
+        ts_end = (local_dt_start + timedelta(days=1)).timestamp()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
 
     try:
-        # Chỉ lấy các sự kiện SUCCESS để vẽ vùng xanh
+        # Query các sự kiện SUCCESS để vẽ timeline
         query = """
             SELECT camera, start_ts, end_ts 
             FROM events 
@@ -167,12 +174,12 @@ def get_timeline():
         """
         rows = cursor.execute(query, (ts_start, ts_end)).fetchall()
         
-        # Format dữ liệu cho ApexCharts RangeBar
+        # Format dữ liệu theo cấu trúc ApexCharts RangeBar
         series_data = {}
         for r in rows:
             cam = r['camera']
             if cam not in series_data: series_data[cam] = []
-            # ApexCharts yêu cầu timestamp mili giây
+            # ApexCharts yêu cầu timestamp dạng mili giây
             series_data[cam].append({
                 'x': cam,
                 'y': [r['start_ts'] * 1000, r['end_ts'] * 1000]
@@ -187,20 +194,22 @@ def get_timeline():
 @app.route('/api/logs')
 def get_logs():
     """
-    API cho Tab C: Detailed Logs.
-    Hỗ trợ Filter và Search.
+    API endpoint: Logs Tab
+    Hỗ trợ Filter (Status, Camera), Search và Pagination (Limit).
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'DB Error'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    # Nhận tham số filter
     status = request.args.get('status', 'all')
     camera = request.args.get('camera', 'all')
     search = request.args.get('search', '')
     limit = request.args.get('limit', 100, type=int)
 
-    base_query = "SELECT id, camera, type, status, created_at, message, duration, filesize, fail_type FROM events WHERE 1=1"
+    base_query = """
+        SELECT id, camera, type, status, created_at, message, duration, filesize, fail_type 
+        FROM events WHERE 1=1
+    """
     params = []
 
     if status != 'all':
@@ -211,8 +220,7 @@ def get_logs():
         base_query += " AND camera = ?"
         params.append(camera)
 
-    # Search trong decoded text (lưu ý: search base64 trong SQL chậm, nên ở đây search metadata trước)
-    # Để tối ưu, ở đây chỉ search fail_type hoặc camera. Search message cần xử lý ở client hoặc full-text search sau.
+    # Tìm kiếm text trong Camera hoặc Loại lỗi (Fail Type)
     if search:
         base_query += " AND (camera LIKE ? OR fail_type LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
@@ -223,9 +231,9 @@ def get_logs():
     try:
         rows = cursor.execute(base_query, params).fetchall()
         
-        # Xử lý dữ liệu hiển thị (Decode Base64 tại đây)
         data = []
         for r in rows:
+            size_mb = (r['filesize'] or 0) / (1024 * 1024)
             data.append({
                 'id': r['id'],
                 'time': format_timestamp(r['created_at']),
@@ -233,9 +241,9 @@ def get_logs():
                 'type': r['type'],
                 'status': r['status'],
                 'duration': f"{r['duration']}s" if r['duration'] else "-",
-                'size': format_size(r['filesize']),
+                'size': f"{size_mb:.2f} MB",
                 'error_type': r['fail_type'] or "-",
-                'message': decode_message(r['message']) # Decode base64 trước khi gửi xuống client
+                'message': decode_message(r['message']) # Decode tại backend
             })
         return jsonify({'data': data})
     finally:
@@ -244,16 +252,18 @@ def get_logs():
 @app.route('/api/performance')
 def get_performance():
     """
-    API cho Tab D: Performance Analytics.
+    API endpoint: Performance Tab
+    Phân tích hiệu năng server (Thời gian xử lý vs Duration) và xu hướng lưu trữ.
     """
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'DB Error'}), 500
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
     
+    # Lấy dữ liệu 7 ngày gần nhất
     cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=7)).timestamp()
 
     try:
-        # Chart: Duration vs Processing Time
+        # Chart Line: Tương quan Duration vs Processing Time
         query_perf = """
             SELECT created_at, duration, process_sec 
             FROM events 
@@ -268,7 +278,7 @@ def get_performance():
             'processing': [r['process_sec'] for r in rows]
         }
 
-        # Chart: Storage Trend (Sum size by day)
+        # Chart Bar: Xu hướng tiêu thụ dung lượng theo ngày
         query_store = """
             SELECT date(created_at, 'unixepoch', 'localtime') as d, SUM(filesize) as total
             FROM events WHERE created_at > ?
@@ -277,21 +287,23 @@ def get_performance():
         rows_store = cursor.execute(query_store, (cutoff_ts,)).fetchall()
         store_data = {
             'dates': [r['d'] for r in rows_store],
-            'sizes': [round(r['total']/(1024*1024), 2) for r in rows_store] # MB
+            'sizes': [round((r['total'] or 0)/(1024*1024), 2) for r in rows_store] # Unit: MB
         }
 
         return jsonify({'performance': perf_data, 'storage': store_data})
     finally:
         conn.close()
 
-# API phụ để lấy danh sách Camera cho Dropdown Filter
 @app.route('/api/cameras')
 def get_cameras():
+    """Lấy danh sách Camera duy nhất để populate dropdown filter."""
     conn = get_db_connection()
     if not conn: return jsonify([])
-    cams = conn.execute("SELECT DISTINCT camera FROM events ORDER BY camera").fetchall()
-    conn.close()
-    return jsonify([c[0] for c in cams])
+    try:
+        cams = conn.execute("SELECT DISTINCT camera FROM events ORDER BY camera").fetchall()
+        return jsonify([c[0] for c in cams])
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=False)
