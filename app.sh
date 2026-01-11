@@ -71,7 +71,7 @@ elif [ "$MODE" == "record" ]; then
         rotate_log_file
         if ! check_disk_space; then
             log "⚠️ Pausing cycle due to storage issues. Retrying in 5 minutes..."
-            sleep 300
+            smart_wait 300
             continue
         fi
 
@@ -92,9 +92,9 @@ elif [ "$MODE" == "record" ]; then
         log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
         log "Sleeping ${final_sleep}s..."
         
-        # Wait with background signal processing
-        sleep "$final_sleep" &
-        wait $!
+        # [Ops] Smart Wait
+        # Purpose: Keep container 'healthy' during wait time.
+        smart_wait "$final_sleep"
     done
 
 # --- TIMELAPSE MODES ---
@@ -115,7 +115,7 @@ elif [ "$MODE" == "timelapse" ]; then
         rotate_log_file
         if ! check_disk_space; then
             log "⚠️ Pausing timelapse cycle due to storage issues. Retrying in 5 minutes..."
-            sleep 300
+            smart_wait 300
             continue
         fi
 
@@ -133,8 +133,10 @@ elif [ "$MODE" == "timelapse" ]; then
             if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
                 log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
                 log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
-                sleep "$TIMELAPSE_RETRY_SLEEP_SEC" &
-                wait $!
+                
+                # [Ops] Smart Wait for Retry
+                smart_wait "$TIMELAPSE_RETRY_SLEEP_SEC"
+                
                 continue # Skip long sleep and retry immediately
             else
                 log "⚠️ Cycle completed with ERRORS. Strict retry disabled. Continuing to schedule..."
@@ -175,9 +177,8 @@ elif [ "$MODE" == "timelapse" ]; then
         
         log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
         
-        # Wait with background signal processing
-        sleep "$final_sleep" &
-        wait $!
+        # [Ops] Smart Wait until next block
+        smart_wait "$final_sleep"
     done
 
 else

@@ -67,6 +67,35 @@ check_disk_space() {
     return 0
 }
 
+# [Ops] Smart Wait / Sleep
+# Purpose: Breaks a long sleep duration into small chunks (controlled by ENV) and updates
+# the heartbeat file. This prevents Docker Healthcheck from timing out
+# during long idle periods (e.g., waiting for next timelapse block).
+smart_wait() {
+    local seconds=$1
+    local remaining=$seconds
+
+    # Safety check for negative values
+    if [ "$seconds" -le 0 ]; then return; fi
+
+    # [CHANGE] Use ENV variable for chunk size instead of hardcoded 60s
+    local chunk_size=${HEARTBEAT_INTERVAL_SEC:-60}
+
+    while [ "$remaining" -gt 0 ]; do
+        # Update heartbeat to signal liveness
+        if [ -n "$DATA_DIR" ]; then touch "$DATA_DIR/.heartbeat"; fi
+
+        local current_chunk=$chunk_size
+        if [ "$remaining" -lt "$chunk_size" ]; then current_chunk=$remaining; fi
+
+        # Sleep in background to allow signal trapping (SIGTERM)
+        sleep "$current_chunk" &
+        wait $!
+
+        remaining=$((remaining - current_chunk))
+    done
+}
+
 # Executes SQL with a timeout to prevent 'database is locked' errors
 db_exec() {
     log_debug "DB_EXEC: $1"

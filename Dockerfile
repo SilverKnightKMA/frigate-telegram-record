@@ -30,9 +30,12 @@ RUN chmod +x /app/app.sh && \
 
 # [Ops] Healthcheck Configuration
 # Purpose: Monitor application liveness by checking the heartbeat file age.
-# Fails if heartbeat file is older than 300 seconds (5 minutes).
+# ENV HEARTBEAT_MAX_AGE_SEC: Threshold in seconds before declaring unhealthy (Default: 300s/5m).
+# Note: --interval can only be set at build time, but the logic inside CMD uses the ENV var.
+ENV HEARTBEAT_MAX_AGE_SEC=300
+
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
-  CMD [ $(($(date +%s) - $(stat -c %Y /app/data/.heartbeat))) -lt 300 ] || exit 1
+  CMD [ $(($(date +%s) - $(stat -c %Y /app/data/.heartbeat))) -lt $HEARTBEAT_MAX_AGE_SEC ] || exit 1
 
 # Define Entrypoint
 ENTRYPOINT ["/bin/bash", "/app/app.sh"]

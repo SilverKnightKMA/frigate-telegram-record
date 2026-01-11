@@ -55,6 +55,11 @@ MIN_FILESIZE_BYTES="${MIN_FILESIZE_BYTES:-1024}" # Minimum valid video size in b
 DB_TIMEOUT_MS="${DB_TIMEOUT_MS:-30000}" # SQLite busy timeout in milliseconds
 SCHEDULER_GAP_THRESHOLD_SEC="${SCHEDULER_GAP_THRESHOLD_SEC:-10}" # Min gap size to trigger gap-fill recording
 
+# [Ops] Healthcheck & Heartbeat Tuning
+# Purpose: Define how often the script updates its status and how lenient the check is.
+# HEARTBEAT_INTERVAL_SEC: Max sleep duration in 'smart_wait' before waking up to touch .heartbeat
+HEARTBEAT_INTERVAL_SEC="${HEARTBEAT_INTERVAL_SEC:-60}" 
+
 # [Ops] Resource Monitoring Limits
 # Purpose: Define thresholds for log rotation and disk space safety checks to prevent system exhaustion.
 MAX_LOG_SIZE_BYTES="${MAX_LOG_SIZE_BYTES:-10485760}" # 10MB default limit for log file
@@ -70,9 +75,9 @@ MIN_DURATION_PERCENT="${MIN_DURATION_PERCENT:-90}" # Threshold for success perce
 
 # --- TIMELAPSE SETTINGS ---
 TIMELAPSE_THREAD_ID="${TIMELAPSE_THREAD_ID:-33}" 
-TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"      
-TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"    
-TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"         
+TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"       
+TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"     
+TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"          
 TIMELAPSE_QUALITY="${TIMELAPSE_QUALITY:-24}" 
 VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
 TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-3600}"
