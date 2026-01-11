@@ -162,11 +162,8 @@ def get_timeline():
             return jsonify({'error': 'Invalid date format'}), 400
 
     try:
-        # Dynamic LOD Calculation
-        # Limit to max ~300 visual blocks per camera to ensure 60fps scrolling
         TARGET_BLOCKS = 300
         view_duration = ts_end - ts_start
-        # Ensure minimal threshold is at least 30s to avoid microscopic merges
         dynamic_threshold = max(30.0, view_duration / float(TARGET_BLOCKS))
 
         query = """
@@ -186,14 +183,17 @@ def get_timeline():
                 grouped_data[cam] = []
             
             status_code = 1 if r['status'] == 'SUCCESS' else 0
-            fail_type = r['fail_type'] if status_code == 0 else None
             
-            # Metadata structure: Stores counts of each error type
+            # FIX: Handle NULL fail_type in DB converting to None in Python.
+            # Use 'Unknown' string to prevent "TypeError: '<' not supported between instances of 'str' and 'NoneType'"
+            # when jsonify tries to sort dictionary keys.
+            fail_type = (r['fail_type'] or "Unknown") if status_code == 0 else None
+            
             meta = None
             if status_code == 0:
                 meta = {
                     'count': 1,
-                    'breakdown': {fail_type: 1}, # Dictionary to count occurrences
+                    'breakdown': {fail_type: 1},
                     'sample_msg': decode_message(r['message'])
                 }
 
@@ -211,14 +211,11 @@ def get_timeline():
                 prev_end = last_block[1] / 1000
                 curr_start = r['start_ts']
 
-                # Merge Logic: Same status AND within dynamic threshold
                 if status_code == prev_status and (curr_start - prev_end) <= dynamic_threshold:
-                    last_block[1] = current_block[1] # Extend block
+                    last_block[1] = current_block[1]
                     
                     if status_code == 0:
-                        # Aggregate Error Metadata
                         last_block[3]['count'] += 1
-                        # Increment breakdown count
                         current_count = last_block[3]['breakdown'].get(fail_type, 0)
                         last_block[3]['breakdown'][fail_type] = current_count + 1
                 else:
