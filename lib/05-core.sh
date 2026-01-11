@@ -121,6 +121,13 @@ check_source_gatekeeper() {
         local speed=${TIMELAPSE_SPEED:-60}
         # Chia cho speed để ra output duration ước tính
         estimated_output=$(( vod_duration / speed ))
+        
+        # [FIX CRITICAL] Chặn ngay nếu output ước tính = 0s
+        # Lý do: Dù VOD có dữ liệu (ví dụ 400s), nhưng nếu chia cho speed (x600) ra 0s thì chạy làm gì?
+        if [ "$estimated_output" -eq 0 ]; then
+             log "[$src] [$mode] Gatekeeper: Skipping (Est. Output is 0s - VOD: ${vod_duration}s)."
+             return 1
+        fi
     fi
 
     # [Debug] Log so sánh để dễ kiểm tra
@@ -235,6 +242,17 @@ check_duration_and_status() {
     if ! [[ "$actual" =~ ^[0-9]+$ ]]; then
         log_debug "[$src] actual duration not a number: '$actual', defaulting to 0"
         actual=0
+    fi
+
+    # [FIX] CHẶN NGAY NẾU DURATION = 0
+    # Lý do: Video 0s là file lỗi/rỗng, gửi đi chỉ làm phiền user.
+    if [ "$actual" -eq 0 ]; then
+        log "[$src] 🚫 Video duration is 0s (Corrupt/Empty). Skipping immediately."
+        _status="skip"
+        _actual=0
+        _fmt_actual="0s"
+        _percent=0
+        return
     fi
     
     local threshold=$(( expected_sec * MIN_DURATION_PERCENT / 100 ))
