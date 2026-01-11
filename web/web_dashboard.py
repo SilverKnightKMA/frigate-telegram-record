@@ -284,4 +284,7 @@ def get_recent_activity():
             'error': str(e)
         }), 500
 
-
+if __name__ == '__main__':
+    print(f"Starting Frigate Telegram Record Dashboard on port {PORT}")
+    print(f"Database: {DB_FILE}")
+    app.run(host='0.0.0.0', port=PORT, debug=False)
