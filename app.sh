@@ -13,6 +13,11 @@ source /app/lib/05-core.sh
 source /app/lib/06-pipelines.sh
 source /app/lib/07-scheduler.sh
 
+# [Ops] Lock File Definition (Dynamic by Mode)
+# Purpose: Unique lock per mode allows running 'record' and 'timelapse' in parallel,
+# but prevents multiple instances of the SAME mode (e.g. 2 recorders).
+LOCK_FILE="/tmp/app_${MODE}.lock"
+
 # [Ops] Signal Trap for Graceful Shutdown
 # Purpose: Terminates background jobs and cleans resources to ensure safe container stop.
 cleanup_on_exit() {
@@ -21,6 +26,7 @@ cleanup_on_exit() {
     jobs -p | xargs -r kill -SIGTERM
     wait
     rm -rf "$TEMP_DIR"/*
+    rm -f "$LOCK_FILE"
     log "Shutdown complete."
     exit 0
 }
@@ -31,6 +37,19 @@ trap cleanup_on_exit SIGTERM SIGINT
 # ensuring a fresh state before validation starts.
 rm -rf "$TEMP_DIR"/*
 
+# [Ops] Single Instance Enforcement
+# Purpose: Prevents multiple script instances of the SAME MODE from running simultaneously.
+if [ -f "$LOCK_FILE" ]; then
+    pid=$(cat "$LOCK_FILE")
+    if kill -0 "$pid" > /dev/null 2>&1; then
+        log "CRITICAL: Another instance of MODE=$MODE is running (PID: $pid). Exiting."
+        exit 1
+    fi
+    # Remove stale lock file if process is dead
+    rm -f "$LOCK_FILE"
+fi
+echo $$ > "$LOCK_FILE"
+
 # 2. Validation
 log_debug "Starting validation process..."
 
@@ -40,6 +59,7 @@ verify_system_dependencies
 
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
     log "CRITICAL: No cameras configured."
+    rm -f "$LOCK_FILE"
     exit 1
 fi
 
@@ -59,6 +79,7 @@ if [ "$MODE" == "test" ]; then
     log ">>> STARTING TEST MODE <<<"
     log_debug "Executing single cycle for duration: ${TEST_REC_DURATION_MIN}m"
     execute_cycle "$TEST_REC_DURATION_MIN" "test"
+    rm -f "$LOCK_FILE"
     exit 0
 
 elif [ "$MODE" == "record" ]; then
@@ -102,6 +123,7 @@ elif [ "$MODE" == "record" ]; then
 elif [ "$MODE" == "test_timelapse" ]; then
     log ">>> STARTING TIMELAPSE TEST MODE (Last $TIMELAPSE_HOURS hours) <<<"
     execute_timelapse_cycle "test_timelapse" "$TIMELAPSE_HOURS"
+    rm -f "$LOCK_FILE"
     exit 0
 
 elif [ "$MODE" == "timelapse" ]; then
@@ -183,5 +205,6 @@ elif [ "$MODE" == "timelapse" ]; then
 
 else
     log "Invalid MODE: $MODE"
+    rm -f "$LOCK_FILE"
     exit 1
 fi

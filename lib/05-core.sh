@@ -6,18 +6,35 @@
 # ==============================================================================
 
 # [Ops] System Dependency Check
-# Purpose: Performs a fail-fast verification of required binaries at startup.
+# Purpose: Performs a fail-fast verification of required binaries AND upstream connectivity.
 # Prevents the application from running in a broken environment.
 verify_system_dependencies() {
     local dependencies=("ffmpeg" "ffprobe" "curl" "sqlite3" "file" "jq")
     local missing_deps=0
 
+    # 1. Check Binaries
     for cmd in "${dependencies[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
             log "CRITICAL: Required system dependency '$cmd' is missing."
             missing_deps=$((missing_deps + 1))
         fi
     done
+
+    # 2. Check Upstream Connectivity (Frigate)
+    # Purpose: Fail fast if the NVR host is unreachable, avoiding loop errors later.
+    log_debug "Checking connectivity to Frigate at $FRIGATE_HOST..."
+    local http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${FRIGATE_HOST}/api/version")
+    
+    # Frigate API usually returns 200 for version endpoint, but we accept any valid HTTP response
+    # to indicate the host is reachable.
+    if [ "$http_code" == "000" ] || [ -z "$http_code" ]; then
+        log "CRITICAL: Unable to connect to Frigate Host ($FRIGATE_HOST). Network unreachable."
+        missing_deps=$((missing_deps + 1))
+    elif [ "$http_code" -ge 500 ]; then
+        log "WARNING: Frigate Host reachable but returning Server Error ($http_code)."
+    else
+        log_debug "Frigate connection verified (HTTP $http_code)."
+    fi
 
     if [ "$missing_deps" -gt 0 ]; then
         exit 1

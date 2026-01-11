@@ -45,7 +45,7 @@ rotate_log_file() {
 }
 
 # [Ops] Disk Space & Writability Check Logic
-# Purpose: Verifies available storage and write permissions in Data Directory before start.
+# Purpose: Verifies available storage and write permissions in both Data and Temp Directories.
 # Returns 0 if space is sufficient and writable, 1 if critical issues found.
 check_disk_space() {
     # 1. Check Writability (Detect Read-Only Mounts)
@@ -55,7 +55,7 @@ check_disk_space() {
     fi
     rm -f "$DATA_DIR/.perm_check"
 
-    # 2. Check Space (df -k output is in 1K blocks)
+    # 2. Check Data Storage Space (df -k output is in 1K blocks)
     local available_kb=$(df -k "$DATA_DIR" | tail -n 1 | awk '{print $4}')
     local limit_kb=$(( MIN_DISK_SPACE_MB * 1024 ))
 
@@ -64,6 +64,18 @@ check_disk_space() {
         log "CRITICAL: Disk space on $DATA_DIR is low! Available: ${avail_mb}MB (Threshold: ${MIN_DISK_SPACE_MB}MB)."
         return 1
     fi
+
+    # 3. Check Temp Directory Space (Critical for video processing in RAM/tmpfs)
+    if [ -d "$TEMP_DIR" ]; then
+        local temp_avail_kb=$(df -k "$TEMP_DIR" | tail -n 1 | awk '{print $4}')
+        # Require at least 200MB free for temp processing (Safety margin)
+        if [ "$temp_avail_kb" -lt 204800 ]; then
+            local temp_avail_mb=$(( temp_avail_kb / 1024 ))
+            log "CRITICAL: Temp space on $TEMP_DIR is critically low! Available: ${temp_avail_mb}MB."
+            return 1
+        fi
+    fi
+
     return 0
 }
 
