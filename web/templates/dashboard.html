@@ -17,9 +17,11 @@
         /* Cards & Grid */
         .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .grid-full { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
+        
         @media (max-width: 1000px) { .grid-main { grid-template-columns: 1fr; } }
 
-        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
         .card-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
         .card h3 { font-size: 1rem; color: #555; margin: 0; }
         
@@ -33,16 +35,24 @@
         .filter-select { padding: 5px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; outline: none; }
         .filter-select:focus { border-color: var(--primary); }
 
-        /* Activity List */
-        .act-list { max-height: 500px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        /* Activity List - FIX OVERFLOW */
+        .act-list { max-height: 600px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .act-item { 
             padding: 12px; border: 1px solid #eee; border-radius: 8px; background: #fff; cursor: pointer; transition: transform 0.1s; border-left: 4px solid #ddd;
         }
         .act-item:hover { transform: translateX(3px); border-color: var(--primary); }
         .act-item.failed { border-left-color: var(--danger); background: #fffbfb; }
         .act-item.success { border-left-color: var(--success); }
-        .act-top { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.9rem; font-weight: bold; }
-        .act-desc { font-size: 0.85rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .act-top { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; font-weight: bold; }
+        
+        /* FIX: Cho phép xuống dòng và ngắt từ để không tràn */
+        .act-desc { 
+            font-size: 0.85rem; 
+            color: #666; 
+            white-space: pre-wrap; /* Giữ định dạng xuống dòng nhưng wrap nếu quá dài */
+            word-break: break-word; /* Ngắt từ nếu quá dài */
+            overflow-wrap: break-word;
+        }
 
         /* Modal */
         dialog { border: none; border-radius: 12px; padding: 0; width: 90%; max-width: 600px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
@@ -51,9 +61,16 @@
         .modal-body { padding: 20px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; word-wrap: break-word; max-height: 60vh; overflow-y: auto; }
         .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; }
 
+        /* Table */
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        th { text-align: left; padding: 12px; color: #666; font-size: 0.9rem; border-bottom: 2px solid #eee; background: #fcfcfc; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        tr:hover { background-color: #f9f9f9; }
+        
         /* Badges */
-        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; }
-        .bg-green { background: var(--success); } .bg-red { background: var(--danger); }
+        .badge { padding: 4px 8px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; display: inline-block; min-width: 30px; text-align: center; }
+        .bg-green { background: var(--success); } .bg-red { background: var(--danger); } .bg-orange { background: #FEB019; } .bg-gray { background: #999; }
     </style>
 </head>
 <body>
@@ -73,7 +90,7 @@
         <div class="grid-main">
             <div style="display:flex; flex-direction:column; gap:20px;">
                 <div class="card">
-                    <div class="card-header"><h3>Timeline (24h) - Limited Data</h3></div>
+                    <div class="card-header"><h3>Timeline Coverage (24h)</h3></div>
                     <div id="chartTimeline"></div>
                 </div>
                 <div class="card">
@@ -99,6 +116,27 @@
                 <div class="act-list" id="lstAct"></div>
             </div>
         </div>
+
+        <div class="grid-full">
+            <div class="card">
+                <div class="card-header"><h3>Camera Status Overview</h3></div>
+                <div class="table-responsive">
+                    <table id="tblCams">
+                        <thead>
+                            <tr>
+                                <th>Camera</th>
+                                <th>Success (Total)</th>
+                                <th>Failures (Total)</th>
+                                <th>Timelapse</th>
+                                <th>Rec Duration</th>
+                                <th>Last Update</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <dialog id="detailModal">
@@ -113,12 +151,11 @@
         // Global State
         let charts = { timeline: null, error: null };
         let countdown = 30;
-        let allActivities = []; // Store raw data for client-side filtering
+        let allActivities = [];
 
         document.addEventListener('DOMContentLoaded', () => {
             loadData();
             
-            // Filter Listeners
             document.getElementById('filterCam').addEventListener('change', renderActivityList);
             document.getElementById('filterStatus').addEventListener('change', renderActivityList);
 
@@ -149,11 +186,30 @@
 
         function updateStats(data) {
             if(!data.success) return;
+            // Update KPIs
             document.getElementById('s_cams').innerText = data.overall.total_cameras;
             document.getElementById('s_recs').innerText = data.overall.recent_records_24h;
             document.getElementById('s_fails').innerText = data.overall.recent_failures_24h;
             
-            // Populate Camera Filter if empty
+            // Update Camera Table (Fixed ID check)
+            const tbody = document.querySelector('#tblCams tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+                data.cameras.forEach(c => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${c.name}</strong></td>
+                            <td><span class="badge bg-green">${c.success_count}</span></td>
+                            <td><span class="badge ${c.failed_count > 0 ? 'bg-red' : 'bg-gray'}">${c.failed_count}</span></td>
+                            <td><span class="badge bg-orange">${c.timelapse_count}</span></td>
+                            <td>${c.total_duration}</td>
+                            <td style="color:#666; font-size:0.85rem">${c.last_record}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // Populate Filter
             const sel = document.getElementById('filterCam');
             if(sel.options.length === 1) {
                 data.cameras.forEach(c => {
@@ -171,7 +227,6 @@
             const camFilter = document.getElementById('filterCam').value;
             const statusFilter = document.getElementById('filterStatus').value;
 
-            // Client-side Filtering
             const filtered = allActivities.filter(a => {
                 if (camFilter !== 'all' && a.camera !== camFilter) return false;
                 if (statusFilter !== 'all' && a.status !== statusFilter) return false;
@@ -193,7 +248,6 @@
                     </div>
                     <div class="act-desc">${a.details.replace(/<[^>]*>?/gm, '')}</div>
                 `;
-                // Click to open modal
                 el.onclick = () => showModal(a);
                 list.appendChild(el);
             });
@@ -202,7 +256,7 @@
         function showModal(item) {
             const modal = document.getElementById('detailModal');
             document.getElementById('modalTitle').innerText = `${item.camera} - ${item.timestamp}`;
-            document.getElementById('modalContent').innerText = item.details; // Text only to prevent XSS
+            document.getElementById('modalContent').innerText = item.details;
             modal.showModal();
         }
 
@@ -211,35 +265,24 @@
 
             // --- 1. TIMELINE ---
             const tlEl = document.getElementById('chartTimeline');
-            const points = data.timeline.reduce((s, i) => s + i.data.length, 0);
+            if (charts.timeline) { charts.timeline.destroy(); charts.timeline = null; }
 
-            // FIX: Destroy old chart instance to free RAM
-            if (charts.timeline) {
-                charts.timeline.destroy();
-                charts.timeline = null;
-            }
-
-            if(points > 1000) {
-                tlEl.innerHTML = `<div style="text-align:center; color:orange; padding:20px">Too much data (${points}) to render.</div>`;
-            } else {
-                const opts = {
-                    series: data.timeline,
-                    chart: { type: 'rangeBar', height: 350, animations: { enabled: false }, toolbar: { show: false } },
-                    plotOptions: { bar: { horizontal: true, barHeight: '70%', rangeBarGroupRows: true } },
-                    xaxis: { type: 'datetime' },
-                    tooltip: { enabled: true, x: { format: 'HH:mm' } },
-                    legend: { show: false }
-                };
-                charts.timeline = new ApexCharts(tlEl, opts);
-                charts.timeline.render();
-            }
+            const opts = {
+                series: data.timeline,
+                chart: { type: 'rangeBar', height: 350, animations: { enabled: false }, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, barHeight: '70%', rangeBarGroupRows: true } },
+                xaxis: { type: 'datetime' },
+                tooltip: { enabled: true, x: { format: 'HH:mm' } },
+                legend: { show: false },
+                fill: { type: 'solid', opacity: 1 },
+                stroke: { width: 0 }
+            };
+            charts.timeline = new ApexCharts(tlEl, opts);
+            charts.timeline.render();
 
             // --- 2. ERRORS ---
             const errEl = document.getElementById('chartErrors');
-            if (charts.error) {
-                charts.error.destroy();
-                charts.error = null;
-            }
+            if (charts.error) { charts.error.destroy(); charts.error = null; }
             
             const hasErr = data.errors.series.length > 0;
             const errOpts = {
