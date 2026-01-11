@@ -195,11 +195,13 @@ trigger_failure_alert() {
     # 2. Alert Repeat is ON.
     # 3. Video was sent (Partial Success) -> We need to record this even if duration is same.
     # 4. Improvement found.
+    # 5. [CHANGED] Previous duration was 0 (Ensure data is captured if no valid video exists).
     local should_update="false"
     if [ "$existing_id" -eq 0 ]; then should_update="true";
     elif [ "$alert_repeat" == "true" ]; then should_update="true";
     elif [ -n "$SENT_VIDEO_MSG_ID" ] && [ "$SENT_VIDEO_MSG_ID" -ne 0 ]; then should_update="true";
     elif [ "$duration_val" -gt "$prev_duration" ]; then should_update="true";
+    elif [ "$prev_duration" -eq 0 ]; then should_update="true"; # Allow update if no prior video
     fi
 
     if [ "$should_update" != "true" ]; then
@@ -220,14 +222,16 @@ trigger_failure_alert() {
     local clean_search_text=$(echo "$alert_text" | sed 's/<[^>]*>//g' | sed "s/['\"]//g" | tr -d '\n\r')
 
     # --- DECISION 2: SHOULD WE SEND TELEGRAM ALERT? ---
-    # User Request: Only send alert if:
-    # 1. New error (existing_id == 0)
-    # 2. Improvement (duration_val > prev_duration)
-    # 3. Alert Repeat is ON
+    # Send alert if:
+    # 1. New error.
+    # 2. Improvement.
+    # 3. Alert Repeat is ON.
+    # 4. [CHANGED] No previous video (duration 0).
     
     local should_send_alert="false"
     if [ "$existing_id" -eq 0 ]; then should_send_alert="true"; fi
     if [ "$duration_val" -gt "$prev_duration" ]; then should_send_alert="true"; fi
+    if [ "$prev_duration" -eq 0 ]; then should_send_alert="true"; fi # Trigger alert if no prior video
     if [ "$alert_repeat" == "true" ]; then should_send_alert="true"; fi
 
     # Execute Alert Sending
