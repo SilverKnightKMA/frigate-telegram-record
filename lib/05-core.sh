@@ -96,7 +96,7 @@ calculate_vod_source_duration() {
         fi
         
         cursor=$next_cursor
-        count=$count+1
+        count=$((count + 1))
     done
 
     rm -rf "$vod_check_dir"

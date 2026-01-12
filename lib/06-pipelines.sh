@@ -177,7 +177,7 @@ execute_clip_pipeline() {
 }
 
 # Generates timelapse using VAAPI hardware acceleration by concatenating HLS chunks
-# Returns: 0=success, 1=fail, 2=skip (no improvement)
+# Returns: 0=success, 1=fail
 generate_timelapse_video() {
     local camera_name="$1"
     local start_ts="$2"
@@ -211,9 +211,13 @@ generate_timelapse_video() {
         local chunk_file="$job_temp_dir/part_${count}.mp4"
         local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
 
-        # [Ops] Enhanced Log Detail
-        # Purpose: Capture 'info' level logs to diagnose 'Invalid argument' and I/O errors.
+        # [Ops] High-Reliability Render Logic
+        # - analyzeduration/probesize: Resolves width=0 metadata issues.
+        # - fflags +genpts: Normalizes DTS timestamps.
+        # - an: Disables audio to prevent synchronization failures and reduce bandwidth.
         nice -n 10 timeout 3600 ffmpeg -y -v info \
+            -analyzeduration 30M -probesize 30M \
+            -fflags +genpts \
             -hwaccel vaapi \
             -hwaccel_device "$VAAPI_DEVICE" \
             -hwaccel_output_format vaapi \
@@ -230,17 +234,12 @@ generate_timelapse_video() {
         if [ $exit_code -eq 0 ] && [ -s "$chunk_file" ]; then
             echo "file '$chunk_file'" >> "$concat_list"
         else
-            # [Ops] Resource and Exit Diagnostics
-            # Purpose: Capture system state (SHM) and last FFmpeg error on failure.
+            # [Ops] Fault Tolerance: Skip corrupt chunks
+            # Purpose: If a chunk is corrupt (0x0 stream) or HTTP 503 occurs, skip it but continue rendering.
             local shm_status=$(df -h /dev/shm | tail -1)
-            if [ $exit_code -eq 124 ]; then
-                 log "[$camera_name] ❌ Chunk $count Timed Out. SHM: $shm_status"
-                 _gen_error="FFmpeg Timeout (Process Hung)"
-            else
-                 local log_tail=$(tail -n 3 "$ffmpeg_log" | tr '\n' ' ')
-                 log "[$camera_name] Warning: Chunk $count failed (Exit: $exit_code). SHM: $shm_status. Log: $log_tail"
-                 if [ -z "$_gen_error" ]; then _gen_error="FFmpeg ($exit_code): ${log_tail:0:100}"; fi
-            fi
+            local log_tail=$(tail -n 5 "$ffmpeg_log" | tr '\n' ' ')
+            log "[$camera_name] ⚠️ Chunk $count corrupt/failed (Exit: $exit_code). Skipping. SHM: $shm_status. Log: $log_tail"
+            if [ -z "$_gen_error" ]; then _gen_error="Partial (Chunk $count failed)"; fi
         fi
 
         cursor=$next_cursor
@@ -258,7 +257,7 @@ generate_timelapse_video() {
              _gen_error="Concat Fail: ${log_tail:0:100}"
         fi
     else
-         if [ -z "$_gen_error" ]; then _gen_error="No valid chunks generated"; fi
+         if [ -z "$_gen_error" ]; then _gen_error="All chunks failed"; fi
     fi
 
     rm -rf "$job_temp_dir"
