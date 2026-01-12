@@ -435,6 +435,7 @@ trigger_failure_alert() {
 
     local alert_sent_now=0
     local msg_id_to_save="0"
+    local b64_alert_text=""
 
     # [CHANGE] Prepare Alert Text only if sending alert (Optimization from script 2)
     if [ "$should_send_alert" == "true" ]; then
@@ -445,6 +446,10 @@ trigger_failure_alert() {
 <b>Error:</b> [$fail_type] $reason
 <b>Slot:</b> $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
         
+        # [Data Persistence] Encode alert text to Base64 for database storage.
+        # Required for 'handle_recovery_actions' to reconstruct the message later.
+        b64_alert_text=$(echo "$alert_text" | base64 -w 0)
+
         handle_error "$alert_text" "$mode_upper|$src"
         
         if [ -n "$SENT_ERROR_MSG_ID" ] && [ "$SENT_ERROR_MSG_ID" -ne 0 ]; then
@@ -455,12 +460,14 @@ trigger_failure_alert() {
         # If not sending new alert, try to preserve existing ID
         if [ "$existing_id" -gt 0 ]; then
              msg_id_to_save=$(sqlite3 "$DB_FILE" "SELECT msg_id FROM events WHERE id=$existing_id;")
+             # [Data Persistence] Retrieve existing message from DB to prevent data loss on update
+             b64_alert_text=$(sqlite3 "$DB_FILE" "SELECT message FROM events WHERE id=$existing_id;")
         fi
     fi
     
     # Save/Update DB
     local current_ts=$(date +%s)
-    # [CHANGE] No longer saving Base64 text to DB (matches Script 2 logic)
+    # [CHANGE] Restored Base64 storage logic for 'message' column
 
     local final_alert_sent=$prev_alert_sent
     if [ "$alert_sent_now" -eq 1 ]; then
@@ -468,11 +475,12 @@ trigger_failure_alert() {
     fi
 
     if [ "$existing_id" -gt 0 ]; then
-         # [CHANGE] Removed 'message' from UPDATE, fixed quoting, removed SENT_VIDEO_MSG_ID logic
+         # [Database] Update record including 'message' persistence
          db_exec \
             "UPDATE events \
              SET created_at=$current_ts, \
                  msg_id=$msg_id_to_save, \
+                 message='$b64_alert_text', \
                  duration=$duration_val, \
                  fail_type='$fail_type', \
                  filesize=$filesize_val, \
@@ -481,15 +489,15 @@ trigger_failure_alert() {
                  alert_sent=$final_alert_sent \
              WHERE id=$existing_id;"
     else
-         # [CHANGE] Removed 'message' from INSERT, fixed quoting
+         # [Database] Insert new record with 'message' column
          db_exec \
             "INSERT INTO events \
              (camera, type, status, start_ts, end_ts, created_at, \
-              msg_id, duration, fail_type, filesize, process_sec, \
+              message, msg_id, duration, fail_type, filesize, process_sec, \
               search_text, alert_sent) \
              VALUES \
              ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, \
-              $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, \
+              '$b64_alert_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, \
               '$clean_search_text', $final_alert_sent);"
     fi
 }
