@@ -189,7 +189,7 @@ generate_timelapse_video() {
     mkdir -p "$job_temp_dir"
     
     local concat_list="$job_temp_dir/concat_list.txt"
-    # [Ops] Capture FFmpeg stderr for monitoring and debugging
+    # [Ops] Capture FFmpeg output for detailed analysis
     local ffmpeg_log="$job_temp_dir/ffmpeg_err.log"
     local cursor=$start_ts
     local count=1
@@ -211,10 +211,9 @@ generate_timelapse_video() {
         local chunk_file="$job_temp_dir/part_${count}.mp4"
         local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
 
-        # [Ops] Execution Timeout & Resource Control
-        # Purpose: Wrap FFmpeg with 'nice' to protect system responsiveness.
-        # 'timeout' kills it after 1h (3600s).
-        nice -n 10 timeout 3600 ffmpeg -y -v error \
+        # [Ops] Enhanced Log Detail
+        # Purpose: Capture 'info' level logs to diagnose 'Invalid argument' and I/O errors.
+        nice -n 10 timeout 3600 ffmpeg -y -v info \
             -hwaccel vaapi \
             -hwaccel_device "$VAAPI_DEVICE" \
             -hwaccel_output_format vaapi \
@@ -231,14 +230,16 @@ generate_timelapse_video() {
         if [ $exit_code -eq 0 ] && [ -s "$chunk_file" ]; then
             echo "file '$chunk_file'" >> "$concat_list"
         else
+            # [Ops] Resource and Exit Diagnostics
+            # Purpose: Capture system state (SHM) and last FFmpeg error on failure.
+            local shm_status=$(df -h /dev/shm | tail -1)
             if [ $exit_code -eq 124 ]; then
-                 log "[$camera_name] ❌ Chunk $count Timed Out (killed after 3600s)."
+                 log "[$camera_name] ❌ Chunk $count Timed Out. SHM: $shm_status"
                  _gen_error="FFmpeg Timeout (Process Hung)"
             else
-                 # Read last 2 lines of ffmpeg log to get the actual error
-                 local log_tail=$(tail -n 2 "$ffmpeg_log" | tr '\n' ' ')
-                 log "[$camera_name] Warning: Chunk $count failed. FFmpeg Log: $log_tail"
-                 if [ -z "$_gen_error" ]; then _gen_error="FFmpeg: ${log_tail:0:100}"; fi
+                 local log_tail=$(tail -n 3 "$ffmpeg_log" | tr '\n' ' ')
+                 log "[$camera_name] Warning: Chunk $count failed (Exit: $exit_code). SHM: $shm_status. Log: $log_tail"
+                 if [ -z "$_gen_error" ]; then _gen_error="FFmpeg ($exit_code): ${log_tail:0:100}"; fi
             fi
         fi
 
@@ -249,7 +250,6 @@ generate_timelapse_video() {
     # Concatenate all processed chunks into final file
     if [ -f "$concat_list" ] && [ -s "$concat_list" ]; then
         log "[$camera_name] Concatenating timelapse parts..."
-        # Wrap concatenation in timeout and nice as well
         nice -n 10 timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" > "$ffmpeg_log" 2>&1
         if [ $? -eq 0 ]; then 
             success=1

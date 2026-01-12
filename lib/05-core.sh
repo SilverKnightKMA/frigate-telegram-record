@@ -20,6 +20,16 @@ verify_system_dependencies() {
         fi
     done
 
+    # [Ops] GPU Driver Validation
+    # Purpose: Verify VAAPI hardware acceleration path is accessible to prevent 
+    # 'Invalid Argument' errors during rendering.
+    if [[ "$TIMELAPSE_CODEC" == *"vaapi"* ]]; then
+        log_debug "Validating VAAPI status on $VAAPI_DEVICE..."
+        if ! vainfo --display drm --device "$VAAPI_DEVICE" > /dev/null 2>&1; then
+            log "WARNING: VAAPI hardware acceleration is not responding on $VAAPI_DEVICE."
+        fi
+    fi
+
     # 2. Check Upstream Connectivity (Frigate)
     # Purpose: Fail fast if the NVR host is unreachable, avoiding loop errors later.
     log_debug "Checking connectivity to Frigate at $FRIGATE_HOST..."
@@ -86,7 +96,7 @@ calculate_vod_source_duration() {
         fi
         
         cursor=$next_cursor
-        count=$((count + 1))
+        count=$count+1
     done
 
     rm -rf "$vod_check_dir"
