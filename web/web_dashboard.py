@@ -1,71 +1,9 @@
-import os
-import sys
-import sqlite3
-import base64
-import pytz
 from datetime import datetime, timedelta
+import pytz
 from flask import Flask, render_template, jsonify, request
+import common
 
 app = Flask(__name__)
-
-# System Configuration
-DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
-PORT = int(os.environ.get('WEB_PORT', '8080'))
-LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
-
-def diagnose_db_issues(db_path, error_msg):
-    try:
-        sys.stderr.write(f"\n[DIAGNOSTICS] Connection failed: {error_msg}\n")
-        if os.path.exists(db_path):
-            st = os.stat(db_path)
-            sys.stderr.write(f"[DIAGNOSTICS] DB File: {db_path} | Size: {st.st_size} bytes | Mode: {oct(st.st_mode)}\n")
-            sys.stderr.write(f"[DIAGNOSTICS] Access: R_OK={os.access(db_path, os.R_OK)} | W_OK={os.access(db_path, os.W_OK)}\n")
-        else:
-            sys.stderr.write(f"[DIAGNOSTICS] CRITICAL: File not found at {db_path}\n")
-        sys.stderr.flush()
-    except Exception:
-        pass
-
-def get_db_connection():
-    if not os.path.exists(DB_FILE):
-        return None
-    conn = None
-    try:
-        db_uri = f"file:{DB_FILE}?mode=ro&immutable=1"
-        conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("SELECT 1 FROM events LIMIT 1")
-        return conn
-    except sqlite3.OperationalError as e:
-        diagnose_db_issues(DB_FILE, str(e))
-        if conn: conn.close()
-        return None
-    except Exception as e:
-        sys.stderr.write(f"Unexpected DB Error: {e}\n")
-        if conn: conn.close()
-        return None
-
-def format_timestamp(ts):
-    if not ts: return ""
-    dt_utc = datetime.fromtimestamp(ts, pytz.utc)
-    dt_local = dt_utc.astimezone(LOCAL_TZ)
-    return dt_local.strftime('%Y-%m-%d %H:%M:%S')
-
-def decode_message(b64_msg):
-    if not b64_msg: return ""
-    try:
-        return base64.b64decode(b64_msg).decode('utf-8', errors='replace')
-    except Exception:
-        return str(b64_msg)
-
-def parse_frontend_datetime(iso_str):
-    if not iso_str: return None
-    try:
-        dt = datetime.strptime(iso_str, "%Y-%m-%dT%H:%M")
-        localized = LOCAL_TZ.localize(dt)
-        return localized.timestamp()
-    except ValueError:
-        return None
 
 # --- Routes ---
 
@@ -75,7 +13,7 @@ def index():
 
 @app.route('/api/overview')
 def get_overview():
-    conn = get_db_connection()
+    conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed', 'details': 'Check logs'}), 500
     
     cursor = conn.cursor()
@@ -129,7 +67,7 @@ def get_overview():
                 'success_rate': success_rate,
                 'storage': storage_fmt,
                 'avg_process': round(metrics['avg_process'] or 0, 2),
-                'last_update': format_timestamp(last_update)
+                'last_update': common.format_timestamp(last_update)
             },
             'charts': {
                 'daily': [{'date': r['day_str'], 'success': r['success'], 'failed': r['failed']} for r in daily_stats],
@@ -144,7 +82,7 @@ def get_overview():
 
 @app.route('/api/timeline')
 def get_timeline():
-    conn = get_db_connection()
+    conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
@@ -156,10 +94,10 @@ def get_timeline():
         ts_start = start_ts_arg
         ts_end = end_ts_arg
     else:
-        target_date = date_str if date_str else datetime.now(LOCAL_TZ).strftime('%Y-%m-%d')
+        target_date = date_str if date_str else datetime.now(common.LOCAL_TZ).strftime('%Y-%m-%d')
         try:
             local_dt_start = datetime.strptime(target_date, '%Y-%m-%d')
-            local_dt_start = LOCAL_TZ.localize(local_dt_start)
+            local_dt_start = common.LOCAL_TZ.localize(local_dt_start)
             ts_start = local_dt_start.timestamp()
             ts_end = (local_dt_start + timedelta(days=1)).timestamp()
         except ValueError:
@@ -197,7 +135,7 @@ def get_timeline():
                 meta = {
                     'count': 1,
                     'breakdown': {fail_type: 1},
-                    'sample_msg': decode_message(r['message'])
+                    'sample_msg': common.decode_message(r['message'])
                 }
 
             current_block = [
@@ -231,7 +169,7 @@ def get_timeline():
 
 @app.route('/api/logs')
 def get_logs():
-    conn = get_db_connection()
+    conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
@@ -240,15 +178,15 @@ def get_logs():
     cameras = request.args.getlist('camera')
     event_types = request.args.getlist('type')
     fail_types = request.args.getlist('error')
-    alert_sent_vals = request.args.getlist('alert_sent') # New: Multi-select for Alert Sent
+    alert_sent_vals = request.args.getlist('alert_sent')
     
     search_text = request.args.get('search', '')
     id_search = request.args.get('id_search', '')
     
-    created_from = parse_frontend_datetime(request.args.get('created_from'))
-    created_to = parse_frontend_datetime(request.args.get('created_to'))
-    video_from = parse_frontend_datetime(request.args.get('video_from'))
-    video_to = parse_frontend_datetime(request.args.get('video_to'))
+    created_from = common.parse_frontend_datetime(request.args.get('created_from'))
+    created_to = common.parse_frontend_datetime(request.args.get('created_to'))
+    video_from = common.parse_frontend_datetime(request.args.get('video_from'))
+    video_to = common.parse_frontend_datetime(request.args.get('video_to'))
     
     dur_min = request.args.get('dur_min', type=float)
     dur_max = request.args.get('dur_max', type=float)
@@ -287,7 +225,6 @@ def get_logs():
         where_clauses.append(f"fail_type IN ({placeholders})")
         params.extend(fail_types)
 
-    # Alert Sent (0 or 1) - Now handled as Multi-select
     if alert_sent_vals and 'all' not in alert_sent_vals:
         placeholders = ','.join(['?'] * len(alert_sent_vals))
         where_clauses.append(f"alert_sent IN ({placeholders})")
@@ -357,16 +294,16 @@ def get_logs():
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
-            display_msg = r['search_text'] if r['search_text'] else decode_message(r['message'])
+            display_msg = r['search_text'] if r['search_text'] else common.decode_message(r['message'])
 
             data.append({
                 'id': r['id'],
-                'time': format_timestamp(r['created_at']),
+                'time': common.format_timestamp(r['created_at']),
                 'camera': r['camera'],
                 'type': r['type'],
                 'status': r['status'],
-                'video_start': format_timestamp(r['start_ts']),
-                'video_end': format_timestamp(r['end_ts']),
+                'video_start': common.format_timestamp(r['start_ts']),
+                'video_end': common.format_timestamp(r['end_ts']),
                 'duration': f"{r['duration']}s" if r['duration'] else "-",
                 'size': f"{size_mb:.2f} MB",
                 'process_sec': f"{r['process_sec']}s" if r['process_sec'] else "-",
@@ -382,7 +319,7 @@ def get_logs():
 
 @app.route('/api/performance')
 def get_performance():
-    conn = get_db_connection()
+    conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
     
@@ -398,7 +335,7 @@ def get_performance():
         rows = cursor.execute(query_perf, (cutoff_ts,)).fetchall()
         
         perf_data = {
-            'categories': [format_timestamp(r['created_at']) for r in rows],
+            'categories': [common.format_timestamp(r['created_at']) for r in rows],
             'duration': [r['duration'] for r in rows],
             'processing': [r['process_sec'] for r in rows]
         }
@@ -419,7 +356,7 @@ def get_performance():
 
 @app.route('/api/filters')
 def get_filters():
-    conn = get_db_connection()
+    conn = common.get_db_connection()
     if not conn: return jsonify({'cameras': [], 'types': [], 'errors': []})
     try:
         cams = conn.execute("SELECT DISTINCT camera FROM events ORDER BY camera").fetchall()
@@ -435,4 +372,4 @@ def get_filters():
         conn.close()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+    app.run(host='0.0.0.0', port=common.PORT, debug=False)
