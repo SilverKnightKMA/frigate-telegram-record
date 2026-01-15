@@ -14,6 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code và giao diện
+COPY common.py .
 COPY web_dashboard.py .
 COPY templates/ ./templates/
 
