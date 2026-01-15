@@ -42,6 +42,22 @@ update_service_status() {
     mv "$DATA_DIR/status.json.tmp" "$DATA_DIR/status.json"
 }
 
+# [Ops] Signal Trap for Graceful Shutdown
+# Purpose: Terminates background jobs and cleans resources to ensure safe container stop.
+cleanup_on_exit() {
+    log "Received termination signal. Stopping background tasks..."
+    # [Ops] Status Update on Exit
+    update_service_status "STOPPING" "Signal received. Shutting down."
+    
+    # Send SIGTERM to all active background jobs spawned by this shell
+    jobs -p | xargs -r kill -SIGTERM
+    wait
+    rm -rf "$TEMP_DIR"/*
+    rm -f "$LOCK_FILE"
+    log "Shutdown complete."
+    exit 0
+}
+
 # [Ops] Log Rotation Logic
 # Purpose: Checks the main log file size and rotates it if it exceeds the configured limit 
 # to ensure the file remains manageable and easy to open.

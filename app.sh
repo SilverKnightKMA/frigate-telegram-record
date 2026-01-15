@@ -13,32 +13,14 @@ source /app/lib/05-core.sh
 source /app/lib/06-pipelines.sh
 source /app/lib/07-scheduler.sh
 
-# [Ops] Lock File Definition (Dynamic by Mode)
-# Purpose: Unique lock per mode allows running 'record' and 'timelapse' in parallel,
-# but prevents multiple instances of the SAME mode (e.g. 2 recorders).
-LOCK_FILE="/tmp/app_${MODE}.lock"
-
 # [Ops] Signal Trap for Graceful Shutdown
-# Purpose: Terminates background jobs and cleans resources to ensure safe container stop.
-cleanup_on_exit() {
-    log "Received termination signal. Stopping background tasks..."
-    # [Ops] Status Update on Exit
-    update_service_status "STOPPING" "Signal received. Shutting down."
-    
-    # Send SIGTERM to all active background jobs spawned by this shell
-    jobs -p | xargs -r kill -SIGTERM
-    wait
-    rm -rf "$TEMP_DIR"/*
-    rm -f "$LOCK_FILE"
-    log "Shutdown complete."
-    exit 0
-}
+# Purpose: Registers the cleanup handler defined in 02-utils.sh
 trap cleanup_on_exit SIGTERM SIGINT
 
 # [Ops] Startup Recovery & Cleanup
-# Purpose: Cleans temp directory on boot to remove artifacts from previous crashes (OOM kills, power loss),
-# ensuring a fresh state before validation starts.
+# Purpose: Cleans temp directory on boot ensuring a fresh state before validation starts.
 rm -rf "$TEMP_DIR"/*
+
 # [Ops] Status Update on Boot
 update_service_status "STARTING" "Initializing application..."
 
@@ -57,9 +39,6 @@ echo $$ > "$LOCK_FILE"
 
 # 2. Validation
 log_debug "Starting validation process..."
-
-# [Ops] Fail-Fast Dependency Check
-# Purpose: Verify all required tools exist before proceeding to main loops.
 verify_system_dependencies
 
 if [ ${#CAMERA_ARRAY[@]} -eq 0 ]; then
@@ -72,7 +51,6 @@ log_debug "Environment check: MODE=$MODE, TZ=$TZ, DATA_DIR=$DATA_DIR"
 echo "[INFO] System Timezone: $TZ"
 
 # [Ops] Startup Log Maintenance
-# Purpose: Perform an initial log rotation check when the container starts.
 rotate_log_file
 
 # 3. Init Database
@@ -80,168 +58,37 @@ log_debug "Initializing database schema..."
 init_db
 
 # 4. Main Execution Switch
-if [ "$MODE" == "test" ]; then
-    log ">>> STARTING TEST MODE <<<"
-    update_service_status "RUNNING" "Test mode execution"
-    log_debug "Executing single cycle for duration: ${TEST_REC_DURATION_MIN}m"
-    execute_cycle "$TEST_REC_DURATION_MIN" "test"
-    rm -f "$LOCK_FILE"
-    exit 0
+case "$MODE" in
+    "test")
+        log ">>> STARTING TEST MODE <<<"
+        update_service_status "RUNNING" "Test mode execution"
+        log_debug "Executing single cycle for duration: ${TEST_REC_DURATION_MIN}m"
+        execute_cycle "$TEST_REC_DURATION_MIN" "test"
+        rm -f "$LOCK_FILE"
+        exit 0
+        ;;
+    
+    "record")
+        # Logic moved to 07-scheduler.sh for modularity
+        run_record_daemon
+        ;;
 
-elif [ "$MODE" == "record" ]; then
-    log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
-    while true; do
-        log_debug "--- NEW RECORDING LOOP START ---"
-        # [Ops] Status Update: Processing
-        update_service_status "RUNNING" "Processing recording cycle"
-        
-        # [Ops] Pre-Flight System Checks
-        # Purpose: Validate resources (log size, disk space/writability) before starting a new cycle.
-        rotate_log_file
-        if ! check_disk_space; then
-            log "⚠️ Pausing cycle due to storage issues. Retrying in 5 minutes..."
-            update_service_status "ERROR" "Disk space critical. Paused."
-            smart_wait 300
-            continue
-        fi
+    "test_timelapse")
+        log ">>> STARTING TIMELAPSE TEST MODE (Last $TIMELAPSE_HOURS hours) <<<"
+        update_service_status "RUNNING" "Test timelapse execution"
+        execute_timelapse_cycle "test_timelapse" "$TIMELAPSE_HOURS"
+        rm -f "$LOCK_FILE"
+        exit 0
+        ;;
 
-        # [Ops] Performance Monitoring - Start Timer
-        cycle_start_ts=$(date +%s)
+    "timelapse")
+        # Logic moved to 07-scheduler.sh for modularity
+        run_timelapse_daemon
+        ;;
 
-        execute_cycle "$REC_DURATION_MIN" "record"
-        
-        # [Ops] Performance Monitoring - End Timer & Log
-        cycle_end_ts=$(date +%s)
-        cycle_duration=$((cycle_end_ts - cycle_start_ts))
-        log "🔄 Record Cycle completed in ${cycle_duration}s."
-
-        # [Ops] Update Heartbeat
-        # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
-        touch "$DATA_DIR/.heartbeat"
-
-        current_ts=$(date +%s)
-        duration_sec=$((REC_DURATION_MIN * 60))
-        
-        # Calculate sleep time to align with next interval
-        seconds_into_cycle=$(( current_ts % duration_sec ))
-        seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
-        final_sleep=$(( seconds_to_sleep + 20 ))
-        
-        log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
-        log "Sleeping ${final_sleep}s..."
-        
-        # [Ops] Status Update: Sleeping
-        update_service_status "SLEEPING" "Waiting for next cycle (${final_sleep}s)"
-        
-        # [Ops] Smart Wait
-        # Purpose: Keep container 'healthy' during wait time.
-        smart_wait "$final_sleep"
-    done
-
-# --- TIMELAPSE MODES ---
-
-elif [ "$MODE" == "test_timelapse" ]; then
-    log ">>> STARTING TIMELAPSE TEST MODE (Last $TIMELAPSE_HOURS hours) <<<"
-    update_service_status "RUNNING" "Test timelapse execution"
-    execute_timelapse_cycle "test_timelapse" "$TIMELAPSE_HOURS"
-    rm -f "$LOCK_FILE"
-    exit 0
-
-elif [ "$MODE" == "timelapse" ]; then
-    log ">>> STARTING TIMELAPSE DAEMON (Block: ${TIMELAPSE_HOURS}h) <<<"
-
-    while true; do
-        log_debug "--- NEW TIMELAPSE LOOP START ---"
-        # [Ops] Status Update: Processing
-        update_service_status "RUNNING" "Processing timelapse block"
-
-        # [Ops] Pre-Flight System Checks
-        # Purpose: Validate resources (log size, disk space/writability) before starting intensive rendering tasks.
-        rotate_log_file
-        if ! check_disk_space; then
-            log "⚠️ Pausing timelapse cycle due to storage issues. Retrying in 5 minutes..."
-            update_service_status "ERROR" "Disk space critical. Paused."
-            smart_wait 300
-            continue
-        fi
-
-        # [Ops] Performance Monitoring - Start Timer
-        cycle_start_ts=$(date +%s)
-
-        # Run cycle and capture exit status
-        execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
-        CYCLE_STATUS=$?
-        log_debug "Timelapse cycle finished with exit status: $CYCLE_STATUS"
-
-        # [Ops] Performance Monitoring - End Timer & Log
-        cycle_end_ts=$(date +%s)
-        cycle_duration=$((cycle_end_ts - cycle_start_ts))
-        log "🔄 Timelapse Cycle completed in ${cycle_duration}s."
-
-        # [Ops] Update Heartbeat
-        # Purpose: Updates timestamp for Docker Healthcheck to confirm loop is active.
-        touch "$DATA_DIR/.heartbeat"
-
-        # === RETRY LOGIC ===
-        if [ $CYCLE_STATUS -ne 0 ]; then
-            if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
-                log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
-                log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
-                
-                update_service_status "RETRY" "Cycle error. Retrying in ${TIMELAPSE_RETRY_SLEEP_SEC}s"
-                
-                # [Ops] Smart Wait for Retry
-                smart_wait "$TIMELAPSE_RETRY_SLEEP_SEC"
-                
-                continue # Skip long sleep and retry immediately
-            else
-                log "⚠️ Cycle completed with ERRORS. Strict retry disabled. Continuing to schedule..."
-            fi
-        fi
-
-        # === SLEEP LOGIC (SUCCESS) ===
-        # Only reached if CYCLE_STATUS = 0 (Success) or TIMELAPSE_STRICT_RETRY = false
-        
-        current_ts=$(date +%s)
-        
-        # Recalculate TZ offset dynamically
-        tz_str=$(date +%z)
-        tz_sign=${tz_str:0:1}
-        tz_hour=${tz_str:1:2}
-        tz_min=${tz_str:3:2}
-        tz_offset_sec=$(( (tz_hour * 3600) + (tz_min * 60) ))
-        if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
-        
-        local_ts=$((current_ts + tz_offset_sec))
-        duration_sec=$((TIMELAPSE_HOURS * 3600))
-        
-        # Calculate sleep to wake up 30s after the next block finishes
-        seconds_into_cycle=$(( local_ts % duration_sec ))
-        seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
-        final_sleep=$(( seconds_to_sleep + 30 ))
-        
-        log_debug "Timelapse Sleep Math: local_ts=$local_ts, into_cycle=${seconds_into_cycle}s, final_sleep=${final_sleep}s"
-        
-        if [ "$final_sleep" -gt 43200 ]; then 
-            log_debug "Final sleep exceeds 12h, capping to 1h per safety logic."
-            final_sleep=3600 
-        fi
-
-        sleep_h=$((final_sleep / 3600))
-        sleep_m=$(( (final_sleep % 3600) / 60 ))
-        sleep_s=$((final_sleep % 60))
-        
-        log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
-        
-        # [Ops] Status Update: Sleeping
-        update_service_status "SLEEPING" "Caught up. Waiting ${sleep_h}h ${sleep_m}m"
-        
-        # [Ops] Smart Wait until next block
-        smart_wait "$final_sleep"
-    done
-
-else
-    log "Invalid MODE: $MODE"
-    rm -f "$LOCK_FILE"
-    exit 1
-fi
+    *)
+        log "Invalid MODE: $MODE"
+        rm -f "$LOCK_FILE"
+        exit 1
+        ;;
+esac

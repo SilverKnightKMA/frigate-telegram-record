@@ -37,6 +37,14 @@ if [ -z "${DATA_DIR:-}" ]; then
     if [ -d "./data" ]; then DATA_DIR="./data"; else DATA_DIR="/app/data"; fi
 fi
 
+REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
+TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
+MODE="${MODE:-record}"
+
+# [Ops] Lock File Definition
+# Purpose: Unique lock per mode allows running 'record' and 'timelapse' in parallel.
+LOCK_FILE="/tmp/app_${MODE}.lock"
+
 TEMP_DIR="${TEMP_DIR:-/dev/shm/frigate_clips}"
 LOG_FILE="$DATA_DIR/execution.log"
 DB_FILE="$DATA_DIR/video_history.sqlite"
@@ -63,11 +71,7 @@ HEARTBEAT_INTERVAL_SEC="${HEARTBEAT_INTERVAL_SEC:-60}"
 # [Ops] Resource Monitoring Limits
 # Purpose: Define thresholds for log rotation and disk space safety checks to prevent system exhaustion.
 MAX_LOG_SIZE_BYTES="${MAX_LOG_SIZE_BYTES:-10485760}" # 10MB default limit for log file
-MIN_DISK_SPACE_MB="${MIN_DISK_SPACE_MB:-500}"       # Minimum free space required (in MB) to start operations
-
-REC_DURATION_MIN="${REC_DURATION_MIN:-15}"
-TEST_REC_DURATION_MIN="${TEST_REC_DURATION_MIN:-1}"
-MODE="${MODE:-record}"
+MIN_DISK_SPACE_MB="${MIN_DISK_SPACE_MB:-500}"        # Minimum free space required (in MB) to start operations
 
 DEBUG="${DEBUG:-false}" # Enable detailed debug logging
 NOTIFY_ON_RECOVERY="${NOTIFY_ON_RECOVERY:-true}" # Controls notification behavior upon recovery
@@ -75,9 +79,9 @@ MIN_DURATION_PERCENT="${MIN_DURATION_PERCENT:-90}" # Threshold for success perce
 
 # --- TIMELAPSE SETTINGS ---
 TIMELAPSE_THREAD_ID="${TIMELAPSE_THREAD_ID:-33}" 
-TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"       
-TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"     
-TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"          
+TIMELAPSE_HOURS="${TIMELAPSE_HOURS:-6}"        
+TIMELAPSE_SPEED="${TIMELAPSE_SPEED:-600}"      
+TIMELAPSE_FPS="${TIMELAPSE_FPS:-30}"           
 TIMELAPSE_QUALITY="${TIMELAPSE_QUALITY:-24}" 
 VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
 TIMELAPSE_CHUNK_SIZE_SEC="${TIMELAPSE_CHUNK_SIZE_SEC:-3600}"

@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # SCHEDULER MODULE
-# Purpose: Manage time windows, batch processing, and execution cycles.
+# Purpose: Manage time windows, batch processing, execution cycles, and daemon loops.
 # ==============================================================================
 
 process_time_window() {
@@ -168,4 +168,147 @@ execute_timelapse_cycle() {
     log "--- TIMELAPSE CYCLE END ---"
     
     return $cycle_has_error
+}
+
+# [Ops] Main Recording Daemon Loop
+# Purpose: Encapsulates the infinite loop logic for standard recording mode.
+run_record_daemon() {
+    log ">>> STARTING DAEMON MODE (${REC_DURATION_MIN}m) <<<"
+    while true; do
+        log_debug "--- NEW RECORDING LOOP START ---"
+        # [Ops] Status Update: Processing
+        update_service_status "RUNNING" "Processing recording cycle"
+        
+        # [Ops] Pre-Flight System Checks
+        rotate_log_file
+        if ! check_disk_space; then
+            log "⚠️ Pausing cycle due to storage issues. Retrying in 5 minutes..."
+            update_service_status "ERROR" "Disk space critical. Paused."
+            smart_wait 300
+            continue
+        fi
+
+        # [Ops] Performance Monitoring - Start Timer
+        local cycle_start_ts=$(date +%s)
+
+        execute_cycle "$REC_DURATION_MIN" "record"
+        
+        # [Ops] Performance Monitoring - End Timer & Log
+        local cycle_end_ts=$(date +%s)
+        local cycle_duration=$((cycle_end_ts - cycle_start_ts))
+        log "🔄 Record Cycle completed in ${cycle_duration}s."
+
+        # [Ops] Update Heartbeat
+        touch "$DATA_DIR/.heartbeat"
+
+        local current_ts=$(date +%s)
+        local duration_sec=$((REC_DURATION_MIN * 60))
+        
+        # Calculate sleep time to align with next interval
+        local seconds_into_cycle=$(( current_ts % duration_sec ))
+        local seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
+        local final_sleep=$(( seconds_to_sleep + 20 ))
+        
+        log_debug "Cycle Math: current_ts=$current_ts, into_cycle=${seconds_into_cycle}s, to_sleep=${seconds_to_sleep}s"
+        log "Sleeping ${final_sleep}s..."
+        
+        # [Ops] Status Update: Sleeping
+        update_service_status "SLEEPING" "Waiting for next cycle (${final_sleep}s)"
+        
+        # [Ops] Smart Wait
+        smart_wait "$final_sleep"
+    done
+}
+
+# [Ops] Main Timelapse Daemon Loop
+# Purpose: Encapsulates the infinite loop logic for timelapse mode.
+run_timelapse_daemon() {
+    log ">>> STARTING TIMELAPSE DAEMON (Block: ${TIMELAPSE_HOURS}h) <<<"
+
+    while true; do
+        log_debug "--- NEW TIMELAPSE LOOP START ---"
+        # [Ops] Status Update: Processing
+        update_service_status "RUNNING" "Processing timelapse block"
+
+        # [Ops] Pre-Flight System Checks
+        rotate_log_file
+        if ! check_disk_space; then
+            log "⚠️ Pausing timelapse cycle due to storage issues. Retrying in 5 minutes..."
+            update_service_status "ERROR" "Disk space critical. Paused."
+            smart_wait 300
+            continue
+        fi
+
+        # [Ops] Performance Monitoring - Start Timer
+        local cycle_start_ts=$(date +%s)
+
+        # Run cycle and capture exit status
+        execute_timelapse_cycle "timelapse" "$TIMELAPSE_HOURS"
+        local CYCLE_STATUS=$?
+        log_debug "Timelapse cycle finished with exit status: $CYCLE_STATUS"
+
+        # [Ops] Performance Monitoring - End Timer & Log
+        local cycle_end_ts=$(date +%s)
+        local cycle_duration=$((cycle_end_ts - cycle_start_ts))
+        log "🔄 Timelapse Cycle completed in ${cycle_duration}s."
+
+        # [Ops] Update Heartbeat
+        touch "$DATA_DIR/.heartbeat"
+
+        # === RETRY LOGIC ===
+        if [ $CYCLE_STATUS -ne 0 ]; then
+            if [ "$TIMELAPSE_STRICT_RETRY" == "true" ]; then
+                log "⚠️ Cycle completed with ERRORS. Entering Retry Mode."
+                log "Sleeping ${TIMELAPSE_RETRY_SLEEP_SEC}s before retrying missing slots..."
+                
+                update_service_status "RETRY" "Cycle error. Retrying in ${TIMELAPSE_RETRY_SLEEP_SEC}s"
+                
+                # [Ops] Smart Wait for Retry
+                smart_wait "$TIMELAPSE_RETRY_SLEEP_SEC"
+                
+                continue # Skip long sleep and retry immediately
+            else
+                log "⚠️ Cycle completed with ERRORS. Strict retry disabled. Continuing to schedule..."
+            fi
+        fi
+
+        # === SLEEP LOGIC (SUCCESS) ===
+        
+        local current_ts=$(date +%s)
+        
+        # Recalculate TZ offset dynamically
+        local tz_str=$(date +%z)
+        local tz_sign=${tz_str:0:1}
+        local tz_hour=${tz_str:1:2}
+        local tz_min=${tz_str:3:2}
+        local tz_offset_sec=$(( (tz_hour * 3600) + (tz_min * 60) ))
+        if [ "$tz_sign" == "-" ]; then tz_offset_sec=$((tz_offset_sec * -1)); fi
+        
+        local local_ts=$((current_ts + tz_offset_sec))
+        local duration_sec=$((TIMELAPSE_HOURS * 3600))
+        
+        # Calculate sleep to wake up 30s after the next block finishes
+        local seconds_into_cycle=$(( local_ts % duration_sec ))
+        local seconds_to_sleep=$(( duration_sec - seconds_into_cycle ))
+        local final_sleep=$(( seconds_to_sleep + 30 ))
+        
+        log_debug "Timelapse Sleep Math: local_ts=$local_ts, into_cycle=${seconds_into_cycle}s, final_sleep=${final_sleep}s"
+        
+        if [ "$final_sleep" -gt 43200 ]; then 
+            log_debug "Final sleep exceeds 12h, capping to 1h per safety logic."
+            final_sleep=3600 
+        fi
+
+        local sleep_h=$((final_sleep / 3600))
+        local sleep_m=$(( (final_sleep % 3600) / 60 ))
+        local sleep_s=$((final_sleep % 60))
+        
+        log "✅ All caught up. Sleeping ${sleep_h}h ${sleep_m}m ${sleep_s}s until next block..."
+        
+        # [Ops] Status Update: Sleeping
+        update_service_status "SLEEPING" "Caught up. Waiting ${sleep_h}h ${sleep_m}m"
+        
+        # [Ops] Smart Wait until next block
+        smart_wait "$final_sleep"
+    done
 }
