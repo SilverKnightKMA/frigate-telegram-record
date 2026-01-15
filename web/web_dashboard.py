@@ -259,64 +259,75 @@ def get_logs():
     size_min_mb = request.args.get('size_min', type=float)
     size_max_mb = request.args.get('size_max', type=float)
 
-    base_query = """
-        SELECT id, camera, type, status, created_at, message, search_text, duration, filesize, fail_type 
-        FROM events WHERE 1=1
-    """
+    # Build the WHERE clause dynamically
+    where_clauses = ["1=1"]
     params = []
 
-    # Basic filters
     if status != 'all':
-        base_query += " AND status = ?"
+        where_clauses.append("status = ?")
         params.append(status.upper())
     if camera != 'all':
-        base_query += " AND camera = ?"
+        where_clauses.append("camera = ?")
         params.append(camera)
     if event_type != 'all':
-        base_query += " AND type = ?"
+        where_clauses.append("type = ?")
         params.append(event_type)
     if fail_type != 'all':
-        base_query += " AND fail_type = ?"
+        where_clauses.append("fail_type = ?")
         params.append(fail_type)
     
-    # Advanced filters (Range)
     if created_from:
-        base_query += " AND created_at >= ?"
+        where_clauses.append("created_at >= ?")
         params.append(created_from)
     if created_to:
-        base_query += " AND created_at <= ?"
+        where_clauses.append("created_at <= ?")
         params.append(created_to)
         
     if video_from:
-        base_query += " AND start_ts >= ?"
+        where_clauses.append("start_ts >= ?")
         params.append(video_from)
     if video_to:
-        base_query += " AND end_ts <= ?"
+        where_clauses.append("end_ts <= ?")
         params.append(video_to)
 
     if dur_min is not None:
-        base_query += " AND duration >= ?"
+        where_clauses.append("duration >= ?")
         params.append(dur_min)
     if dur_max is not None:
-        base_query += " AND duration <= ?"
+        where_clauses.append("duration <= ?")
         params.append(dur_max)
         
     if size_min_mb is not None:
-        base_query += " AND filesize >= ?"
-        params.append(size_min_mb * 1024 * 1024) # Convert MB to Bytes
+        where_clauses.append("filesize >= ?")
+        params.append(size_min_mb * 1024 * 1024)
     if size_max_mb is not None:
-        base_query += " AND filesize <= ?"
-        params.append(size_max_mb * 1024 * 1024) # Convert MB to Bytes
+        where_clauses.append("filesize <= ?")
+        params.append(size_max_mb * 1024 * 1024)
 
     if search:
-        base_query += " AND (camera LIKE ? OR fail_type LIKE ? OR search_text LIKE ?)"
+        where_clauses.append("(camera LIKE ? OR fail_type LIKE ? OR search_text LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
-    base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
+    where_str = " AND ".join(where_clauses)
 
     try:
-        rows = cursor.execute(base_query, params).fetchall()
+        # 1. Execute Count Query first to support pagination
+        count_query = f"SELECT COUNT(*) FROM events WHERE {where_str}"
+        total_records = cursor.execute(count_query, params).fetchone()[0]
+
+        # 2. Execute Data Query including all requested columns
+        # Added: start_ts, end_ts, process_sec, msg_id, alert_sent to fulfill "display all columns" request
+        data_query = f"""
+            SELECT id, camera, type, status, created_at, message, search_text, 
+                   duration, filesize, fail_type, start_ts, end_ts, process_sec, msg_id, alert_sent
+            FROM events 
+            WHERE {where_str}
+            ORDER BY created_at DESC LIMIT ? OFFSET ?
+        """
+        # Append limit/offset params only for the data query
+        data_params = params + [limit, offset]
+        
+        rows = cursor.execute(data_query, data_params).fetchall()
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
@@ -328,12 +339,18 @@ def get_logs():
                 'camera': r['camera'],
                 'type': r['type'],
                 'status': r['status'],
+                'video_start': format_timestamp(r['start_ts']),
+                'video_end': format_timestamp(r['end_ts']),
                 'duration': f"{r['duration']}s" if r['duration'] else "-",
                 'size': f"{size_mb:.2f} MB",
+                'process_sec': f"{r['process_sec']}s" if r['process_sec'] else "-",
                 'error_type': r['fail_type'] or "-",
+                'msg_id': r['msg_id'] or "-",
+                'alert_sent': "Yes" if r['alert_sent'] else "No",
                 'message': display_msg
             })
-        return jsonify({'data': data, 'count': len(data)})
+        
+        return jsonify({'data': data, 'count': len(data), 'total': total_records})
     finally:
         conn.close()
 
