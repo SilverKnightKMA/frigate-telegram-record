@@ -45,7 +45,7 @@
 
         /* Data Table */
         .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; min-width: 1200px; /* Ensure table is wide enough for all columns */ }
+        table { width: 100%; border-collapse: collapse; min-width: 1200px; }
         th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
         th { background: #f9fafb; font-weight: 600; color: var(--text-sub); font-size: 0.85rem; }
         tr:hover { background: #f9fafb; cursor: pointer; }
@@ -73,9 +73,33 @@
         }
         dialog::backdrop { background: rgba(0,0,0,0.5); }
         .modal-header { padding: 15px 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb; }
-        .modal-body { padding: 20px; max-height: 60vh; overflow-y: auto; white-space: pre-wrap; font-family: monospace; background: #1e1e1e; color: #e5e7eb; line-height: 1.5; }
+        .modal-body { 
+            padding: 20px; max-height: 70vh; overflow-y: auto; 
+            background: #1e1e1e; color: #e5e7eb; 
+        }
+
+        /* Modal Details Grid */
+        .meta-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 12px; margin-bottom: 20px; 
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .meta-item { 
+            background: #2d2d2d; padding: 10px; border-radius: 6px; border: 1px solid #404040; 
+        }
+        .meta-label { 
+            color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px; display: block; 
+        }
+        .meta-value { 
+            color: #fff; font-size: 0.95rem; font-weight: 500; word-break: break-all; 
+        }
+        .raw-message-box {
+            background: #000; padding: 15px; border-radius: 6px; 
+            font-family: monospace; white-space: pre-wrap; line-height: 1.5; font-size: 0.9rem;
+            border: 1px solid #404040;
+        }
         
-        /* Filter Controls Grid Layout */
+        /* Filter Controls */
         .controls-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; padding: 15px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
         .control-group { display: flex; flex-direction: column; gap: 5px; }
         .control-label { font-size: 0.75rem; font-weight: 600; color: var(--text-sub); text-transform: uppercase; }
@@ -311,7 +335,6 @@
         let updateTimer = null;
         let timelineDebounce = null;
         
-        // Updated state for pagination
         let currentPage = 1;
         const ITEMS_PER_PAGE = 50;
         let totalRecords = 0;
@@ -559,7 +582,6 @@
             currentPage = page;
             const offset = (page - 1) * ITEMS_PER_PAGE;
             
-            // Collect filter values
             const status = document.getElementById('f-status').value;
             const cam = document.getElementById('f-camera').value;
             const type = document.getElementById('f-type').value;
@@ -596,7 +618,7 @@
                 const res = await fetch(`/api/logs?${params.toString()}`);
                 const json = await res.json();
                 
-                totalRecords = json.total; // Get total from backend
+                totalRecords = json.total; 
                 
                 tbody.innerHTML = '';
                 
@@ -608,7 +630,6 @@
 
                 json.data.forEach(row => {
                     const tr = document.createElement('tr');
-                    // Add new columns to the row HTML
                     tr.innerHTML = `
                         <td>${row.time}</td>
                         <td><strong>${row.camera}</strong></td>
@@ -704,25 +725,83 @@
             fillSelect('f-error', data.errors);
         }
 
+        // Updated showModal to display full DB Columns in Grid Layout
         function showModal(data) {
             document.getElementById('modal-title').innerText = `${data.camera} (${data.time})`;
+            const modalBody = document.getElementById('modal-content');
             
-            let content = "";
+            let contentHtml = "";
+
             if (data.isMerged) {
+                // Handle Merged Timeline Events
                 let errorList = "";
                 for (const [type, count] of Object.entries(data.meta.breakdown)) {
                     errorList += `- ${type}: ${count} lần\n`;
                 }
 
-                content = `TỔNG QUAN LỖI (${data.meta.count} sự kiện):\n` + 
-                          `--------------------------------------------------\n` +
-                          `${errorList}\n\n` +
-                          `MẪU LỖI ĐẦU TIÊN:\n${data.meta.sample_msg}`;
+                contentHtml = `<div class="raw-message-box">TỔNG QUAN LỖI (${data.meta.count} sự kiện):\n` + 
+                              `--------------------------------------------------\n` +
+                              `${errorList}\n\n` +
+                              `MẪU LỖI ĐẦU TIÊN:\n${data.meta.sample_msg}</div>`;
             } else {
-                content = data.message || "No content";
+                // Handle Single Detailed Event
+                // Render Metadata Grid
+                contentHtml = `
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">ID</span>
+                            <span class="meta-value">#${data.id}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status</span>
+                            <span class="meta-value" style="color: ${data.status === 'SUCCESS' ? 'var(--success)' : 'var(--danger)'}">${data.status}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Type</span>
+                            <span class="meta-value">${data.type}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Fail Type</span>
+                            <span class="meta-value" style="color: var(--danger)">${data.error_type}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Video Start</span>
+                            <span class="meta-value">${data.video_start}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Video End</span>
+                            <span class="meta-value">${data.video_end}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Duration</span>
+                            <span class="meta-value">${data.duration}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">File Size</span>
+                            <span class="meta-value">${data.size}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Processing Time</span>
+                            <span class="meta-value">${data.process_sec}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Telegram Msg ID</span>
+                            <span class="meta-value">${data.msg_id}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Alert Sent</span>
+                            <span class="meta-value">${data.alert_sent}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Created At</span>
+                            <span class="meta-value">${data.time}</span>
+                        </div>
+                    </div>
+                    <div class="raw-message-box">${data.message || "No message content"}</div>
+                `;
             }
 
-            document.getElementById('modal-content').innerText = content;
+            modalBody.innerHTML = contentHtml;
             document.getElementById('msg-modal').showModal();
         }
 
