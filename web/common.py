@@ -37,7 +37,7 @@ def get_db_connection():
         return None
     conn = None
     try:
-        db_uri = f"file:{DB_FILE}?mode=ro&immutable=1"
+        db_uri = f"file:{DB_FILE}?mode=ro"
         conn = sqlite3.connect(db_uri, uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("SELECT 1 FROM events LIMIT 1")
