@@ -45,19 +45,20 @@
 
         /* Data Table */
         .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+        table { width: 100%; border-collapse: collapse; min-width: 1200px; /* Ensure table is wide enough for all columns */ }
+        th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
         th { background: #f9fafb; font-weight: 600; color: var(--text-sub); font-size: 0.85rem; }
         tr:hover { background: #f9fafb; cursor: pointer; }
         
-        /* Load More Button */
-        .load-more-container { text-align: center; margin-top: 10px; }
-        .btn-load { 
-            padding: 8px 24px; background: white; border: 1px solid #d1d5db; border-radius: 6px; 
-            color: var(--text-main); cursor: pointer; font-weight: 500; transition: all 0.2s;
+        /* Pagination Controls */
+        .pagination-container { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 15px; }
+        .pagination-btn {
+            padding: 8px 12px; border: 1px solid #d1d5db; background: white; border-radius: 6px;
+            color: var(--text-main); cursor: pointer; font-size: 0.9rem; transition: all 0.2s;
         }
-        .btn-load:hover { background: #f3f4f6; border-color: #9ca3af; }
-        .btn-load:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination-btn:hover:not(:disabled) { background: #f3f4f6; border-color: #9ca3af; }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination-info { font-size: 0.9rem; color: var(--text-sub); margin: 0 10px; }
 
         /* Status Badges */
         .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
@@ -259,20 +260,28 @@
                 <table id="log-table">
                     <thead>
                         <tr>
-                            <th>Thời gian</th>
+                            <th>Created Time</th>
                             <th>Camera</th>
                             <th>Type</th>
-                            <th>Trạng thái</th>
+                            <th>Status</th>
+                            <th>Video Start</th>
+                            <th>Video End</th>
                             <th>Duration</th>
                             <th>Size</th>
-                            <th>Lỗi</th>
+                            <th>Process</th>
+                            <th>Fail Type</th>
+                            <th>Msg ID</th>
+                            <th>Alert Sent</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
             </div>
-            <div class="load-more-container">
-                <button id="btn-load-more" class="btn-load" onclick="loadLogs(true)">Xem thêm (50 dòng)</button>
+            
+            <div class="pagination-container" id="pagination-controls">
+                <button class="pagination-btn" id="btn-prev" onclick="changePage(-1)">Previous</button>
+                <span class="pagination-info" id="page-info">Page 1</span>
+                <button class="pagination-btn" id="btn-next" onclick="changePage(1)">Next</button>
             </div>
         </div>
     </div>
@@ -301,8 +310,11 @@
         let charts = {};
         let updateTimer = null;
         let timelineDebounce = null;
-        let logOffset = 0;
-        const LOG_LIMIT = 50;
+        
+        // Updated state for pagination
+        let currentPage = 1;
+        const ITEMS_PER_PAGE = 50;
+        let totalRecords = 0;
         
         let timelineState = {
             start: null,
@@ -524,9 +536,8 @@
         }
 
         function resetAndLoadLogs() {
-            logOffset = 0;
-            document.querySelector('#log-table tbody').innerHTML = '';
-            loadLogs(false);
+            currentPage = 1;
+            loadLogs(1);
         }
 
         function clearFilters() {
@@ -537,15 +548,24 @@
             resetAndLoadLogs();
         }
 
-        async function loadLogs(isAppend = false) {
-            // UPDATED: Collect values from expanded filter set
+        function changePage(delta) {
+            const newPage = currentPage + delta;
+            if (newPage > 0) {
+                loadLogs(newPage);
+            }
+        }
+
+        async function loadLogs(page) {
+            currentPage = page;
+            const offset = (page - 1) * ITEMS_PER_PAGE;
+            
+            // Collect filter values
             const status = document.getElementById('f-status').value;
             const cam = document.getElementById('f-camera').value;
             const type = document.getElementById('f-type').value;
             const error = document.getElementById('f-error').value;
             const search = document.getElementById('f-search').value;
             
-            // New filters
             const createdFrom = document.getElementById('f-created-from').value;
             const createdTo = document.getElementById('f-created-to').value;
             const videoFrom = document.getElementById('f-video-from').value;
@@ -555,24 +575,18 @@
             const sizeMin = document.getElementById('f-size-min').value;
             const sizeMax = document.getElementById('f-size-max').value;
 
-            const btnLoad = document.getElementById('btn-load-more');
-            btnLoad.innerText = "Đang tải...";
-            btnLoad.disabled = true;
-
             const tbody = document.querySelector('#log-table tbody');
-            if (!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Đang tải dữ liệu...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Đang tải dữ liệu trang ' + page + '...</td></tr>';
 
             try {
-                // Build query string
                 const params = new URLSearchParams({
                     status: status,
                     camera: cam,
                     type: type,
                     error: error,
                     search: search,
-                    limit: LOG_LIMIT,
-                    offset: logOffset,
-                    // Append new params
+                    limit: ITEMS_PER_PAGE,
+                    offset: offset,
                     created_from: createdFrom, created_to: createdTo,
                     video_from: videoFrom, video_to: videoTo,
                     dur_min: durMin, dur_max: durMax,
@@ -582,43 +596,55 @@
                 const res = await fetch(`/api/logs?${params.toString()}`);
                 const json = await res.json();
                 
-                if (!isAppend) tbody.innerHTML = '';
+                totalRecords = json.total; // Get total from backend
+                
+                tbody.innerHTML = '';
                 
                 if(json.data.length === 0) {
-                    if(!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
-                    btnLoad.innerText = "Hết dữ liệu";
+                    tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+                    renderPagination(0);
                     return;
                 }
 
                 json.data.forEach(row => {
                     const tr = document.createElement('tr');
+                    // Add new columns to the row HTML
                     tr.innerHTML = `
                         <td>${row.time}</td>
                         <td><strong>${row.camera}</strong></td>
                         <td>${row.type}</td>
                         <td><span class="badge ${row.status.toLowerCase()}">${row.status}</span></td>
+                        <td>${row.video_start}</td>
+                        <td>${row.video_end}</td>
                         <td>${row.duration}</td>
                         <td>${row.size}</td>
+                        <td>${row.process_sec}</td>
                         <td style="color:var(--danger)">${row.error_type}</td>
+                        <td>${row.msg_id}</td>
+                        <td>${row.alert_sent}</td>
                     `;
                     tr.onclick = () => showModal(row);
                     tbody.appendChild(tr);
                 });
 
-                logOffset += LOG_LIMIT;
-                
-                if (json.data.length < LOG_LIMIT) {
-                    btnLoad.innerText = "Đã hiển thị hết";
-                    btnLoad.disabled = true;
-                } else {
-                    btnLoad.innerText = "Xem thêm (50 dòng)";
-                    btnLoad.disabled = false;
-                }
+                renderPagination(totalRecords);
 
             } catch (e) {
-                if(!isAppend) tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Lỗi kết nối server</td></tr>';
-                btnLoad.innerText = "Lỗi tải trang";
+                console.error(e);
+                tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Lỗi kết nối server</td></tr>';
             }
+        }
+
+        function renderPagination(total) {
+            const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+            const btnPrev = document.getElementById('btn-prev');
+            const btnNext = document.getElementById('btn-next');
+            const pageInfo = document.getElementById('page-info');
+
+            btnPrev.disabled = currentPage === 1;
+            btnNext.disabled = currentPage >= totalPages || totalPages === 0;
+            
+            pageInfo.innerText = `Page ${currentPage} of ${totalPages || 1} (Total: ${total})`;
         }
 
         async function loadPerformance() {
