@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY common.py .
 COPY web_dashboard.py .
 COPY templates/ ./templates/
+COPY static/ ./static/
 
 # Thiết lập biến môi trường
 ENV TZ=Asia/Ho_Chi_Minh
