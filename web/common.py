@@ -8,7 +8,8 @@ from datetime import datetime
 # System Configuration
 DB_FILE = os.path.abspath(os.environ.get('DB_FILE', '/app/data/video_history.sqlite'))
 PORT = int(os.environ.get('WEB_PORT', '8080'))
-LOCAL_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
+env_tz = os.environ.get('TZ', 'Asia/Ho_Chi_Minh')
+LOCAL_TZ = pytz.timezone(env_tz)
 
 def diagnose_db_issues(db_path, error_msg):
     """
