@@ -52,19 +52,15 @@ def format_timestamp(ts):
     return dt_local.strftime('%Y-%m-%d %H:%M:%S')
 
 def decode_message(b64_msg):
-    # Decodes Base64 to human-readable string
     if not b64_msg: return ""
     try:
         return base64.b64decode(b64_msg).decode('utf-8', errors='replace')
     except Exception:
         return str(b64_msg)
 
-# Helper to convert ISO string input from frontend to timestamp
 def parse_frontend_datetime(iso_str):
     if not iso_str: return None
     try:
-        # Frontend 'datetime-local' sends format: YYYY-MM-DDTHH:MM
-        # We parse it as naive time, assume it is LOCAL_TZ, then convert to timestamp
         dt = datetime.strptime(iso_str, "%Y-%m-%dT%H:%M")
         localized = LOCAL_TZ.localize(dt)
         return localized.timestamp()
@@ -239,18 +235,16 @@ def get_logs():
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
 
-    # --- Multi-select Filters (Arrays) ---
-    # Using getlist to retrieve multiple values for the same key
+    # --- Filters ---
     statuses = request.args.getlist('status')
     cameras = request.args.getlist('camera')
     event_types = request.args.getlist('type')
     fail_types = request.args.getlist('error')
+    alert_sent_vals = request.args.getlist('alert_sent') # New: Multi-select for Alert Sent
     
-    # --- Text/Numeric Filters ---
     search_text = request.args.get('search', '')
-    id_search = request.args.get('id_search', '') # New: Event ID or Msg ID
+    id_search = request.args.get('id_search', '')
     
-    # --- Range Filters ---
     created_from = parse_frontend_datetime(request.args.get('created_from'))
     created_to = parse_frontend_datetime(request.args.get('created_to'))
     video_from = parse_frontend_datetime(request.args.get('video_from'))
@@ -261,20 +255,18 @@ def get_logs():
     size_min_mb = request.args.get('size_min', type=float)
     size_max_mb = request.args.get('size_max', type=float)
     
-    # New: Process Time and Alert Sent
     proc_min = request.args.get('process_min', type=float)
     proc_max = request.args.get('process_max', type=float)
-    alert_sent = request.args.get('alert_sent', 'all') # '1', '0', or 'all'
 
     # Pagination
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
 
-    # Build the WHERE clause dynamically
+    # SQL Building
     where_clauses = ["1=1"]
     params = []
 
-    # 1. Multi-select logic (IN clause)
+    # 1. Multi-selects
     if statuses and 'all' not in statuses:
         placeholders = ','.join(['?'] * len(statuses))
         where_clauses.append(f"status IN ({placeholders})")
@@ -295,26 +287,22 @@ def get_logs():
         where_clauses.append(f"fail_type IN ({placeholders})")
         params.extend(fail_types)
 
+    # Alert Sent (0 or 1) - Now handled as Multi-select
+    if alert_sent_vals and 'all' not in alert_sent_vals:
+        placeholders = ','.join(['?'] * len(alert_sent_vals))
+        where_clauses.append(f"alert_sent IN ({placeholders})")
+        params.extend(alert_sent_vals)
+
     # 2. Text Search
     if search_text:
-        # Search in Camera, Fail Type, or Message Content
         where_clauses.append("(camera LIKE ? OR fail_type LIKE ? OR search_text LIKE ?)")
         params.extend([f"%{search_text}%", f"%{search_text}%", f"%{search_text}%"])
         
     if id_search:
-        # Search specifically in ID or MsgID (CAST to TEXT for partial match)
-        # Allows entering "105" to find ID 105 or MsgID 105
         where_clauses.append("(CAST(id AS TEXT) LIKE ? OR CAST(msg_id AS TEXT) LIKE ?)")
         params.extend([f"%{id_search}%", f"%{id_search}%"])
 
-    # 3. Numeric/Boolean Filters
-    if alert_sent != 'all':
-        if alert_sent == '1':
-            where_clauses.append("alert_sent = 1")
-        elif alert_sent == '0':
-            where_clauses.append("alert_sent = 0")
-
-    # 4. Range Filters
+    # 3. Ranges
     if created_from:
         where_clauses.append("created_at >= ?")
         params.append(created_from)
@@ -353,11 +341,9 @@ def get_logs():
     where_str = " AND ".join(where_clauses)
 
     try:
-        # Execute Count Query
         count_query = f"SELECT COUNT(*) FROM events WHERE {where_str}"
         total_records = cursor.execute(count_query, params).fetchone()[0]
 
-        # Execute Data Query
         data_query = f"""
             SELECT id, camera, type, status, created_at, message, search_text, 
                    duration, filesize, fail_type, start_ts, end_ts, process_sec, msg_id, alert_sent
@@ -371,8 +357,6 @@ def get_logs():
         data = []
         for r in rows:
             size_mb = (r['filesize'] or 0) / (1024 * 1024)
-            # Prioritize search_text (which is plain text from script), 
-            # if empty fallback to decode_message (Base64 from message column)
             display_msg = r['search_text'] if r['search_text'] else decode_message(r['message'])
 
             data.append({
@@ -389,7 +373,7 @@ def get_logs():
                 'error_type': r['fail_type'] or "-",
                 'msg_id': r['msg_id'] or "-",
                 'alert_sent': "Yes" if r['alert_sent'] else "No",
-                'message': display_msg # This is now explicitly decoded text
+                'message': display_msg
             })
         
         return jsonify({'data': data, 'count': len(data), 'total': total_records})
