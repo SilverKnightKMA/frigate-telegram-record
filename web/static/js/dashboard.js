@@ -22,6 +22,17 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFilters(); 
     loadTimeline(timelineState.start, timelineState.end);
     
+    // Sync datetime inputs between top and bottom toolbars
+    document.querySelectorAll('.ts-start, .ts-end').forEach(input => {
+        input.addEventListener('change', function() {
+            const isStart = this.classList.contains('ts-start');
+            const className = isStart ? '.ts-start' : '.ts-end';
+            document.querySelectorAll(className).forEach(el => {
+                if (el !== this) el.value = this.value;
+            });
+        });
+    });
+    
     // Close multi-selects when clicking outside
     document.addEventListener('click', function(e) {
         if (!e.target.closest('.multi-select')) {
@@ -111,8 +122,9 @@ function syncTimelineInputs() {
         const localDate = new Date(date.getTime() - offsetMs);
         return localDate.toISOString().slice(0, 16);
     };
-    document.getElementById('ts-start').value = toLocalISO(timelineState.start);
-    document.getElementById('ts-end').value = toLocalISO(timelineState.end);
+    // Sync all datetime inputs (top and bottom toolbars)
+    document.querySelectorAll('.ts-start').forEach(el => el.value = toLocalISO(timelineState.start));
+    document.querySelectorAll('.ts-end').forEach(el => el.value = toLocalISO(timelineState.end));
 }
 
 function setWindow(hours) {
@@ -133,11 +145,15 @@ function moveTime(direction) {
 }
 
 function applyCustomRange() {
-    const startVal = document.getElementById('ts-start').value;
-    const endVal = document.getElementById('ts-end').value;
+    // Get value from any of the datetime inputs (they should be synced)
+    const startInputs = document.querySelectorAll('.ts-start');
+    const endInputs = document.querySelectorAll('.ts-end');
+    const startVal = startInputs[0]?.value;
+    const endVal = endInputs[0]?.value;
     if (startVal && endVal) {
         timelineState.start = new Date(startVal).getTime();
         timelineState.end = new Date(endVal).getTime();
+        syncTimelineInputs(); // Sync all inputs
         loadTimeline(timelineState.start, timelineState.end);
     }
 }

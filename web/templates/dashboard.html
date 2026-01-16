@@ -10,7 +10,7 @@
 <body>
 
     <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('timeline')">Timeline & Gaps</button>
+        <button class="tab-btn active" onclick="switchTab('timeline')">Tổng quan</button>
         <button class="tab-btn" onclick="switchTab('logs')">Lịch sử chi tiết</button>
         <button class="tab-btn" onclick="switchTab('perf')">Hiệu năng</button>
         <div style="margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--text-sub);">
@@ -19,6 +19,38 @@
     </div>
 
     <div id="tab-timeline" class="tab-content active">
+        <!-- Filter Toolbar (Top) -->
+        <div class="timeline-toolbar" id="filter-top">
+            <div class="timeline-btn-group">
+                <span class="timeline-label">Giờ:</span>
+                <button class="btn-group-item" onclick="setWindow(1)">1h</button>
+                <button class="btn-group-item" onclick="setWindow(6)">6h</button>
+                <button class="btn-group-item" onclick="setWindow(12)">12h</button>
+                <button class="btn-group-item" onclick="setWindow(24)">24h</button>
+            </div>
+
+            <div class="timeline-btn-group">
+                <span class="timeline-label">Dài hạn:</span>
+                <button class="btn-group-item" onclick="setWindow(72)">3 Ngày</button>
+                <button class="btn-group-item" onclick="setWindow(168)">1 Tuần</button>
+                <button class="btn-group-item" onclick="setWindow(720)">1 Tháng</button>
+                <button class="btn-group-item" onclick="setWindow(2160)">1 Quý</button>
+                <button class="btn-group-item" onclick="setWindow(8760)">1 Năm</button>
+            </div>
+
+            <div class="timeline-btn-group" style="margin-left:auto">
+                <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮</button>
+                <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">❯</button>
+            </div>
+
+            <div class="timeline-btn-group">
+                <input type="datetime-local" id="ts-start-top" class="ts-start" style="font-size:0.8rem; width: 130px;">
+                <span style="color:var(--text-sub); margin:0 5px">-</span>
+                <input type="datetime-local" id="ts-end-top" class="ts-end" style="font-size:0.8rem; width: 130px;">
+                <button class="action-btn" style="padding: 6px 12px; margin-left: 5px;" onclick="applyCustomRange()">Go</button>
+            </div>
+        </div>
+
         <!-- Timeline Statistics Section -->
         <div class="grid-4">
             <div class="card">
@@ -59,7 +91,15 @@
                 <h3>Timeline Ghi hình</h3>
             </div>
             
-            <div class="timeline-toolbar">
+            <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
+                <span style="display:inline-block;width:12px;height:12px;background:#10b981;margin-right:5px;border-radius:2px;"></span>Success
+                <span style="display:inline-block;width:12px;height:12px;background:#ef4444;margin-right:5px;margin-left:10px;border-radius:2px;"></span>Failed
+                <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data
+            </div>
+            <div id="chart-timeline" style="min-height: 500px;"></div>
+
+            <!-- Filter Toolbar (Bottom) -->
+            <div class="timeline-toolbar" id="filter-bottom" style="margin-top: 15px;">
                 <div class="timeline-btn-group">
                     <span class="timeline-label">Giờ:</span>
                     <button class="btn-group-item" onclick="setWindow(1)">1h</button>
@@ -83,19 +123,12 @@
                 </div>
 
                 <div class="timeline-btn-group">
-                    <input type="datetime-local" id="ts-start" style="font-size:0.8rem; width: 130px;">
+                    <input type="datetime-local" id="ts-start-bottom" class="ts-start" style="font-size:0.8rem; width: 130px;">
                     <span style="color:var(--text-sub); margin:0 5px">-</span>
-                    <input type="datetime-local" id="ts-end" style="font-size:0.8rem; width: 130px;">
+                    <input type="datetime-local" id="ts-end-bottom" class="ts-end" style="font-size:0.8rem; width: 130px;">
                     <button class="action-btn" style="padding: 6px 12px; margin-left: 5px;" onclick="applyCustomRange()">Go</button>
                 </div>
             </div>
-
-            <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
-                <span style="display:inline-block;width:12px;height:12px;background:#10b981;margin-right:5px;border-radius:2px;"></span>Success
-                <span style="display:inline-block;width:12px;height:12px;background:#ef4444;margin-right:5px;margin-left:10px;border-radius:2px;"></span>Failed
-                <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data
-            </div>
-            <div id="chart-timeline" style="min-height: 500px;"></div>
         </div>
     </div>
 
