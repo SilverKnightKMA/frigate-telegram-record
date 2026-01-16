@@ -411,6 +411,7 @@ trigger_failure_alert() {
     if [ "$existing_id" -eq 0 ]; then should_update="true";
     elif [ "$alert_repeat" == "true" ]; then should_update="true";
     elif [ "$duration_val" -gt "$prev_duration" ]; then should_update="true";
+    elif [ "$prev_alert_sent" -eq 0 ]; then should_update="true"; # [FIX] Allow update if alert never sent
     fi
 
     if [ "$should_update" != "true" ]; then

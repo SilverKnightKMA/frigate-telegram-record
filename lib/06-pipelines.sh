@@ -117,6 +117,11 @@ execute_clip_pipeline() {
             log_debug "[$src] Status: $_status, actual: $_actual, formatted: ${_fmt_actual}/${_fmt_expected} (${_percent}%)"
             
             if [ "$_status" == "skip" ]; then
+                # [FIX] If duration=0, still trigger alert for first-time notification
+                if [ "$_actual" -eq 0 ]; then
+                    pipe_duration=$(( $(date +%s) - pipe_start ))
+                    trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Video Corrupt/Empty (Duration: 0s)" "$run_mode" "0" "$current_filesize" "$pipe_duration"
+                fi
                 log_debug "[$src] Skipping video due to status"
                 rm -f "$filepath"
                 return
