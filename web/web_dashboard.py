@@ -325,6 +325,54 @@ def get_peak_activity():
     finally:
         conn.close()
 
+@app.route('/api/type_comparison')
+def get_type_comparison():
+    """Compare metrics between RECORD and TIMELAPSE event types"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        query = """
+            SELECT 
+                type,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
+                ROUND(SUM(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as success_rate,
+                SUM(filesize) as total_bytes,
+                ROUND(AVG(duration), 1) as avg_duration,
+                ROUND(AVG(process_sec), 2) as avg_process
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+            GROUP BY type
+        """
+        rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+
+        types = []
+        for r in rows:
+            total_bytes = r['total_bytes'] or 0
+            types.append({
+                'type': r['type'] or 'UNKNOWN',
+                'total': r['total'],
+                'success': r['success'],
+                'failed': r['failed'],
+                'success_rate': r['success_rate'] or 0,
+                'storage_mb': round(total_bytes / (1024 * 1024), 2),
+                'avg_duration': r['avg_duration'] or 0,
+                'avg_process': r['avg_process'] or 0
+            })
+
+        return jsonify({'types': types})
+    finally:
+        conn.close()
+
 @app.route('/api/trend_comparison')
 def get_trend_comparison():
     """Compare current period metrics with previous period of same duration"""

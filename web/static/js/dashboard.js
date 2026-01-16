@@ -378,6 +378,7 @@ async function loadTimeline(minTs, maxTs) {
     loadCameraPerformance(minTs, maxTs);
     loadDurationDistribution(minTs, maxTs);
     loadPeakActivity(minTs, maxTs);
+    loadTypeComparison(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
@@ -868,6 +869,91 @@ async function loadDurationDistribution(minTs, maxTs) {
         }
     } catch (e) {
         console.error('Load Duration Distribution Error', e);
+    }
+}
+
+async function loadTypeComparison(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/type_comparison?start=${minTs / 1000}&end=${maxTs / 1000}`);
+        const data = await res.json();
+
+        const container = document.querySelector('#chart-type-compare');
+        if (!container) return;
+
+        // Validate data
+        if (!data.types || data.types.length === 0) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
+            return;
+        }
+
+        // Reset container if showing "no data" message
+        if (container.innerHTML.includes('Không có dữ liệu')) {
+            container.innerHTML = '';
+        }
+
+        const categories = data.types.map(t => t.type);
+        const successData = data.types.map(t => t.success);
+        const failedData = data.types.map(t => t.failed);
+
+        const options = {
+            series: [
+                { name: 'Success', data: successData },
+                { name: 'Failed', data: failedData }
+            ],
+            chart: {
+                type: 'bar',
+                height: 300,
+                stacked: true,
+                toolbar: { show: false },
+                animations: { enabled: false }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '50%',
+                    borderRadius: 4
+                }
+            },
+            colors: ['#10b981', '#ef4444'],
+            xaxis: {
+                categories: categories,
+                title: { text: 'Loại Event' }
+            },
+            yaxis: {
+                title: { text: 'Số lượng' }
+            },
+            legend: { position: 'top' },
+            dataLabels: {
+                enabled: true,
+                formatter: function(val) { return val > 0 ? val : ''; },
+                style: { fontSize: '11px' }
+            },
+            tooltip: {
+                custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                    const typeData = data.types[dataPointIndex];
+                    return `
+                        <div style="padding: 10px; font-size: 12px; line-height: 1.6;">
+                            <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">${typeData.type}</div>
+                            <div><span style="color:#666">Tổng:</span> ${typeData.total}</div>
+                            <div><span style="color:#10b981">✓</span> Success: ${typeData.success} | <span style="color:#ef4444">✗</span> Failed: ${typeData.failed}</div>
+                            <div><span style="color:#666">Tỉ lệ thành công:</span> ${typeData.success_rate}%</div>
+                            <div><span style="color:#666">Dung lượng:</span> ${typeData.storage_mb} MB</div>
+                            <div><span style="color:#666">Độ dài TB:</span> ${typeData.avg_duration}s</div>
+                            <div><span style="color:#666">Xử lý TB:</span> ${typeData.avg_process}s</div>
+                        </div>
+                    `;
+                }
+            }
+        };
+
+        if (charts.typeCompare) {
+            charts.typeCompare.updateOptions(options);
+        } else {
+            charts.typeCompare = new ApexCharts(container, options);
+            charts.typeCompare.render();
+        }
+    } catch (e) {
+        console.error('Load Type Comparison Error', e);
     }
 }
 
