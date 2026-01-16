@@ -10,8 +10,7 @@
 <body>
 
     <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('overview')">Tổng quan</button>
-        <button class="tab-btn" onclick="switchTab('timeline')">Timeline & Gaps</button>
+        <button class="tab-btn active" onclick="switchTab('timeline')">Timeline & Gaps</button>
         <button class="tab-btn" onclick="switchTab('logs')">Lịch sử chi tiết</button>
         <button class="tab-btn" onclick="switchTab('perf')">Hiệu năng</button>
         <div style="margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--text-sub);">
@@ -19,42 +18,7 @@
         </div>
     </div>
 
-    <div id="tab-overview" class="tab-content active">
-        <div class="grid-4">
-            <div class="card">
-                <div class="metric-title">Tỷ lệ thành công (24h)</div>
-                <div class="metric-value" id="m-health">-%</div>
-                <div class="metric-sub" id="m-total">trên tổng 0 job</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Dung lượng lưu trữ</div>
-                <div class="metric-value" id="m-storage">0 MB</div>
-                <div class="metric-sub">trong 24h qua</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Thời gian xử lý TB</div>
-                <div class="metric-value" id="m-process">0s</div>
-                <div class="metric-sub">giây / video</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Trạng thái hệ thống</div>
-                <div class="metric-value" id="m-status">Checking...</div>
-            </div>
-        </div>
-
-        <div class="chart-row">
-            <div class="card">
-                <h3 style="margin-bottom:15px">Thống kê Record (Success/Failed)</h3>
-                <div id="chart-daily"></div>
-            </div>
-            <div class="card">
-                <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
-                <div id="chart-reasons"></div>
-            </div>
-        </div>
-    </div>
-
-    <div id="tab-timeline" class="tab-content">
+    <div id="tab-timeline" class="tab-content active">
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
                 <h3>Timeline Ghi hình</h3>

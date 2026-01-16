@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncTimelineInputs(); 
 
     loadFilters(); 
-    loadOverview();
+    loadTimeline(timelineState.start, timelineState.end);
     
     // Close multi-selects when clicking outside
     document.addEventListener('click', function(e) {
@@ -175,6 +175,7 @@ async function loadTimelineStats(minTs, maxTs) {
         document.getElementById('tl-total').innerText = `${m.success} thành công / ${m.failed} thất bại`;
         document.getElementById('tl-storage').innerText = m.storage;
         document.getElementById('tl-process').innerText = `${m.avg_process}s`;
+        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
         
         const statusEl = document.getElementById('tl-status');
         if (m.total === 0) {
@@ -207,12 +208,24 @@ function renderTimelineStackedBar(data) {
             { name: 'Success', data: successData },
             { name: 'Failed', data: failedData }
         ],
-        chart: { type: 'bar', height: 300, stacked: true, toolbar: { show: false } },
+        chart: { 
+            type: 'area', 
+            height: 300, 
+            toolbar: { show: false },
+            zoom: { enabled: false }
+        },
         colors: ['#10b981', '#ef4444'],
-        plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
+        stroke: { curve: 'smooth', width: 2 },
+        fill: { 
+            type: 'gradient',
+            gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1 }
+        },
         xaxis: { categories: categories },
+        yaxis: { title: { text: 'Số lượng' } },
         legend: { position: 'top' },
-        dataLabels: { enabled: false }
+        dataLabels: { enabled: false },
+        markers: { size: 4, hover: { size: 6 } },
+        tooltip: { shared: true, intersect: false }
     };
 
     if (charts.tlDaily) {
@@ -226,25 +239,48 @@ function renderTimelineStackedBar(data) {
 function renderTimelineDonut(data) {
     if (!data.labels || data.labels.length === 0) {
         if (charts.tlReasons) {
-            charts.tlReasons.updateSeries([]);
+            charts.tlReasons.destroy();
+            charts.tlReasons = null;
         }
         document.querySelector("#tl-chart-reasons").innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có lỗi trong khoảng thời gian này</div>';
         return;
     }
 
+    // Reset container if was showing "no data" message
+    const container = document.querySelector("#tl-chart-reasons");
+    if (!charts.tlReasons && container.innerHTML.includes('Không có lỗi')) {
+        container.innerHTML = '';
+    }
+
     const options = {
-        series: data.series,
-        chart: { type: 'donut', height: 300 },
-        labels: data.labels,
-        colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'],
-        legend: { position: 'bottom' },
-        dataLabels: { enabled: true }
+        series: [{ name: 'Số lỗi', data: data.series }],
+        chart: { type: 'bar', height: 300, toolbar: { show: false } },
+        plotOptions: { 
+            bar: { 
+                horizontal: true, 
+                borderRadius: 4,
+                dataLabels: { position: 'end' }
+            } 
+        },
+        colors: ['#ef4444'],
+        xaxis: { 
+            categories: data.labels,
+            title: { text: 'Số lượng lỗi' }
+        },
+        dataLabels: { 
+            enabled: true,
+            style: { fontSize: '12px', colors: ['#333'] },
+            offsetX: -10
+        },
+        tooltip: {
+            y: { formatter: (val) => `${val} lỗi` }
+        }
     };
 
     if (charts.tlReasons) {
         charts.tlReasons.updateOptions(options);
     } else {
-        charts.tlReasons = new ApexCharts(document.querySelector("#tl-chart-reasons"), options);
+        charts.tlReasons = new ApexCharts(container, options);
         charts.tlReasons.render();
     }
 }
