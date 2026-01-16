@@ -162,6 +162,28 @@ def get_timeline_stats():
         """
         fail_reasons = cursor.execute(query_reasons, (start_ts, end_ts)).fetchall()
 
+        # Storage data with same time grouping as daily stats
+        query_storage = f"""
+            SELECT 
+                {sql_expr} as time_bucket,
+                CASE WHEN type LIKE '%timelapse%' THEN 'timelapse' ELSE 'record' END as event_type,
+                SUM(filesize) as total_bytes
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+            GROUP BY time_bucket, event_type
+            ORDER BY time_bucket ASC
+        """
+        storage_rows = cursor.execute(query_storage, (start_ts, end_ts)).fetchall()
+        
+        # Aggregate storage by time bucket
+        storage_by_bucket = {}
+        for r in storage_rows:
+            bucket = r['time_bucket']
+            if bucket not in storage_by_bucket:
+                storage_by_bucket[bucket] = {'record': 0, 'timelapse': 0}
+            size_mb = round((r['total_bytes'] or 0) / (1024 * 1024), 2)
+            storage_by_bucket[bucket][r['event_type']] += size_mb
+
         # Format labels based on granularity type
         def format_time_label(time_bucket, granularity, label_format):
             if granularity == "15min":
@@ -184,6 +206,18 @@ def get_timeline_stats():
                 return dt.strftime(label_format)
             return str(time_bucket)
 
+        # Build aligned time labels for both charts
+        time_labels = [format_time_label(row['time_bucket'], granularity, label_format) for row in daily_stats]
+        
+        # Build storage arrays aligned with time_labels
+        storage_record = []
+        storage_timelapse = []
+        for row in daily_stats:
+            bucket = row['time_bucket']
+            bucket_data = storage_by_bucket.get(bucket, {'record': 0, 'timelapse': 0})
+            storage_record.append(round(bucket_data['record'], 2))
+            storage_timelapse.append(round(bucket_data['timelapse'], 2))
+
         return jsonify({
             'total': total,
             'success': success_count,
@@ -194,6 +228,11 @@ def get_timeline_stats():
             'charts': {
                 'daily': [{'label': format_time_label(row['time_bucket'], granularity, label_format), 'success': row['success'], 'failed': row['failed']} for row in daily_stats],
                 'granularity': granularity,
+                'time_labels': time_labels,
+                'storage': {
+                    'record': storage_record,
+                    'timelapse': storage_timelapse
+                },
                 'reasons': {
                     'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons],
                     'series': [r['count'] for r in fail_reasons]
@@ -205,7 +244,7 @@ def get_timeline_stats():
 
 @app.route('/api/duration_distribution')
 def get_duration_distribution():
-    """Get duration distribution histogram for videos"""
+    """Get duration distribution histogram for videos - separated by Record and Timelapse"""
     conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -219,6 +258,7 @@ def get_duration_distribution():
     try:
         query = """
             SELECT 
+                CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END as category,
                 CASE 
                     WHEN duration < 30 THEN '0-30s'
                     WHEN duration < 60 THEN '30-60s'
@@ -232,8 +272,9 @@ def get_duration_distribution():
                 SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
             FROM events
             WHERE start_ts >= ? AND start_ts <= ?
-            GROUP BY duration_bucket
+            GROUP BY category, duration_bucket
             ORDER BY 
+                category,
                 CASE duration_bucket
                     WHEN '0-30s' THEN 1
                     WHEN '30-60s' THEN 2
@@ -245,9 +286,20 @@ def get_duration_distribution():
         """
         rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
 
-        buckets = [{'range': r['duration_bucket'], 'total': r['count'], 'success': r['success'], 'failed': r['failed']} for r in rows]
+        # Organize by category
+        record_buckets = []
+        timelapse_buckets = []
+        for r in rows:
+            bucket = {'range': r['duration_bucket'], 'total': r['count'], 'success': r['success'], 'failed': r['failed']}
+            if r['category'] == 'Record':
+                record_buckets.append(bucket)
+            else:
+                timelapse_buckets.append(bucket)
 
-        return jsonify({'buckets': buckets})
+        return jsonify({
+            'record': record_buckets,
+            'timelapse': timelapse_buckets
+        })
     finally:
         conn.close()
 
@@ -266,7 +318,7 @@ def get_peak_activity():
 
     try:
         duration_hours = (end_ts - start_ts) / 3600
-        day_labels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
+        day_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         hour_labels = [f"{h:02d}:00" for h in range(24)]
 
         if duration_hours <= 24:
@@ -783,20 +835,22 @@ def get_performance():
         start_ts = end_ts - (7 * 24 * 60 * 60)
 
     try:
-        # Get aggregated performance stats by type
+        # Get aggregated performance stats by type (including failed events for success rate)
         query_perf = """
             SELECT 
                 CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END as category,
-                COUNT(*) as count,
-                AVG(duration) as avg_duration,
-                MIN(duration) as min_duration,
-                MAX(duration) as max_duration,
-                AVG(process_sec) as avg_process,
-                MIN(process_sec) as min_process,
-                MAX(process_sec) as max_process,
-                AVG(CASE WHEN duration > 0 THEN process_sec * 1.0 / duration ELSE 0 END) as avg_ratio
+                COUNT(*) as total_count,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_count,
+                AVG(CASE WHEN status = 'SUCCESS' THEN duration ELSE NULL END) as avg_duration,
+                MIN(CASE WHEN status = 'SUCCESS' THEN duration ELSE NULL END) as min_duration,
+                MAX(CASE WHEN status = 'SUCCESS' THEN duration ELSE NULL END) as max_duration,
+                AVG(CASE WHEN status = 'SUCCESS' THEN process_sec ELSE NULL END) as avg_process,
+                MIN(CASE WHEN status = 'SUCCESS' THEN process_sec ELSE NULL END) as min_process,
+                MAX(CASE WHEN status = 'SUCCESS' THEN process_sec ELSE NULL END) as max_process,
+                AVG(CASE WHEN status = 'SUCCESS' AND duration > 0 THEN process_sec * 1.0 / duration ELSE NULL END) as avg_ratio,
+                SUM(filesize) as total_bytes
             FROM events 
-            WHERE status = 'SUCCESS' AND start_ts >= ? AND start_ts <= ?
+            WHERE start_ts >= ? AND start_ts <= ?
             GROUP BY category
         """
         rows = cursor.execute(query_perf, (start_ts, end_ts)).fetchall()
@@ -806,14 +860,23 @@ def get_performance():
             'count': [],
             'avg_duration': [],
             'avg_process': [],
-            'ratio': []
+            'ratio': [],
+            'success_rate': [],
+            'storage_mb': []
         }
         for r in rows:
+            total = r['total_count'] or 0
+            success = r['success_count'] or 0
+            success_rate = round((success / total * 100), 1) if total > 0 else 0
+            storage_mb = round((r['total_bytes'] or 0) / (1024 * 1024), 2)
+            
             perf_data['categories'].append(r['category'])
-            perf_data['count'].append(r['count'])
+            perf_data['count'].append(total)
             perf_data['avg_duration'].append(round(r['avg_duration'] or 0, 1))
             perf_data['avg_process'].append(round(r['avg_process'] or 0, 1))
             perf_data['ratio'].append(round((r['avg_ratio'] or 0) * 100, 2))  # ratio as percentage
+            perf_data['success_rate'].append(success_rate)
+            perf_data['storage_mb'].append(storage_mb)
 
         # Adaptive Storage Chart Query - choose granularity based on time range
         duration_hours = (end_ts - start_ts) / 3600

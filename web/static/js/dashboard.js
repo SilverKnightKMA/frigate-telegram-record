@@ -162,7 +162,7 @@ async function loadOverview() {
     // This function is deprecated - timeline tab now handles stats
     // Keeping for backwards compatibility but doing nothing
     try {
-        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
+        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('en-US');
     } catch (e) { /* Element may not exist */ }
 }
 
@@ -173,22 +173,22 @@ async function loadTimelineStats(minTs, maxTs) {
 
         document.getElementById('tl-health').innerText = `${m.success_rate}%`;
         document.getElementById('tl-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
-        document.getElementById('tl-total').innerText = `${m.success} thành công / ${m.failed} thất bại`;
+        document.getElementById('tl-total').innerText = `${m.success} success / ${m.failed} failed`;
         document.getElementById('tl-storage').innerText = m.storage;
         document.getElementById('tl-process').innerText = `${m.avg_process}s`;
-        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
+        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('en-US');
         
         const statusEl = document.getElementById('tl-status');
         if (m.total === 0) {
-            statusEl.innerText = 'Không có dữ liệu';
+            statusEl.innerText = 'No Data';
             statusEl.style.color = 'var(--text-sub)';
             document.getElementById('tl-status-sub').innerText = '';
         } else if (m.success_rate > 95) {
-            statusEl.innerText = 'Ổn định';
+            statusEl.innerText = 'Stable';
             statusEl.style.color = 'var(--success)';
             document.getElementById('tl-status-sub').innerText = `${m.total} events`;
         } else {
-            statusEl.innerText = 'Cần kiểm tra';
+            statusEl.innerText = 'Needs Review';
             statusEl.style.color = 'var(--danger)';
             document.getElementById('tl-status-sub').innerText = `${m.total} events`;
         }
@@ -196,6 +196,11 @@ async function loadTimelineStats(minTs, maxTs) {
         // Render charts for timeline tab
         renderTimelineStackedBar(m.charts.daily);
         renderTimelineDonut(m.charts.reasons);
+        
+        // Render storage chart with same time axis
+        if (m.charts.storage && m.charts.time_labels) {
+            renderStorageChart(m.charts.time_labels, m.charts.storage);
+        }
         
         // Load trend comparison data
         loadTrendComparison(minTs, maxTs);
@@ -275,7 +280,7 @@ async function loadProcessingEfficiency(minTs, maxTs) {
         if (data.error || (data.record_ratio === null && data.timelapse_ratio === null)) {
             ratioEl.innerText = '-';
             ratioEl.style.color = 'var(--text-sub)';
-            if (ratioSubEl) ratioSubEl.innerText = 'Không có dữ liệu';
+            if (ratioSubEl) ratioSubEl.innerText = 'No data';
             return;
         }
 
@@ -308,12 +313,48 @@ async function loadProcessingEfficiency(minTs, maxTs) {
             if (timelapseRatio !== null) {
                 subParts.push(`TL: ${timelapseRatio.toFixed(3)}x (${data.timelapse_count})`);
             }
-            ratioSubEl.innerText = subParts.join(' | ') || 'Không có dữ liệu';
+            ratioSubEl.innerText = subParts.join(' | ') || 'No data';
         }
 
     } catch (e) {
         console.error('Load Processing Efficiency Error', e);
     }
+}
+
+function renderStorageChart(labels, storage) {
+    const options = {
+        series: [
+            { name: 'Record (MB)', data: storage.record || [] },
+            { name: 'Timelapse (MB)', data: storage.timelapse || [] }
+        ],
+        chart: { 
+            height: 300, 
+            type: 'bar', 
+            stacked: true,
+            animations: { enabled: false },
+            toolbar: { show: true },
+            id: 'storageChart',
+            group: 'timeSync'
+        },
+        plotOptions: {
+            bar: { horizontal: false, columnWidth: '70%' }
+        },
+        xaxis: { 
+            categories: labels,
+            labels: { rotate: -45, rotateAlways: labels.length > 15 }
+        },
+        yaxis: { title: { text: 'Size (MB)' } },
+        colors: ['#2563eb', '#10b981'],
+        dataLabels: { enabled: false },
+        legend: { position: 'top' },
+        tooltip: {
+            y: { formatter: (val) => val.toFixed(2) + ' MB' }
+        }
+    };
+    
+    if(charts.storeBar) charts.storeBar.destroy();
+    charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), options);
+    charts.storeBar.render();
 }
 
 function renderTimelineStackedBar(data) {
@@ -330,7 +371,9 @@ function renderTimelineStackedBar(data) {
             type: 'area', 
             height: 300, 
             toolbar: { show: false },
-            zoom: { enabled: false }
+            zoom: { enabled: false },
+            id: 'dailyChart',
+            group: 'timeSync'
         },
         colors: ['#10b981', '#ef4444'],
         stroke: { curve: 'smooth', width: 2 },
@@ -349,8 +392,9 @@ function renderTimelineStackedBar(data) {
         }
     };
 
-    const chart = new ApexCharts(document.querySelector('#tl-chart-daily'), options);
-    chart.render();
+    if(charts.tlDaily) charts.tlDaily.destroy();
+    charts.tlDaily = new ApexCharts(document.querySelector('#tl-chart-daily'), options);
+    charts.tlDaily.render();
 }
 
 function renderTimelineDonut(data) {
@@ -359,13 +403,13 @@ function renderTimelineDonut(data) {
             charts.tlReasons.destroy();
             charts.tlReasons = null;
         }
-        document.querySelector("#tl-chart-reasons").innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có lỗi trong khoảng thời gian này</div>';
+        document.querySelector("#tl-chart-reasons").innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">No errors in selected time range</div>';
         return;
     }
 
     // Reset container if was showing "no data" message
     const container = document.querySelector("#tl-chart-reasons");
-    if (!charts.tlReasons && container.innerHTML.includes('Không có lỗi')) {
+    if (!charts.tlReasons && container.innerHTML.includes('No errors')) {
         container.innerHTML = '';
     }
 
@@ -467,7 +511,7 @@ async function loadTimeline(minTs, maxTs) {
                         showModal({
                             id: 'Merged',
                             camera: dp.x,
-                            time: new Date(dp.y[0]).toLocaleString('vi-VN'),
+                            time: new Date(dp.y[0]).toLocaleString('en-US'),
                             isMerged: true,
                             meta: dp.meta
                         });
@@ -488,18 +532,18 @@ async function loadTimeline(minTs, maxTs) {
         tooltip: { 
             custom: function({series, seriesIndex, dataPointIndex, w}) {
                 const data = w.config.series[seriesIndex].data[dataPointIndex];
-                const start = new Date(data.y[0]).toLocaleString('vi-VN');
-                const end = new Date(data.y[1]).toLocaleString('vi-VN');
+                const start = new Date(data.y[0]).toLocaleString('en-US');
+                const end = new Date(data.y[1]).toLocaleString('en-US');
                 const color = data.fillColor;
                 const status = data.statusStr;
                 const countInfo = data.meta ? `(${data.meta.count} events)` : '';
                 return `
                     <div class="apexcharts-tooltip-custom" style="padding: 10px; font-size: 12px; line-height: 1.6;">
                         <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">${data.x}</div>
-                        <div><span style="color:#666">Bắt đầu:</span> ${start}</div>
-                        <div><span style="color:#666">Kết thúc:</span> ${end}</div>
+                        <div><span style="color:#666">Start:</span> ${start}</div>
+                        <div><span style="color:#666">End:</span> ${end}</div>
                         <div style="margin-top:4px;">
-                            <span style="color:#666">Trạng thái:</span> 
+                            <span style="color:#666">Status:</span> 
                             <span style="color: ${color}; font-weight: 700;">${status}</span>
                             <span style="font-size:11px; color:#888; margin-left:5px;">${countInfo}</span>
                         </div>
@@ -604,7 +648,7 @@ async function loadLogs(page) {
     const procMax = document.getElementById('f-proc-max').value;
 
     const tbody = document.querySelector('#log-table tbody');
-    tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Đang tải dữ liệu trang ' + page + '...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Loading page ' + page + '...</td></tr>';
 
     try {
         const params = new URLSearchParams();
@@ -644,7 +688,7 @@ async function loadLogs(page) {
         
         tbody.innerHTML = '';
         if(json.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="loading-row">No data found</td></tr>';
             renderPagination(0);
             return;
         }
@@ -676,7 +720,7 @@ async function loadLogs(page) {
         renderPagination(totalRecords);
     } catch (e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Lỗi kết nối server</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Server connection error</td></tr>';
     }
 }
 
@@ -773,84 +817,86 @@ async function loadPerformance(minTs, maxTs) {
             return;
         }
     
-    // Bar chart: Performance comparison by type
+    // Merged chart: Performance comparison by type with count, success rate, duration, process time
     const perfCategories = data.performance.categories || [];
     const perfCount = data.performance.count || [];
+    const successRates = data.performance.success_rate || [];
+    const storageMb = data.performance.storage_mb || [];
+    
     const optPerf = {
         series: [
-            { name: 'Độ dài TB (giây)', data: data.performance.avg_duration || [] },
-            { name: 'Xử lý TB (giây)', data: data.performance.avg_process || [] }
+            { name: 'Total Count', data: perfCount, type: 'column' },
+            { name: 'Avg Duration (s)', data: data.performance.avg_duration || [], type: 'line' },
+            { name: 'Avg Process (s)', data: data.performance.avg_process || [], type: 'line' },
+            { name: 'Success Rate (%)', data: successRates, type: 'line' }
         ],
         chart: { 
-            height: 280, 
-            type: 'bar',
+            height: 320, 
+            type: 'line',
             animations: { enabled: false },
-            toolbar: { show: false }
+            toolbar: { show: true }
+        },
+        stroke: {
+            width: [0, 3, 3, 3],
+            curve: 'smooth'
         },
         plotOptions: {
-            bar: { horizontal: false, columnWidth: '60%', dataLabels: { position: 'top' } }
+            bar: { horizontal: false, columnWidth: '50%', borderRadius: 4 }
         },
         dataLabels: {
-            enabled: true,
-            formatter: function(val) { return val + 's'; },
-            offsetY: -20,
-            style: { fontSize: '11px', colors: ['#333'] }
+            enabled: false
         },
         xaxis: { 
-            categories: perfCategories
+            categories: perfCategories,
+            title: { text: 'Event Type' }
         },
-        yaxis: { 
-            title: { text: 'Seconds' },
-            labels: { formatter: function(val) { return Math.round(val); } }
-        },
-        colors: ['#2563eb', '#f59e0b'],
+        yaxis: [
+            { 
+                title: { text: 'Count' },
+                labels: { formatter: function(val) { return Math.round(val); } }
+            },
+            {
+                opposite: true,
+                title: { text: 'Duration / Process / Rate' },
+                labels: { formatter: function(val) { return val.toFixed(1); } },
+                min: 0
+            }
+        ],
+        colors: ['#6366f1', '#2563eb', '#f59e0b', '#10b981'],
         legend: { position: 'top' },
-        tooltip: {
-            y: { formatter: function(val) { return val + ' giây'; } }
+        markers: {
+            size: [0, 5, 5, 5],
+            strokeWidth: 2,
+            hover: { size: 7 }
         },
-        annotations: {
-            xaxis: perfCategories.map((cat, i) => ({
-                x: cat,
-                label: {
-                    text: `${perfCount[i] || 0} videos`,
-                    style: { fontSize: '10px', color: '#666' }
-                }
-            }))
+        tooltip: {
+            shared: true,
+            intersect: false,
+            custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                const cat = perfCategories[dataPointIndex];
+                const count = perfCount[dataPointIndex] || 0;
+                const duration = (data.performance.avg_duration || [])[dataPointIndex] || 0;
+                const process = (data.performance.avg_process || [])[dataPointIndex] || 0;
+                const rate = successRates[dataPointIndex] || 0;
+                const storage = storageMb[dataPointIndex] || 0;
+                return `
+                    <div style="padding: 10px; font-size: 12px; line-height: 1.6;">
+                        <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">${cat}</div>
+                        <div><span style="color:#6366f1">●</span> Total: ${count} videos</div>
+                        <div><span style="color:#10b981">●</span> Success Rate: ${rate}%</div>
+                        <div><span style="color:#2563eb">●</span> Avg Duration: ${duration}s</div>
+                        <div><span style="color:#f59e0b">●</span> Avg Process: ${process}s</div>
+                        <div style="margin-top:4px;color:#666">Storage: ${storage} MB</div>
+                    </div>
+                `;
+            }
         }
     };
     if(charts.perfLine) charts.perfLine.destroy();
     charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optPerf);
     charts.perfLine.render();
 
-    // Stacked bar chart: Storage by type per day
-    const storageLabels = data.storage.labels || data.storage.dates || [];
-    const optBar = {
-        series: [
-            { name: 'Record (MB)', data: data.storage.record || [] },
-            { name: 'Timelapse (MB)', data: data.storage.timelapse || [] }
-        ],
-        chart: { 
-            height: 300, 
-            type: 'bar', 
-            stacked: true,
-            animations: { enabled: false },
-            toolbar: { show: true }
-        },
-        plotOptions: {
-            bar: { horizontal: false, columnWidth: '70%' }
-        },
-        xaxis: { 
-            categories: storageLabels,
-            labels: { rotate: -45, rotateAlways: storageLabels.length > 15 }
-        },
-        yaxis: { title: { text: 'Size (MB)' } },
-        colors: ['#2563eb', '#10b981'],
-        dataLabels: { enabled: false },
-        legend: { position: 'top' }
-    };
-    if(charts.storeBar) charts.storeBar.destroy();
-    charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);
-    charts.storeBar.render();
+    // Storage chart is now rendered from timeline_stats API for synchronized time axis
     } catch (e) { console.error("Load Performance Error", e); }
 }
 
@@ -859,156 +905,93 @@ async function loadDurationDistribution(minTs, maxTs) {
         const res = await fetch(`/api/duration_distribution?start=${minTs / 1000}&end=${maxTs / 1000}`);
         const data = await res.json();
 
-        const container = document.querySelector('#chart-duration-dist');
-        if (!container) return;
+        const recordContainer = document.querySelector('#chart-duration-record');
+        const timelapseContainer = document.querySelector('#chart-duration-timelapse');
 
-        // Validate data
-        if (!data.buckets || data.buckets.length === 0) {
-            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
-            return;
-        }
+        // Get all unique buckets
+        const allBuckets = ['0-30s', '30-60s', '1-3m', '3-5m', '5-10m', '10m+'];
 
-        // Reset container if showing "no data" message
-        if (container.innerHTML.includes('Không có dữ liệu')) {
-            container.innerHTML = '';
-        }
-
-        const categories = data.buckets.map(b => b.range);
-        const successData = data.buckets.map(b => b.success);
-        const failedData = data.buckets.map(b => b.failed);
-
-        const options = {
-            series: [
-                { name: 'Success', data: successData },
-                { name: 'Failed', data: failedData }
-            ],
-            chart: {
-                type: 'bar',
-                height: 300,
-                stacked: true,
-                toolbar: { show: false },
-                animations: { enabled: false }
-            },
-            plotOptions: {
-                bar: {
-                    horizontal: false,
-                    columnWidth: '60%',
-                    borderRadius: 4
+        // Helper function to render a single duration chart
+        const renderDurationChart = (container, chartKey, typeData, typeName, color) => {
+            if (!container) return;
+            
+            const hasData = typeData && typeData.length > 0;
+            
+            if (!hasData) {
+                container.innerHTML = `<div style="text-align:center;color:var(--text-sub);padding:50px;">No ${typeName.toLowerCase()} data in selected range</div>`;
+                if (charts[chartKey]) {
+                    charts[chartKey].destroy();
+                    charts[chartKey] = null;
                 }
-            },
-            colors: ['#10b981', '#ef4444'],
-            xaxis: {
-                categories: categories,
-                title: { text: 'Độ dài Video' }
-            },
-            yaxis: {
-                title: { text: 'Số lượng' }
-            },
-            legend: { position: 'top' },
-            dataLabels: {
-                enabled: true,
-                formatter: function(val) { return val > 0 ? val : ''; },
-                style: { fontSize: '11px' }
-            },
-            tooltip: {
-                y: { formatter: (val) => val + ' videos' }
+                return;
+            }
+
+            // Reset container if showing "no data" message
+            if (container.innerHTML.includes('No ')) {
+                container.innerHTML = '';
+            }
+
+            const chartData = allBuckets.map(bucket => {
+                const found = typeData.find(b => b.range === bucket);
+                return found ? found.total : 0;
+            });
+
+            const options = {
+                series: [{ name: typeName, data: chartData }],
+                chart: {
+                    type: 'bar',
+                    height: 280,
+                    toolbar: { show: false },
+                    animations: { enabled: false }
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: false,
+                        columnWidth: '60%',
+                        borderRadius: 4,
+                        distributed: true
+                    }
+                },
+                colors: [color],
+                xaxis: {
+                    categories: allBuckets,
+                    title: { text: 'Duration' }
+                },
+                yaxis: {
+                    title: { text: 'Count' }
+                },
+                legend: { show: false },
+                dataLabels: {
+                    enabled: true,
+                    formatter: function(val) { return val > 0 ? val : ''; },
+                    style: { fontSize: '11px' }
+                },
+                tooltip: {
+                    y: { formatter: (val) => val + ' videos' }
+                }
+            };
+
+            if (charts[chartKey]) {
+                charts[chartKey].updateOptions(options);
+            } else {
+                charts[chartKey] = new ApexCharts(container, options);
+                charts[chartKey].render();
             }
         };
 
-        if (charts.durationDist) {
-            charts.durationDist.updateOptions(options);
-        } else {
-            charts.durationDist = new ApexCharts(container, options);
-            charts.durationDist.render();
-        }
+        // Render separate charts for Record and Timelapse
+        renderDurationChart(recordContainer, 'durationRecord', data.record, 'Record', '#2563eb');
+        renderDurationChart(timelapseContainer, 'durationTimelapse', data.timelapse, 'Timelapse', '#10b981');
+
     } catch (e) {
         console.error('Load Duration Distribution Error', e);
     }
 }
 
+// Type comparison is now merged with performance chart - this function is deprecated
+// but kept for backwards compatibility
 async function loadTypeComparison(minTs, maxTs) {
-    try {
-        const res = await fetch(`/api/type_comparison?start=${minTs / 1000}&end=${maxTs / 1000}`);
-        const data = await res.json();
-
-        const container = document.querySelector('#chart-type-compare');
-        if (!container) return;
-
-        // Validate data
-        if (!data.types || data.types.length === 0) {
-            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
-            return;
-        }
-
-        // Reset container if showing "no data" message
-        if (container.innerHTML.includes('Không có dữ liệu')) {
-            container.innerHTML = '';
-        }
-
-        const categories = data.types.map(t => t.type);
-        const successData = data.types.map(t => t.success);
-        const failedData = data.types.map(t => t.failed);
-
-        const options = {
-            series: [
-                { name: 'Success', data: successData },
-                { name: 'Failed', data: failedData }
-            ],
-            chart: {
-                type: 'bar',
-                height: 300,
-                stacked: true,
-                toolbar: { show: false },
-                animations: { enabled: false }
-            },
-            plotOptions: {
-                bar: {
-                    horizontal: false,
-                    columnWidth: '50%',
-                    borderRadius: 4
-                }
-            },
-            colors: ['#10b981', '#ef4444'],
-            xaxis: {
-                categories: categories,
-                title: { text: 'Loại Event' }
-            },
-            yaxis: {
-                title: { text: 'Số lượng' }
-            },
-            legend: { position: 'top' },
-            dataLabels: {
-                enabled: true,
-                formatter: function(val) { return val > 0 ? val : ''; },
-                style: { fontSize: '11px' }
-            },
-            tooltip: {
-                custom: function({ series, seriesIndex, dataPointIndex, w }) {
-                    const typeData = data.types[dataPointIndex];
-                    return `
-                        <div style="padding: 10px; font-size: 12px; line-height: 1.6;">
-                            <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">${typeData.type}</div>
-                            <div><span style="color:#666">Tổng:</span> ${typeData.total}</div>
-                            <div><span style="color:#10b981">✓</span> Success: ${typeData.success} | <span style="color:#ef4444">✗</span> Failed: ${typeData.failed}</div>
-                            <div><span style="color:#666">Tỉ lệ thành công:</span> ${typeData.success_rate}%</div>
-                            <div><span style="color:#666">Dung lượng:</span> ${typeData.storage_mb} MB</div>
-                            <div><span style="color:#666">Độ dài TB:</span> ${typeData.avg_duration}s</div>
-                            <div><span style="color:#666">Xử lý TB:</span> ${typeData.avg_process}s</div>
-                        </div>
-                    `;
-                }
-            }
-        };
-
-        if (charts.typeCompare) {
-            charts.typeCompare.updateOptions(options);
-        } else {
-            charts.typeCompare = new ApexCharts(container, options);
-            charts.typeCompare.render();
-        }
-    } catch (e) {
-        console.error('Load Type Comparison Error', e);
-    }
+    // Merged into loadPerformance
 }
 
 async function loadPeakActivity(minTs, maxTs) {
@@ -1021,12 +1004,12 @@ async function loadPeakActivity(minTs, maxTs) {
 
         // Validate data
         if (!data.data || data.data.length === 0) {
-            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
+            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">No data for this time period</div>';
             return;
         }
 
         // Reset container if showing "no data" message
-        if (container.innerHTML.includes('Không có dữ liệu')) {
+        if (container.innerHTML.includes('No data')) {
             container.innerHTML = '';
         }
 
@@ -1038,13 +1021,13 @@ async function loadPeakActivity(minTs, maxTs) {
             categories = data.hour_labels;
             const hourData = new Array(24).fill(0);
             data.data.forEach(d => { hourData[d.hour] = d.count; });
-            series = [{ name: 'Hoạt động', data: hourData }];
+            series = [{ name: 'Activity', data: hourData }];
         } else if (data.granularity === 'day') {
             // Single series for days
             categories = data.day_labels;
             const dayData = new Array(7).fill(0);
             data.data.forEach(d => { dayData[d.day] = d.count; });
-            series = [{ name: 'Hoạt động', data: dayData }];
+            series = [{ name: 'Activity', data: dayData }];
         } else {
             // Heatmap: days x hours
             categories = data.hour_labels;
@@ -1074,11 +1057,11 @@ async function loadPeakActivity(minTs, maxTs) {
                     shadeIntensity: 0.5,
                     colorScale: {
                         ranges: [
-                            { from: 0, to: 0, color: '#e5e7eb', name: 'Không' },
-                            { from: 1, to: 10, color: '#bbf7d0', name: 'Thấp' },
-                            { from: 11, to: 30, color: '#4ade80', name: 'TB' },
-                            { from: 31, to: 60, color: '#22c55e', name: 'Cao' },
-                            { from: 61, to: 1000, color: '#15803d', name: 'Rất cao' }
+                            { from: 0, to: 0, color: '#e5e7eb', name: 'None' },
+                            { from: 1, to: 10, color: '#bbf7d0', name: 'Low' },
+                            { from: 11, to: 30, color: '#4ade80', name: 'Medium' },
+                            { from: 31, to: 60, color: '#22c55e', name: 'High' },
+                            { from: 61, to: 1000, color: '#15803d', name: 'Very High' }
                         ]
                     }
                 }
@@ -1086,7 +1069,7 @@ async function loadPeakActivity(minTs, maxTs) {
                 bar: { horizontal: false, columnWidth: '70%', borderRadius: 4 }
             },
             xaxis: { categories: categories },
-            yaxis: { title: { text: isHeatmap ? '' : 'Số lượng' } },
+            yaxis: { title: { text: isHeatmap ? '' : 'Count' } },
             legend: { show: isHeatmap, position: 'top' },
             tooltip: {
                 y: { formatter: (val) => val + ' events' }
@@ -1112,7 +1095,7 @@ async function loadCameraPerformance(startTs, endTs) {
         if (!data.cameras || data.cameras.length === 0) {
             const container = document.querySelector('#chart-camera-perf');
             if (container) {
-                container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu camera trong khoảng thời gian này</div>';
+                container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">No camera data in selected time range</div>';
             }
             return;
         }
@@ -1121,11 +1104,16 @@ async function loadCameraPerformance(startTs, endTs) {
         const successCounts = data.cameras.map(c => c.success);
         const failedCounts = data.cameras.map(c => c.failed);
 
+        // Dynamic height based on number of cameras (min 280, 45px per camera for horizontal bars)
+        const chartHeight = Math.max(280, data.cameras.length * 45);
+
         const options = {
             chart: {
                 type: 'bar',
-                height: 350,
-                stacked: true
+                height: chartHeight,
+                stacked: true,
+                toolbar: { show: false },
+                animations: { enabled: false }
             },
             series: [
                 {
@@ -1139,22 +1127,50 @@ async function loadCameraPerformance(startTs, endTs) {
                     color: '#ef4444'
                 }
             ],
-            xaxis: {
-                categories: categories
+            plotOptions: {
+                bar: {
+                    horizontal: true,
+                    barHeight: '65%',
+                    borderRadius: 4
+                }
             },
+            xaxis: {
+                categories: categories,
+                title: { text: 'Events' }
+            },
+            yaxis: {
+                labels: {
+                    style: { fontSize: '12px' },
+                    maxWidth: 150
+                }
+            },
+            legend: { position: 'top' },
+            dataLabels: { enabled: false },
             tooltip: {
                 y: {
                     formatter: (val, opts) => {
                         const camera = data.cameras[opts.dataPointIndex];
-                        return `Success Rate: ${camera.success_rate}%<br>Storage: ${camera.storage_mb} MB<br>Avg Process: ${camera.avg_process}s`;
+                        return `${val} events`;
                     }
+                },
+                custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                    const camera = data.cameras[dataPointIndex];
+                    return `
+                        <div style="padding: 10px; font-size: 12px; line-height: 1.6;">
+                            <div style="font-weight: 700; margin-bottom: 4px;">${camera.name}</div>
+                            <div>Success: ${camera.success} | Failed: ${camera.failed}</div>
+                            <div>Success Rate: ${camera.success_rate}%</div>
+                            <div>Storage: ${camera.storage_mb} MB</div>
+                            <div>Avg Process: ${camera.avg_process}s</div>
+                        </div>
+                    `;
                 }
             }
         };
 
         // Clear "no data" message if it was showing
         const container = document.querySelector('#chart-camera-perf');
-        if (container && container.innerHTML.includes('Không có dữ liệu')) {
+        if (container && container.innerHTML.includes('No camera data')) {
             container.innerHTML = '';
         }
 
@@ -1209,12 +1225,12 @@ function showModal(data) {
     if (data.isMerged) {
         let errorList = "";
         for (const [type, count] of Object.entries(data.meta.breakdown)) {
-            errorList += `- ${type}: ${count} lần\n`;
+            errorList += `- ${type}: ${count} times\n`;
         }
-        contentHtml = `<div class="raw-message-box">TỔNG QUAN LỖI (${data.meta.count} sự kiện):\n` + 
+        contentHtml = `<div class="raw-message-box">ERROR OVERVIEW (${data.meta.count} events):\n` + 
                       `--------------------------------------------------\n` +
                       `${errorList}\n\n` +
-                      `MẪU LỖI ĐẦU TIÊN:\n${data.meta.sample_msg}</div>`;
+                      `FIRST ERROR SAMPLE:\n${data.meta.sample_msg}</div>`;
     } else {
         contentHtml = `
             <div class="meta-grid">

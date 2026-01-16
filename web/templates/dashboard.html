@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,10 +10,10 @@
 <body>
 
     <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('timeline')">Tổng quan</button>
-        <button class="tab-btn" onclick="switchTab('logs')">Lịch sử chi tiết</button>
+        <button class="tab-btn active" onclick="switchTab('timeline')">Overview</button>
+        <button class="tab-btn" onclick="switchTab('logs')">Event Logs</button>
         <div style="margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--text-sub);">
-            Cập nhật lần cuối: <span id="last-updated" style="font-weight:600">-</span>
+            Last Updated: <span id="last-updated" style="font-weight:600">-</span>
         </div>
     </div>
 
@@ -21,7 +21,7 @@
         <!-- Filter Toolbar (Top) -->
         <div class="timeline-toolbar" id="filter-top">
             <div class="timeline-btn-group">
-                <span class="timeline-label">Ngắn hạn:</span>
+                <span class="timeline-label">Short:</span>
                 <button class="btn-group-item" onclick="setWindow(1)">1h</button>
                 <button class="btn-group-item" onclick="setWindow(6)">6h</button>
                 <button class="btn-group-item" onclick="setWindow(12)">12h</button>
@@ -29,17 +29,17 @@
             </div>
 
             <div class="timeline-btn-group">
-                <span class="timeline-label">Dài hạn:</span>
-                <button class="btn-group-item" onclick="setWindow(72)">3 Ngày</button>
-                <button class="btn-group-item" onclick="setWindow(168)">1 Tuần</button>
-                <button class="btn-group-item" onclick="setWindow(720)">1 Tháng</button>
-                <button class="btn-group-item" onclick="setWindow(2160)">1 Quý</button>
-                <button class="btn-group-item" onclick="setWindow(8760)">1 Năm</button>
+                <span class="timeline-label">Long:</span>
+                <button class="btn-group-item" onclick="setWindow(72)">3 Days</button>
+                <button class="btn-group-item" onclick="setWindow(168)">1 Week</button>
+                <button class="btn-group-item" onclick="setWindow(720)">1 Month</button>
+                <button class="btn-group-item" onclick="setWindow(2160)">1 Quarter</button>
+                <button class="btn-group-item" onclick="setWindow(8760)">1 Year</button>
             </div>
 
             <div class="timeline-btn-group" style="margin-left:auto">
-                <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮</button>
-                <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">❯</button>
+                <button class="btn-icon" onclick="moveTime(-1)" title="Back">❮</button>
+                <button class="btn-icon" onclick="moveTime(1)" title="Forward">❯</button>
             </div>
 
             <div class="timeline-btn-group">
@@ -53,43 +53,43 @@
         <!-- Timeline Statistics Section -->
         <div class="grid-4">
             <div class="card">
-                <div class="metric-title">Tỉ lệ thành công</div>
+                <div class="metric-title">Success Rate</div>
                 <div class="metric-value" id="tl-health">-%</div>
-                <div class="metric-sub" id="tl-total">trên tổng 0 job</div>
+                <div class="metric-sub" id="tl-total">of 0 total jobs</div>
                 <div class="metric-trend neutral" id="tl-health-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
-                    <span class="trend-label">vs kỳ trước</span>
+                    <span class="trend-label">vs prev period</span>
                 </div>
             </div>
             <div class="card">
-                <div class="metric-title">Dung lượng lưu trữ</div>
+                <div class="metric-title">Storage Used</div>
                 <div class="metric-value" id="tl-storage">0 MB</div>
-                <div class="metric-sub" id="tl-storage-sub">trong khoảng đã chọn</div>
+                <div class="metric-sub" id="tl-storage-sub">in selected range</div>
                 <div class="metric-trend neutral" id="tl-storage-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
-                    <span class="trend-label">vs kỳ trước</span>
+                    <span class="trend-label">vs prev period</span>
                 </div>
             </div>
             <div class="card">
-                <div class="metric-title">Thời gian xử lý TB</div>
+                <div class="metric-title">Avg Process Time</div>
                 <div class="metric-value" id="tl-process">0s</div>
-                <div class="metric-sub">giây / video</div>
+                <div class="metric-sub">seconds / video</div>
                 <div class="metric-trend neutral" id="tl-process-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
-                    <span class="trend-label">vs kỳ trước</span>
+                    <span class="trend-label">vs prev period</span>
                 </div>
             </div>
             <div class="card">
-                <div class="metric-title">Trạng thái</div>
+                <div class="metric-title">Status</div>
                 <div class="metric-value" id="tl-status">-</div>
                 <div class="metric-sub" id="tl-status-sub"></div>
                 <div class="metric-trend neutral" id="tl-total-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
-                    <span class="trend-label">vs kỳ trước</span>
+                    <span class="trend-label">vs prev period</span>
                 </div>
             </div>
             <div class="card">
@@ -101,54 +101,54 @@
 
         <div class="chart-row">
             <div class="card">
-                <h3 style="margin-bottom:15px">Thống kê Record (Success/Failed)</h3>
+                <h3 style="margin-bottom:15px">Success/Failed Events</h3>
                 <div id="tl-chart-daily"></div>
             </div>
             <div class="card">
-                <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
-                <div id="tl-chart-reasons"></div>
+                <h3 style="margin-bottom:15px">Storage Trend</h3>
+                <div id="chart-storage-bar"></div>
             </div>
         </div>
 
-        <!-- Performance Charts -->
+        <!-- Error & Performance Charts -->
         <div class="chart-row" style="margin-top: 20px;">
             <div class="card">
-                <h3 style="margin-bottom:15px">Xu hướng tiêu thụ dung lượng đĩa</h3>
-                <div id="chart-storage-bar"></div>
+                <h3 style="margin-bottom:15px">Error Breakdown</h3>
+                <div id="tl-chart-reasons"></div>
             </div>
             <div class="card">
-                <h3 style="margin-bottom:15px">Tương quan: Độ dài Video vs Thời gian Xử lý</h3>
+                <h3 style="margin-bottom:15px">Record vs Timelapse Comparison</h3>
                 <div id="chart-perf-line"></div>
             </div>
         </div>
 
         <!-- Camera Performance Section -->
         <div class="card" style="margin-top: 20px;">
-            <h3 style="margin-bottom:15px">Hiệu suất theo Camera</h3>
+            <h3 style="margin-bottom:15px">Camera Performance (Success/Failed by Camera)</h3>
             <div id="chart-camera-perf"></div>
         </div>
 
-        <!-- Duration Distribution Section -->
+        <!-- Duration Distribution Section - Separated by Type -->
         <div class="chart-row" style="margin-top: 20px;">
             <div class="card">
-                <h3 style="margin-bottom:15px">Phân bố độ dài Video</h3>
-                <div id="chart-duration-dist"></div>
+                <h3 style="margin-bottom:15px">Record Duration Distribution</h3>
+                <div id="chart-duration-record"></div>
             </div>
             <div class="card">
-                <h3 style="margin-bottom:15px">So sánh RECORD vs TIMELAPSE</h3>
-                <div id="chart-type-compare"></div>
+                <h3 style="margin-bottom:15px">Timelapse Duration Distribution</h3>
+                <div id="chart-duration-timelapse"></div>
             </div>
         </div>
 
         <!-- Peak Activity Heatmap Section -->
         <div class="card" style="margin-top: 20px;">
-            <h3 style="margin-bottom:15px">Phân bố hoạt động theo thời gian</h3>
+            <h3 style="margin-bottom:15px">Activity Distribution by Time</h3>
             <div id="chart-peak-heatmap" style="min-height: 300px;"></div>
         </div>
 
         <div class="card" style="margin-top: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-                <h3>Timeline Ghi hình</h3>
+                <h3>Recording Timeline</h3>
             </div>
             
             <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-sub);">
@@ -161,7 +161,7 @@
             <!-- Filter Toolbar (Bottom) -->
             <div class="timeline-toolbar" id="filter-bottom" style="margin-top: 15px;">
                 <div class="timeline-btn-group">
-                    <span class="timeline-label">Ngắn hạn:</span>
+                    <span class="timeline-label">Short:</span>
                     <button class="btn-group-item" onclick="setWindow(1)">1h</button>
                     <button class="btn-group-item" onclick="setWindow(6)">6h</button>
                     <button class="btn-group-item" onclick="setWindow(12)">12h</button>
@@ -169,17 +169,17 @@
                 </div>
 
                 <div class="timeline-btn-group">
-                    <span class="timeline-label">Dài hạn:</span>
-                    <button class="btn-group-item" onclick="setWindow(72)">3 Ngày</button>
-                    <button class="btn-group-item" onclick="setWindow(168)">1 Tuần</button>
-                    <button class="btn-group-item" onclick="setWindow(720)">1 Tháng</button>
-                    <button class="btn-group-item" onclick="setWindow(2160)">1 Quý</button>
-                    <button class="btn-group-item" onclick="setWindow(8760)">1 Năm</button>
+                    <span class="timeline-label">Long:</span>
+                    <button class="btn-group-item" onclick="setWindow(72)">3 Days</button>
+                    <button class="btn-group-item" onclick="setWindow(168)">1 Week</button>
+                    <button class="btn-group-item" onclick="setWindow(720)">1 Month</button>
+                    <button class="btn-group-item" onclick="setWindow(2160)">1 Quarter</button>
+                    <button class="btn-group-item" onclick="setWindow(8760)">1 Year</button>
                 </div>
 
                 <div class="timeline-btn-group" style="margin-left:auto">
-                    <button class="btn-icon" onclick="moveTime(-1)" title="Lùi lại">❮</button>
-                    <button class="btn-icon" onclick="moveTime(1)" title="Tiến tới">❯</button>
+                    <button class="btn-icon" onclick="moveTime(-1)" title="Back">❮</button>
+                    <button class="btn-icon" onclick="moveTime(1)" title="Forward">❯</button>
                 </div>
 
                 <div class="timeline-btn-group">
@@ -196,10 +196,10 @@
         <div class="card">
             <div class="controls-container">
                 <div class="control-group">
-                    <div class="control-label">Thông tin cơ bản</div>
+                    <div class="control-label">Basic Info</div>
                     
                     <div class="multi-select" id="ms-status">
-                        <div class="ms-btn" onclick="toggleMs('ms-status')">Tất cả Trạng thái</div>
+                        <div class="ms-btn" onclick="toggleMs('ms-status')">All Status</div>
                         <div class="ms-dropdown">
                             <div class="ms-option"><input type="checkbox" value="SUCCESS" id="s_suc"><label for="s_suc">Success</label></div>
                             <div class="ms-option"><input type="checkbox" value="FAILED" id="s_fail"><label for="s_fail">Failed</label></div>
@@ -207,7 +207,7 @@
                     </div>
 
                     <div class="multi-select" id="ms-camera">
-                        <div class="ms-btn" onclick="toggleMs('ms-camera')">Tất cả Camera</div>
+                        <div class="ms-btn" onclick="toggleMs('ms-camera')">All Cameras</div>
                         <div class="ms-dropdown" id="ms-camera-list"></div>
                     </div>
 
@@ -215,23 +215,23 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="control-label">Loại & Lỗi</div>
+                    <div class="control-label">Type & Error</div>
                     
                     <div class="multi-select" id="ms-type">
-                        <div class="ms-btn" onclick="toggleMs('ms-type')">Tất cả Event</div>
+                        <div class="ms-btn" onclick="toggleMs('ms-type')">All Events</div>
                         <div class="ms-dropdown" id="ms-type-list"></div>
                     </div>
 
                     <div class="multi-select" id="ms-error">
-                        <div class="ms-btn" onclick="toggleMs('ms-error')">Tất cả Lỗi</div>
+                        <div class="ms-btn" onclick="toggleMs('ms-error')">All Errors</div>
                         <div class="ms-dropdown" id="ms-error-list"></div>
                     </div>
 
                     <div class="multi-select" id="ms-alert">
                         <div class="ms-btn" onclick="toggleMs('ms-alert')">Alert Sent</div>
                         <div class="ms-dropdown">
-                            <div class="ms-option"><input type="checkbox" value="1" id="a_yes"><label for="a_yes">Yes (Đã gửi)</label></div>
-                            <div class="ms-option"><input type="checkbox" value="0" id="a_no"><label for="a_no">No (Chưa gửi)</label></div>
+                            <div class="ms-option"><input type="checkbox" value="1" id="a_yes"><label for="a_yes">Yes</label></div>
+                            <div class="ms-option"><input type="checkbox" value="0" id="a_no"><label for="a_no">No</label></div>
                         </div>
                     </div>
                 </div>
@@ -253,7 +253,7 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="control-label">Thời gian xảy ra sự kiện</div>
+                    <div class="control-label">Event Time</div>
                     <div class="input-row">
                         <span class="input-prefix">After</span>
                         <input type="datetime-local" id="f-created-from">
@@ -265,7 +265,7 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="control-label">Thời gian Record</div>
+                    <div class="control-label">Video Time</div>
                     <div class="input-row">
                         <span class="input-prefix">After</span>
                         <input type="datetime-local" id="f-video-from">
@@ -277,8 +277,8 @@
                 </div>
 
                 <div class="filter-actions">
-                    <input type="text" id="f-search" placeholder="Tìm kiếm nội dung text..." style="flex:1">
-                    <button class="action-btn" onclick="resetAndLoadLogs()">Áp dụng bộ lọc</button>
+                    <input type="text" id="f-search" placeholder="Search text content..." style="flex:1">
+                    <button class="action-btn" onclick="resetAndLoadLogs()">Apply Filters</button>
                     <button class="action-btn" style="background: #6b7280" onclick="clearFilters()">Reset</button>
                 </div>
             </div>
