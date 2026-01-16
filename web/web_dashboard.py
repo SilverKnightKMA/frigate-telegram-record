@@ -439,34 +439,40 @@ def get_performance():
             perf_data['avg_process'].append(round(r['avg_process'] or 0, 1))
             perf_data['ratio'].append(round((r['avg_ratio'] or 0) * 100, 2))  # ratio as percentage
 
-        # Storage data grouped by type per day
-        query_store = """
-            SELECT date(start_ts, 'unixepoch', 'localtime') as d, 
-                   type,
-                   SUM(filesize) as total
-            FROM events WHERE start_ts >= ? AND start_ts <= ?
-            GROUP BY d, type ORDER BY d ASC
+        # Adaptive Storage Chart Query
+        granularity = '15min'  # Example granularity, can be parameterized
+        query_store = f"""
+            SELECT 
+                strftime('%H:%M', start_ts, 'unixepoch', 'localtime') as time_bucket,
+                CASE WHEN type LIKE '%timelapse%' THEN 'timelapse' ELSE 'record' END as type,
+                SUM(filesize) as total
+            FROM events 
+            WHERE start_ts >= ? AND start_ts <= ?
+            GROUP BY time_bucket, type 
+            ORDER BY time_bucket ASC
         """
         rows_store = cursor.execute(query_store, (start_ts, end_ts)).fetchall()
-        
-        # Aggregate by date with type breakdown
-        store_by_date = {}
-        for r in rows_store:
-            d = r['d']
-            if d not in store_by_date:
-                store_by_date[d] = {'record': 0, 'timelapse': 0}
-            size_mb = round((r['total'] or 0)/(1024*1024), 2)
-            if r['type'] and 'timelapse' in r['type'].lower():
-                store_by_date[d]['timelapse'] += size_mb
-            else:
-                store_by_date[d]['record'] += size_mb
-        
-        store_data = {
-            'dates': list(store_by_date.keys()),
-            'record': [round(v['record'], 2) for v in store_by_date.values()],
-            'timelapse': [round(v['timelapse'], 2) for v in store_by_date.values()]
+
+        # Aggregate by time bucket and type
+        storage_data = {
+            'labels': [],
+            'record': [],
+            'timelapse': [],
+            'granularity': granularity
         }
-        return jsonify({'performance': perf_data, 'storage': store_data})
+        bucket_totals = {}
+        for r in rows_store:
+            bucket = r['time_bucket']
+            if bucket not in bucket_totals:
+                bucket_totals[bucket] = {'record': 0, 'timelapse': 0}
+            size_mb = round((r['total'] or 0) / (1024 * 1024), 2)
+            bucket_totals[bucket][r['type']] += size_mb
+
+        storage_data['labels'] = list(bucket_totals.keys())
+        storage_data['record'] = [round(v['record'], 2) for v in bucket_totals.values()]
+        storage_data['timelapse'] = [round(v['timelapse'], 2) for v in bucket_totals.values()]
+
+        return jsonify({'performance': perf_data, 'storage': storage_data})
     finally:
         conn.close()
 
