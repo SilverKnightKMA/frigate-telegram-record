@@ -206,7 +206,7 @@ dialog::backdrop { background: rgba(0,0,0,0.5); }
 }
 select, input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; width: 100%; font-size: 0.9rem; }
 input[type="datetime-local"] { font-size: 0.8rem; padding: 6px; min-width: 0; }
-button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; height: 100%; }
+button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 
 /* Custom Multi-select Dropdown CSS */
 .multi-select { position: relative; width: 100%; }
