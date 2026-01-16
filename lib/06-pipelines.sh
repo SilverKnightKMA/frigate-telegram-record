@@ -48,7 +48,19 @@ execute_clip_pipeline() {
     log_debug "[$src] execute_clip_pipeline START: $(date -d @$start_ts '+%Y-%m-%d %H:%M') - $(date -d @$end_ts '+%H:%M')"
 
     # 1. CORE GATEKEEPER CHECK
-    if ! check_source_gatekeeper "$src" "$start_ts" "$end_ts" "record"; then return; fi
+    # Reset gatekeeper globals
+    _gatekeeper_fail="false"
+    _gatekeeper_reason=""
+    _gatekeeper_prev_alert_sent=1
+    
+    if ! check_source_gatekeeper "$src" "$start_ts" "$end_ts" "record"; then
+        # [FIX] If gatekeeper blocked but needs first-time alert, send it
+        if [ "$_gatekeeper_fail" == "true" ] && [ "$_gatekeeper_prev_alert_sent" -eq 0 ]; then
+            local pipe_duration=$(( $(date +%s) - pipe_start ))
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "$_gatekeeper_reason" "$run_mode" "0" "0" "$pipe_duration"
+        fi
+        return
+    fi
 
     # 2. SETUP & IDENTIFICATION
     local date_file=$(date -d @$start_ts '+%Y%m%d')
@@ -295,7 +307,19 @@ execute_timelapse_pipeline() {
     fi
 
     # 2. CORE GATEKEEPER CHECK
-    if ! check_source_gatekeeper "$src" "$start_ts" "$end_ts" "timelapse" ; then return 1; fi
+    # Reset gatekeeper globals
+    _gatekeeper_fail="false"
+    _gatekeeper_reason=""
+    _gatekeeper_prev_alert_sent=1
+    
+    if ! check_source_gatekeeper "$src" "$start_ts" "$end_ts" "timelapse"; then
+        # [FIX] If gatekeeper blocked but needs first-time alert, send it
+        if [ "$_gatekeeper_fail" == "true" ] && [ "$_gatekeeper_prev_alert_sent" -eq 0 ]; then
+            local pipe_duration=$(( $(date +%s) - pipe_start ))
+            trigger_failure_alert "$src" "$start_ts" "$end_ts" "DOWNLOAD" "$_gatekeeper_reason" "$run_mode" "0" "0" "$pipe_duration"
+        fi
+        return 1
+    fi
 
     local date_str=$(date -d @$start_ts '+%Y%m%d_%H%M')
     local filename="timelapse_${src}_${date_str}.mp4"

@@ -136,9 +136,21 @@ check_source_gatekeeper() {
     # [FIX] Immediate block if estimated output is 0s
     # Reason: Prevents "Best Effort" execution when result is guaranteed to be 0s.
     if [ "$estimated_output" -eq 0 ]; then
-        log "[$src] [$mode] Gatekeeper: Skipping (No valid source data found - Est: 0s)."
+        # [FIX] Send alert if never sent before for this slot
+        if [ "$prev_alert_sent" -eq 0 ]; then
+            log "[$src] [$mode] Gatekeeper: No source data (Est: 0s). Sending first-time alert."
+            # Set global variables for caller to use (export gatekeeper failure info)
+            _gatekeeper_fail="true"
+            _gatekeeper_reason="No Recording Data Available (VOD: 0s)"
+            _gatekeeper_prev_alert_sent=$prev_alert_sent
+            return 1
+        fi
+        log "[$src] [$mode] Gatekeeper: Skipping (No valid source data found - Est: 0s, Alert already sent)."
         return 1
     fi
+    
+    # Reset gatekeeper fail flag
+    _gatekeeper_fail="false"
 
     # [Debug] Log so sánh để dễ kiểm tra
     if [ "$prev_fail_duration" -gt 0 ]; then
