@@ -272,26 +272,43 @@ async function loadProcessingEfficiency(minTs, maxTs) {
         const ratioSubEl = document.getElementById('tl-ratio-sub');
         if (!ratioEl) return;
 
-        if (data.error || data.overall_ratio === null || data.overall_ratio === undefined) {
+        if (data.error || (data.record_ratio === null && data.timelapse_ratio === null)) {
             ratioEl.innerText = '-';
             ratioEl.style.color = 'var(--text-sub)';
             if (ratioSubEl) ratioSubEl.innerText = 'Không có dữ liệu';
             return;
         }
 
-        const ratio = data.overall_ratio;
-        ratioEl.innerText = `${ratio.toFixed(3)}x`;
-
-        // Color based on threshold
-        if (ratio > data.threshold_warning) {
-            ratioEl.style.color = 'var(--danger)';
-            if (ratioSubEl) ratioSubEl.innerHTML = '<span style="color:var(--danger)">⚠️ Chậm</span> - Cần kiểm tra';
-        } else if (ratio < 0.1) {
-            ratioEl.style.color = 'var(--success)';
-            if (ratioSubEl) ratioSubEl.innerHTML = '<span style="color:var(--success)">✓ Tốt</span>';
+        // Display Record ratio as primary (more meaningful metric)
+        const recordRatio = data.record_ratio;
+        const timelapseRatio = data.timelapse_ratio;
+        
+        if (recordRatio !== null) {
+            ratioEl.innerText = `${recordRatio.toFixed(3)}x`;
+            
+            // Color based on threshold
+            if (recordRatio > data.threshold_warning) {
+                ratioEl.style.color = 'var(--danger)';
+            } else if (recordRatio < 0.1) {
+                ratioEl.style.color = 'var(--success)';
+            } else {
+                ratioEl.style.color = 'var(--text)';
+            }
         } else {
-            ratioEl.style.color = 'var(--text)';
-            if (ratioSubEl) ratioSubEl.innerText = 'Bình thường';
+            ratioEl.innerText = '-';
+            ratioEl.style.color = 'var(--text-sub)';
+        }
+
+        // Show breakdown in sub text
+        if (ratioSubEl) {
+            let subParts = [];
+            if (recordRatio !== null) {
+                subParts.push(`Record: ${recordRatio.toFixed(3)}x (${data.record_count})`);
+            }
+            if (timelapseRatio !== null) {
+                subParts.push(`TL: ${timelapseRatio.toFixed(3)}x (${data.timelapse_count})`);
+            }
+            ratioSubEl.innerText = subParts.join(' | ') || 'Không có dữ liệu';
         }
 
     } catch (e) {

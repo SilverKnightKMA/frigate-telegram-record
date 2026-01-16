@@ -415,21 +415,43 @@ def get_processing_efficiency():
                 'ratio': r['process_ratio'] or 0
             })
 
-        # Calculate overall ratio
-        overall_query = """
+        # Calculate ratio separately for Record and Timelapse
+        ratio_by_type_query = """
             SELECT 
-                ROUND(AVG(CAST(process_sec AS FLOAT) / NULLIF(duration, 0)), 3) as overall_ratio
+                CASE WHEN type LIKE '%timelapse%' THEN 'timelapse' ELSE 'record' END as category,
+                COUNT(*) as count,
+                ROUND(AVG(CAST(process_sec AS FLOAT) / NULLIF(duration, 0)), 3) as avg_ratio
             FROM events
             WHERE start_ts >= ? AND start_ts <= ?
                 AND status = 'SUCCESS'
                 AND duration > 0
+            GROUP BY category
         """
-        overall_row = cursor.execute(overall_query, (start_ts, end_ts)).fetchone()
-        overall_ratio = overall_row['overall_ratio'] or 0
+        ratio_rows = cursor.execute(ratio_by_type_query, (start_ts, end_ts)).fetchall()
+        
+        record_ratio = None
+        timelapse_ratio = None
+        record_count = 0
+        timelapse_count = 0
+        
+        for r in ratio_rows:
+            if r['category'] == 'record':
+                record_ratio = r['avg_ratio'] or 0
+                record_count = r['count']
+            else:
+                timelapse_ratio = r['avg_ratio'] or 0
+                timelapse_count = r['count']
+
+        # Use record ratio as primary metric since timelapse has very different characteristics
+        primary_ratio = record_ratio if record_ratio is not None else (timelapse_ratio or 0)
 
         return jsonify({
             'efficiency': efficiency,
-            'overall_ratio': overall_ratio,
+            'overall_ratio': primary_ratio,  # Use record ratio as primary
+            'record_ratio': record_ratio,
+            'record_count': record_count,
+            'timelapse_ratio': timelapse_ratio,
+            'timelapse_count': timelapse_count,
             'threshold_warning': 0.15
         })
     finally:
