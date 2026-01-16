@@ -48,9 +48,47 @@ function getMsValues(id) {
     return Array.from(checked).map(cb => cb.value);
 }
 
-function clearMs(id, label) {
+// Update multi-select button label to show selected items
+function updateMsLabel(id) {
+    const container = document.getElementById(id);
+    const btn = container.querySelector('.ms-btn');
+    const checked = container.querySelectorAll('.ms-dropdown input:checked');
+    const defaultLabel = btn.getAttribute('data-default') || btn.innerText;
+    
+    // Store default label on first call
+    if (!btn.getAttribute('data-default')) {
+        btn.setAttribute('data-default', btn.innerText);
+    }
+    
+    if (checked.length === 0) {
+        btn.innerText = defaultLabel;
+        btn.classList.remove('has-selection');
+    } else if (checked.length <= 2) {
+        // Show selected values if 2 or less
+        const labels = Array.from(checked).map(cb => {
+            const label = cb.nextElementSibling;
+            return label ? label.innerText : cb.value;
+        });
+        btn.innerText = labels.join(', ');
+        btn.classList.add('has-selection');
+    } else {
+        // Show count if more than 2
+        btn.innerText = `${checked.length} selected`;
+        btn.classList.add('has-selection');
+    }
+}
+
+// Attach change listeners to multi-select checkboxes
+function attachMsListeners(id) {
+    const container = document.getElementById(id);
+    container.querySelectorAll('.ms-dropdown input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => updateMsLabel(id));
+    });
+}
+
+function clearMs(id) {
     document.querySelectorAll(`#${id} .ms-dropdown input`).forEach(cb => cb.checked = false);
-    // Optional: Update label text if needed
+    updateMsLabel(id);
 }
 
 function switchTab(tabId) {
@@ -499,6 +537,15 @@ async function loadFilters() {
     fillMs('ms-camera-list', data.cameras);
     fillMs('ms-type-list', data.types);
     fillMs('ms-error-list', data.errors);
+    
+    // Attach change listeners for dynamically loaded multi-selects
+    attachMsListeners('ms-camera');
+    attachMsListeners('ms-type');
+    attachMsListeners('ms-error');
+    
+    // Attach change listeners for static multi-selects
+    attachMsListeners('ms-status');
+    attachMsListeners('ms-alert');
 }
 
 function showModal(data) {

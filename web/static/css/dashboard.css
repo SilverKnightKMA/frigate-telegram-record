@@ -214,6 +214,13 @@ button.action-btn { padding: 8px 16px; background: var(--primary); color: white;
     width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
     text-align: left; cursor: pointer; font-size: 0.9rem; position: relative;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    padding-right: 25px;
+}
+.ms-btn.has-selection {
+    background: #eff6ff;
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 500;
 }
 .ms-btn::after {
     content: '▼'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; color: #6b7280;
