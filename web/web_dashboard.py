@@ -485,5 +485,57 @@ def get_filters():
     finally:
         conn.close()
 
+@app.route('/api/camera_performance')
+def get_camera_performance():
+    """Fetch camera performance data for the specified time range."""
+    conn = common.get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database connect failed'}), 500
+
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        query = """
+            SELECT 
+                camera,
+                COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_count,
+                ROUND(SUM(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as success_rate,
+                SUM(filesize) as total_bytes,
+                ROUND(AVG(process_sec), 2) as avg_process_sec,
+                ROUND(AVG(duration), 1) as avg_duration
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+            GROUP BY camera
+            ORDER BY total_jobs DESC
+        """
+        
+        results = cursor.execute(query, (start_ts, end_ts)).fetchall()
+
+        cameras = [
+            {
+                'name': row['camera'],
+                'total': row['total_jobs'],
+                'success': row['success_count'],
+                'failed': row['failed_count'],
+                'success_rate': row['success_rate'],
+                'storage_mb': round(row['total_bytes'] / 1024 / 1024, 2),
+                'avg_process': row['avg_process_sec'],
+                'avg_duration': row['avg_duration']
+            }
+            for row in results
+        ]
+
+        return jsonify({'cameras': cameras})
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=common.PORT, debug=False)

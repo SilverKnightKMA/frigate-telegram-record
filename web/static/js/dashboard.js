@@ -729,6 +729,57 @@ async function loadPerformance(minTs, maxTs) {
     charts.storeBar.render();
 }
 
+async function loadCameraPerformance(startTs, endTs) {
+    try {
+        const res = await fetch(`/api/camera_performance?start=${startTs / 1000}&end=${endTs / 1000}`);
+        const data = await res.json();
+
+        const categories = data.cameras.map(c => c.name);
+        const successCounts = data.cameras.map(c => c.success);
+        const failedCounts = data.cameras.map(c => c.failed);
+
+        const options = {
+            chart: {
+                type: 'bar',
+                height: 350,
+                stacked: true
+            },
+            series: [
+                {
+                    name: 'Success',
+                    data: successCounts,
+                    color: '#10b981'
+                },
+                {
+                    name: 'Failed',
+                    data: failedCounts,
+                    color: '#ef4444'
+                }
+            ],
+            xaxis: {
+                categories: categories
+            },
+            tooltip: {
+                y: {
+                    formatter: (val, opts) => {
+                        const camera = data.cameras[opts.dataPointIndex];
+                        return `Success Rate: ${camera.success_rate}%<br>Storage: ${camera.storage_mb} MB<br>Avg Process: ${camera.avg_process}s`;
+                    }
+                }
+            }
+        };
+
+        if (charts.cameraPerf) {
+            charts.cameraPerf.updateOptions(options);
+        } else {
+            charts.cameraPerf = new ApexCharts(document.querySelector('#chart-camera-perf'), options);
+            charts.cameraPerf.render();
+        }
+    } catch (e) {
+        console.error('Error loading camera performance data', e);
+    }
+}
+
 // --- Helpers ---
 async function loadFilters() {
     const res = await fetch('/api/filters');
