@@ -53,6 +53,16 @@
         <!-- Timeline Statistics Section -->
         <div class="grid-4">
             <div class="card">
+                <div class="metric-title">Status</div>
+                <div class="metric-value" id="tl-status">-</div>
+                <div class="metric-sub" id="tl-status-sub"></div>
+                <div class="metric-trend neutral" id="tl-total-trend">
+                    <span class="trend-arrow">-</span>
+                    <span class="trend-value">0%</span>
+                    <span class="trend-label">vs prev period</span>
+                </div>
+            </div>
+            <div class="card">
                 <div class="metric-title">Success Rate</div>
                 <div class="metric-value" id="tl-health">-%</div>
                 <div class="metric-sub" id="tl-total">of 0 total jobs</div>
@@ -74,19 +84,18 @@
             </div>
             <div class="card">
                 <div class="metric-title">Avg Process Time</div>
-                <div class="metric-value" id="tl-process">0s</div>
+                <div class="metric-value-dual">
+                    <div class="dual-item">
+                        <span class="dual-label">Record:</span>
+                        <span class="dual-value" id="tl-process-record">0s</span>
+                    </div>
+                    <div class="dual-item">
+                        <span class="dual-label">Timelapse:</span>
+                        <span class="dual-value" id="tl-process-timelapse">0s</span>
+                    </div>
+                </div>
                 <div class="metric-sub">seconds / video</div>
                 <div class="metric-trend neutral" id="tl-process-trend">
-                    <span class="trend-arrow">-</span>
-                    <span class="trend-value">0%</span>
-                    <span class="trend-label">vs prev period</span>
-                </div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Status</div>
-                <div class="metric-value" id="tl-status">-</div>
-                <div class="metric-sub" id="tl-status-sub"></div>
-                <div class="metric-trend neutral" id="tl-total-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
                     <span class="trend-label">vs prev period</span>
@@ -215,7 +224,7 @@
                         <div class="ms-dropdown" id="ms-camera-list"></div>
                     </div>
 
-                    <input type="text" id="f-id-search" placeholder="ID or Telegram Msg ID...">
+                    <input type="text" id="f-id-search" placeholder="Event ID or Telegram Msg ID...">
                 </div>
 
                 <div class="control-group">
@@ -243,8 +252,8 @@
                 <div class="control-group">
                     <div class="control-label">Duration / Size / Process</div>
                     <div class="input-row">
-                        <input type="number" id="f-dur-min" placeholder="Dur Min">
-                        <input type="number" id="f-dur-max" placeholder="Dur Max">
+                        <input type="number" id="f-dur-min" placeholder="Dur Min Sec">
+                        <input type="number" id="f-dur-max" placeholder="Dur Max Sec">
                     </div>
                     <div class="input-row">
                         <input type="number" id="f-size-min" placeholder="Size Min MB">

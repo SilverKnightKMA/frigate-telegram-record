@@ -127,7 +127,9 @@ def get_timeline_stats():
                 SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_jobs,
                 SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_jobs,
                 SUM(filesize) as total_storage,
-                AVG(process_sec) as avg_process
+                AVG(process_sec) as avg_process,
+                AVG(CASE WHEN type NOT LIKE '%timelapse%' THEN process_sec END) as avg_process_record,
+                AVG(CASE WHEN type LIKE '%timelapse%' THEN process_sec END) as avg_process_timelapse
             FROM events 
             WHERE start_ts >= ? AND start_ts <= ?
         """
@@ -225,6 +227,8 @@ def get_timeline_stats():
             'success_rate': success_rate,
             'storage': storage_fmt,
             'avg_process': round(metrics['avg_process'] or 0, 2),
+            'avg_process_record': round(metrics['avg_process_record'] or 0, 2),
+            'avg_process_timelapse': round(metrics['avg_process_timelapse'] or 0, 2),
             'charts': {
                 'daily': [{'label': format_time_label(row['time_bucket'], granularity, label_format), 'success': row['success'], 'failed': row['failed']} for row in daily_stats],
                 'granularity': granularity,

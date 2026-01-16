@@ -175,7 +175,8 @@ async function loadTimelineStats(minTs, maxTs) {
         document.getElementById('tl-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
         document.getElementById('tl-total').innerText = `${m.success} success / ${m.failed} failed`;
         document.getElementById('tl-storage').innerText = m.storage;
-        document.getElementById('tl-process').innerText = `${m.avg_process}s`;
+        document.getElementById('tl-process-record').innerText = `${m.avg_process_record}s`;
+        document.getElementById('tl-process-timelapse').innerText = `${m.avg_process_timelapse}s`;
         document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('en-US');
         
         const statusEl = document.getElementById('tl-status');
