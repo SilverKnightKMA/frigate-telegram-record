@@ -229,6 +229,7 @@ function clearFilters() {
     clearMs('ms-camera');
     clearMs('ms-type');
     clearMs('ms-error');
+    clearMs('ms-alert');
 
     resetAndLoadLogs();
 }
@@ -278,11 +279,11 @@ async function loadLogs(page) {
     const cams = getMsValues('ms-camera');
     const types = getMsValues('ms-type');
     const errors = getMsValues('ms-error');
+    const alertSent = getMsValues('ms-alert');
 
     // Collect Other Filters
     const search = document.getElementById('f-search').value;
     const idSearch = document.getElementById('f-id-search').value;
-    const alertSent = document.getElementById('f-alert-sent').value;
     
     const createdFrom = document.getElementById('f-created-from').value;
     const createdTo = document.getElementById('f-created-to').value;
@@ -312,10 +313,10 @@ async function loadLogs(page) {
         addArrayParam('camera', cams);
         addArrayParam('type', types);
         addArrayParam('error', errors);
+        addArrayParam('alert_sent', alertSent);
 
         params.append('search', search);
         params.append('id_search', idSearch);
-        params.append('alert_sent', alertSent);
         params.append('limit', itemsPerPage);
         params.append('offset', offset);
         

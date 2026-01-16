@@ -104,7 +104,7 @@
         <div class="card">
             <div class="controls-container">
                 <div class="control-group">
-                    <div class="control-label">Thông tin cơ bản (Multi-select)</div>
+                    <div class="control-label">Thông tin cơ bản</div>
                     
                     <div class="multi-select" id="ms-status">
                         <div class="ms-btn" onclick="toggleMs('ms-status')">Tất cả Trạng thái</div>
@@ -116,13 +116,14 @@
 
                     <div class="multi-select" id="ms-camera">
                         <div class="ms-btn" onclick="toggleMs('ms-camera')">Tất cả Camera</div>
-                        <div class="ms-dropdown" id="ms-camera-list">
-                            </div>
+                        <div class="ms-dropdown" id="ms-camera-list"></div>
                     </div>
+
+                    <input type="text" id="f-id-search" placeholder="ID hoặc Msg ID...">
                 </div>
 
                 <div class="control-group">
-                    <div class="control-label">Loại & Lỗi (Multi-select)</div>
+                    <div class="control-label">Loại & Lỗi</div>
                     
                     <div class="multi-select" id="ms-type">
                         <div class="ms-btn" onclick="toggleMs('ms-type')">Tất cả Event</div>
@@ -133,18 +134,14 @@
                         <div class="ms-btn" onclick="toggleMs('ms-error')">Tất cả Lỗi</div>
                         <div class="ms-dropdown" id="ms-error-list"></div>
                     </div>
-                </div>
 
-                <div class="control-group">
-                    <div class="control-label">Thời gian sự kiện</div>
-                    <input type="datetime-local" id="f-created-from" placeholder="Từ">
-                    <input type="datetime-local" id="f-created-to" placeholder="Đến">
-                </div>
-
-                <div class="control-group">
-                    <div class="control-label">Thời gian Video</div>
-                    <input type="datetime-local" id="f-video-from" placeholder="Video bắt đầu từ">
-                    <input type="datetime-local" id="f-video-to" placeholder="Video kết thúc đến">
+                    <div class="multi-select" id="ms-alert">
+                        <div class="ms-btn" onclick="toggleMs('ms-alert')">Alert Sent</div>
+                        <div class="ms-dropdown">
+                            <div class="ms-option"><input type="checkbox" value="1" id="a_yes"><label for="a_yes">Yes (Đã gửi)</label></div>
+                            <div class="ms-option"><input type="checkbox" value="0" id="a_no"><label for="a_no">No (Chưa gửi)</label></div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -164,14 +161,15 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="control-label">Tìm kiếm ID / Alert</div>
-                    <input type="text" id="f-id-search" placeholder="ID hoặc Msg ID...">
-                    
-                    <select id="f-alert-sent">
-                        <option value="all">Alert Sent: Tất cả</option>
-                        <option value="1">Yes (Đã gửi)</option>
-                        <option value="0">No (Chưa gửi)</option>
-                    </select>
+                    <div class="control-label">Thời gian xảy ra sự kiện</div>
+                    <input type="datetime-local" id="f-created-from" placeholder="Từ">
+                    <input type="datetime-local" id="f-created-to" placeholder="Đến">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">Thời gian Record</div>
+                    <input type="datetime-local" id="f-video-from" placeholder="Video bắt đầu từ">
+                    <input type="datetime-local" id="f-video-to" placeholder="Video kết thúc đến">
                 </div>
 
                 <div class="control-group" style="grid-column: 1 / -1; display:flex; gap:10px; align-items:flex-end;">
