@@ -80,6 +80,79 @@ def get_overview():
     finally:
         conn.close()
 
+@app.route('/api/timeline_stats')
+def get_timeline_stats():
+    """Get statistics for a specific time range (used by timeline tab)"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+    
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        query_metrics = """
+            SELECT 
+                COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_jobs,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_jobs,
+                SUM(filesize) as total_storage,
+                AVG(process_sec) as avg_process
+            FROM events 
+            WHERE created_at >= ? AND created_at <= ?
+        """
+        metrics = cursor.execute(query_metrics, (start_ts, end_ts)).fetchone()
+        
+        total = metrics['total_jobs'] or 0
+        success_count = metrics['success_jobs'] or 0
+        failed_count = metrics['failed_jobs'] or 0
+        success_rate = round((success_count / total * 100), 1) if total > 0 else 0
+        storage_bytes = metrics['total_storage'] or 0
+        storage_fmt = f"{storage_bytes/1024**3:.2f} GB" if storage_bytes > 1024**3 else f"{storage_bytes/1024**2:.2f} MB"
+
+        # Daily statistics for stacked bar chart
+        query_daily = """
+            SELECT 
+                date(created_at, 'unixepoch', 'localtime') as day_str,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+            FROM events
+            WHERE created_at >= ? AND created_at <= ?
+            GROUP BY day_str
+            ORDER BY day_str ASC
+        """
+        daily_stats = cursor.execute(query_daily, (start_ts, end_ts)).fetchall()
+
+        # Failure reasons for donut chart
+        query_reasons = """
+            SELECT fail_type, COUNT(*) as count 
+            FROM events 
+            WHERE status = 'FAILED' AND created_at >= ? AND created_at <= ?
+            GROUP BY fail_type
+        """
+        fail_reasons = cursor.execute(query_reasons, (start_ts, end_ts)).fetchall()
+
+        return jsonify({
+            'total': total,
+            'success': success_count,
+            'failed': failed_count,
+            'success_rate': success_rate,
+            'storage': storage_fmt,
+            'avg_process': round(metrics['avg_process'] or 0, 2),
+            'charts': {
+                'daily': [{'date': r['day_str'], 'success': r['success'], 'failed': r['failed']} for r in daily_stats],
+                'reasons': {
+                    'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons],
+                    'series': [r['count'] for r in fail_reasons]
+                }
+            }
+        })
+    finally:
+        conn.close()
+
 @app.route('/api/timeline')
 def get_timeline():
     conn = common.get_db_connection()

@@ -165,7 +165,94 @@ async function loadOverview() {
     } catch (e) { console.error("Load Overview Error", e); }
 }
 
+async function loadTimelineStats(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/timeline_stats?start=${minTs/1000}&end=${maxTs/1000}`);
+        const m = await res.json();
+
+        document.getElementById('tl-health').innerText = `${m.success_rate}%`;
+        document.getElementById('tl-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
+        document.getElementById('tl-total').innerText = `${m.success} thành công / ${m.failed} thất bại`;
+        document.getElementById('tl-storage').innerText = m.storage;
+        document.getElementById('tl-process').innerText = `${m.avg_process}s`;
+        
+        const statusEl = document.getElementById('tl-status');
+        if (m.total === 0) {
+            statusEl.innerText = 'Không có dữ liệu';
+            statusEl.style.color = 'var(--text-sub)';
+            document.getElementById('tl-status-sub').innerText = '';
+        } else if (m.success_rate > 95) {
+            statusEl.innerText = 'Ổn định';
+            statusEl.style.color = 'var(--success)';
+            document.getElementById('tl-status-sub').innerText = `${m.total} job`;
+        } else {
+            statusEl.innerText = 'Cần kiểm tra';
+            statusEl.style.color = 'var(--danger)';
+            document.getElementById('tl-status-sub').innerText = `${m.total} job`;
+        }
+
+        // Render charts for timeline tab
+        renderTimelineStackedBar(m.charts.daily);
+        renderTimelineDonut(m.charts.reasons);
+    } catch (e) { console.error("Load Timeline Stats Error", e); }
+}
+
+function renderTimelineStackedBar(data) {
+    const categories = data.map(d => d.date);
+    const successData = data.map(d => d.success);
+    const failedData = data.map(d => d.failed);
+
+    const options = {
+        series: [
+            { name: 'Success', data: successData },
+            { name: 'Failed', data: failedData }
+        ],
+        chart: { type: 'bar', height: 300, stacked: true, toolbar: { show: false } },
+        colors: ['#10b981', '#ef4444'],
+        plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
+        xaxis: { categories: categories },
+        legend: { position: 'top' },
+        dataLabels: { enabled: false }
+    };
+
+    if (charts.tlDaily) {
+        charts.tlDaily.updateOptions(options);
+    } else {
+        charts.tlDaily = new ApexCharts(document.querySelector("#tl-chart-daily"), options);
+        charts.tlDaily.render();
+    }
+}
+
+function renderTimelineDonut(data) {
+    if (!data.labels || data.labels.length === 0) {
+        if (charts.tlReasons) {
+            charts.tlReasons.updateSeries([]);
+        }
+        document.querySelector("#tl-chart-reasons").innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có lỗi trong khoảng thời gian này</div>';
+        return;
+    }
+
+    const options = {
+        series: data.series,
+        chart: { type: 'donut', height: 300 },
+        labels: data.labels,
+        colors: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'],
+        legend: { position: 'bottom' },
+        dataLabels: { enabled: true }
+    };
+
+    if (charts.tlReasons) {
+        charts.tlReasons.updateOptions(options);
+    } else {
+        charts.tlReasons = new ApexCharts(document.querySelector("#tl-chart-reasons"), options);
+        charts.tlReasons.render();
+    }
+}
+
 async function loadTimeline(minTs, maxTs) {
+    // Load both timeline chart and stats in parallel
+    loadTimelineStats(minTs, maxTs);
+    
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
     const json = await res.json();
