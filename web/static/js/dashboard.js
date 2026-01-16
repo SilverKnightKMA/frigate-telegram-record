@@ -719,7 +719,7 @@ async function loadPerformance(minTs, maxTs) {
             categories: data.storage.dates,
             labels: { rotate: -45, rotateAlways: data.storage.dates.length > 10 }
         },
-        yaxis: { title: { text: 'Dung lượng (MB)' } },
+        yaxis: { title: { text: 'Size (MB)' } },
         colors: ['#2563eb', '#10b981'],
         dataLabels: { enabled: false },
         legend: { position: 'top' }
