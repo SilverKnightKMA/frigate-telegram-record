@@ -162,14 +162,26 @@
 
                 <div class="control-group">
                     <div class="control-label">Thời gian xảy ra sự kiện</div>
-                    <input type="datetime-local" id="f-created-from" placeholder="Từ">
-                    <input type="datetime-local" id="f-created-to" placeholder="Đến">
+                    <div class="input-row">
+                        <span class="input-prefix">After</span>
+                        <input type="datetime-local" id="f-created-from">
+                    </div>
+                    <div class="input-row">
+                        <span class="input-prefix">Before</span>
+                        <input type="datetime-local" id="f-created-to">
+                    </div>
                 </div>
 
                 <div class="control-group">
                     <div class="control-label">Thời gian Record</div>
-                    <input type="datetime-local" id="f-video-from" placeholder="Video bắt đầu từ">
-                    <input type="datetime-local" id="f-video-to" placeholder="Video kết thúc đến">
+                    <div class="input-row">
+                        <span class="input-prefix">After</span>
+                        <input type="datetime-local" id="f-video-from">
+                    </div>
+                    <div class="input-row">
+                        <span class="input-prefix">Before</span>
+                        <input type="datetime-local" id="f-video-to">
+                    </div>
                 </div>
 
                 <div class="control-group" style="grid-column: 1 / -1; display:flex; gap:10px; align-items:flex-end;">

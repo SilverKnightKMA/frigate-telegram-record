@@ -194,7 +194,13 @@ dialog::backdrop { background: rgba(0,0,0,0.5); }
 .controls-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; padding: 15px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
 .control-group { display: flex; flex-direction: column; gap: 5px; }
 .control-label { font-size: 0.75rem; font-weight: 600; color: var(--text-sub); text-transform: uppercase; }
-.input-row { display: flex; gap: 5px; }
+.input-row { display: flex; gap: 5px; align-items: center; }
+.input-prefix { 
+    font-size: 0.8rem; 
+    color: var(--text-sub); 
+    min-width: 45px;
+    flex-shrink: 0;
+}
 select, input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; width: 100%; font-size: 0.9rem; }
 button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; height: 100%; }
 
