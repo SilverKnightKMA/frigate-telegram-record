@@ -647,29 +647,69 @@ async function loadPerformance(minTs, maxTs) {
     }
     const res = await fetch(url);
     const data = await res.json();
-    // Chart rendering logic (unchanged)
-    const optLine = {
+    
+    // Scatter plot: Duration vs Processing Time (separated by type)
+    const optScatter = {
         series: [
-            { name: 'Duration (s)', type: 'line', data: data.performance.duration },
-            { name: 'Processing (s)', type: 'line', data: data.performance.processing }
+            { name: 'Record', data: data.performance.record },
+            { name: 'Timelapse', data: data.performance.timelapse }
         ],
-        chart: { height: 350, type: 'line', zoom: { enabled: false }, animations: { enabled: false } },
-        stroke: { width: [2, 2], curve: 'smooth' },
-        labels: data.performance.categories,
-        xaxis: { type: 'category', labels: { show: false } },
-        colors: ['#2563eb', '#f59e0b'],
-        yaxis: [{ title: { text: "Video Duration" } }, { opposite: true, title: { text: "Processing Time" } }]
+        chart: { 
+            height: 300, 
+            type: 'scatter', 
+            zoom: { enabled: true, type: 'xy' }, 
+            animations: { enabled: false },
+            toolbar: { show: true }
+        },
+        xaxis: { 
+            title: { text: 'Độ dài Video (giây)' },
+            tickAmount: 10
+        },
+        yaxis: { 
+            title: { text: 'Thời gian Xử lý (giây)' }
+        },
+        colors: ['#2563eb', '#10b981'],
+        markers: { size: 6 },
+        legend: { position: 'top' },
+        tooltip: {
+            custom: function({ seriesIndex, dataPointIndex, w }) {
+                const data = w.config.series[seriesIndex].data[dataPointIndex];
+                return `<div class="apexcharts-tooltip-custom" style="padding:8px">
+                    <b>${w.config.series[seriesIndex].name}</b><br/>
+                    Độ dài: ${data[0]}s<br/>
+                    Xử lý: ${data[1]}s
+                </div>`;
+            }
+        }
     };
     if(charts.perfLine) charts.perfLine.destroy();
-    charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optLine);
+    charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optScatter);
     charts.perfLine.render();
 
+    // Stacked bar chart: Storage by type per day
     const optBar = {
-        series: [{ name: 'Storage (MB)', data: data.storage.sizes }],
-        chart: { height: 350, type: 'bar', animations: { enabled: false } },
-        xaxis: { categories: data.storage.dates },
-        colors: ['#8b5cf6'],
-        dataLabels: { enabled: false }
+        series: [
+            { name: 'Record (MB)', data: data.storage.record },
+            { name: 'Timelapse (MB)', data: data.storage.timelapse }
+        ],
+        chart: { 
+            height: 300, 
+            type: 'bar', 
+            stacked: true,
+            animations: { enabled: false },
+            toolbar: { show: true }
+        },
+        plotOptions: {
+            bar: { horizontal: false, columnWidth: '70%' }
+        },
+        xaxis: { 
+            categories: data.storage.dates,
+            labels: { rotate: -45, rotateAlways: data.storage.dates.length > 10 }
+        },
+        yaxis: { title: { text: 'Dung lượng (MB)' } },
+        colors: ['#2563eb', '#10b981'],
+        dataLabels: { enabled: false },
+        legend: { position: 'top' }
     };
     if(charts.storeBar) charts.storeBar.destroy();
     charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);

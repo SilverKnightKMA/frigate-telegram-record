@@ -405,29 +405,56 @@ def get_performance():
         start_ts = end_ts - (7 * 24 * 60 * 60)
 
     try:
+        # Get performance data grouped by type (timelapse vs record)
         query_perf = """
-            SELECT start_ts, duration, process_sec 
+            SELECT type, duration, process_sec 
             FROM events 
             WHERE status = 'SUCCESS' AND start_ts >= ? AND start_ts <= ?
             ORDER BY start_ts ASC
         """
         rows = cursor.execute(query_perf, (start_ts, end_ts)).fetchall()
         
+        # Separate data by type for scatter plot
+        record_data = []
+        timelapse_data = []
+        for r in rows:
+            point = [r['duration'] or 0, r['process_sec'] or 0]
+            if r['type'] and 'timelapse' in r['type'].lower():
+                timelapse_data.append(point)
+            else:
+                record_data.append(point)
+        
         perf_data = {
-            'categories': [common.format_timestamp(r['start_ts']) for r in rows],
-            'duration': [r['duration'] for r in rows],
-            'processing': [r['process_sec'] for r in rows]
+            'record': record_data,
+            'timelapse': timelapse_data
         }
 
+        # Storage data grouped by type per day
         query_store = """
-            SELECT date(start_ts, 'unixepoch', 'localtime') as d, SUM(filesize) as total
+            SELECT date(start_ts, 'unixepoch', 'localtime') as d, 
+                   type,
+                   SUM(filesize) as total
             FROM events WHERE start_ts >= ? AND start_ts <= ?
-            GROUP BY d ORDER BY d ASC
+            GROUP BY d, type ORDER BY d ASC
         """
         rows_store = cursor.execute(query_store, (start_ts, end_ts)).fetchall()
+        
+        # Aggregate by date with type breakdown
+        store_by_date = {}
+        for r in rows_store:
+            d = r['d']
+            if d not in store_by_date:
+                store_by_date[d] = {'record': 0, 'timelapse': 0}
+            size_mb = round((r['total'] or 0)/(1024*1024), 2)
+            if r['type'] and 'timelapse' in r['type'].lower():
+                store_by_date[d]['timelapse'] += size_mb
+            else:
+                store_by_date[d]['record'] += size_mb
+        
         store_data = {
-            'dates': [r['d'] for r in rows_store],
-            'sizes': [round((r['total'] or 0)/(1024*1024), 2) for r in rows_store]
+            'dates': list(store_by_date.keys()),
+            'record': [round(v['record'], 2) for v in store_by_date.values()],
+            'timelapse': [round(v['timelapse'], 2) for v in store_by_date.values()]
         }
         return jsonify({'performance': perf_data, 'storage': store_data})
     finally:
