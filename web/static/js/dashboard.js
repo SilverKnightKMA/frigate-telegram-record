@@ -677,7 +677,7 @@ async function loadPerformance(minTs, maxTs) {
             categories: data.performance.categories
         },
         yaxis: { 
-            title: { text: 'Giây' },
+            title: { text: 'Seconds' },
             labels: { formatter: function(val) { return Math.round(val); } }
         },
         colors: ['#2563eb', '#f59e0b'],
