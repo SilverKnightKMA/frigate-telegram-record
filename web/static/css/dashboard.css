@@ -35,6 +35,23 @@ body { background: var(--bg); color: var(--text-main); padding: 20px; font-size:
 .metric-value { font-size: 1.8rem; font-weight: 700; color: var(--text-main); }
 .metric-sub { font-size: 0.8rem; margin-top: 5px; color: var(--text-sub); }
 
+/* Trend Metrics */
+.metric-trend {
+    font-size: 0.75rem;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.metric-trend.positive { color: #10b981; }
+.metric-trend.negative { color: #ef4444; }
+.metric-trend.neutral { color: #6b7280; }
+.trend-arrow { margin-right: 2px; font-weight: 600; }
+.trend-value { font-weight: 600; }
+.trend-label { color: var(--text-sub); margin-left: 4px; }
+
 /* Data Table */
 .table-container { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 15px; }
 table { width: 100%; border-collapse: collapse; min-width: 1200px; }

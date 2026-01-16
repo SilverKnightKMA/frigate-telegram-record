@@ -203,6 +203,80 @@ def get_timeline_stats():
     finally:
         conn.close()
 
+@app.route('/api/trend_comparison')
+def get_trend_comparison():
+    """Compare current period metrics with previous period of same duration"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    # Calculate previous period
+    duration = end_ts - start_ts
+    previous_start = start_ts - duration
+    previous_end = start_ts
+
+    try:
+        query = """
+            SELECT 
+                COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_count,
+                SUM(filesize) as total_bytes,
+                AVG(process_sec) as avg_process
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+        """
+
+        # Current period
+        current = cursor.execute(query, (start_ts, end_ts)).fetchone()
+        current_total = current['total_jobs'] or 0
+        current_success = current['success_count'] or 0
+        current_bytes = current['total_bytes'] or 0
+        current_process = current['avg_process'] or 0
+        current_success_rate = round((current_success / current_total * 100), 1) if current_total > 0 else 0
+
+        # Previous period
+        previous = cursor.execute(query, (previous_start, previous_end)).fetchone()
+        previous_total = previous['total_jobs'] or 0
+        previous_success = previous['success_count'] or 0
+        previous_bytes = previous['total_bytes'] or 0
+        previous_process = previous['avg_process'] or 0
+        previous_success_rate = round((previous_success / previous_total * 100), 1) if previous_total > 0 else 0
+
+        # Calculate changes
+        def calc_pct_change(current_val, previous_val):
+            if previous_val == 0:
+                return 100.0 if current_val > 0 else 0.0
+            return round(((current_val - previous_val) / previous_val) * 100, 1)
+
+        return jsonify({
+            'current': {
+                'total': current_total,
+                'success_rate': current_success_rate,
+                'storage_bytes': current_bytes,
+                'avg_process': round(current_process, 2)
+            },
+            'previous': {
+                'total': previous_total,
+                'success_rate': previous_success_rate,
+                'storage_bytes': previous_bytes,
+                'avg_process': round(previous_process, 2)
+            },
+            'changes': {
+                'total_pct': calc_pct_change(current_total, previous_total),
+                'success_rate_diff': round(current_success_rate - previous_success_rate, 1),
+                'storage_pct': calc_pct_change(current_bytes, previous_bytes),
+                'process_pct': calc_pct_change(current_process, previous_process)
+            }
+        })
+    finally:
+        conn.close()
+
 @app.route('/api/timeline')
 def get_timeline():
     conn = common.get_db_connection()

@@ -196,7 +196,71 @@ async function loadTimelineStats(minTs, maxTs) {
         // Render charts for timeline tab
         renderTimelineStackedBar(m.charts.daily);
         renderTimelineDonut(m.charts.reasons);
+        
+        // Load trend comparison data
+        loadTrendComparison(minTs, maxTs);
     } catch (e) { console.error("Load Timeline Stats Error", e); }
+}
+
+async function loadTrendComparison(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/trend_comparison?start=${minTs/1000}&end=${maxTs/1000}`);
+        const data = await res.json();
+        
+        if (data.error) {
+            console.warn('Trend comparison error:', data.error);
+            return;
+        }
+
+        // Helper function to update a trend element
+        const updateTrend = (elementId, value, isPercentDiff = false, invertColor = false) => {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            
+            const arrow = el.querySelector('.trend-arrow');
+            const valueEl = el.querySelector('.trend-value');
+            
+            // Determine trend direction
+            let trendClass = 'neutral';
+            let arrowSymbol = '-';
+            let displayValue = '0%';
+            
+            if (value > 0) {
+                trendClass = invertColor ? 'negative' : 'positive';
+                arrowSymbol = '↑';
+                displayValue = `+${value}%`;
+            } else if (value < 0) {
+                trendClass = invertColor ? 'positive' : 'negative';
+                arrowSymbol = '↓';
+                displayValue = `${value}%`;
+            }
+            
+            // For success rate diff, show as percentage points difference
+            if (isPercentDiff) {
+                displayValue = value > 0 ? `+${value}` : `${value}`;
+            }
+            
+            el.className = `metric-trend ${trendClass}`;
+            arrow.textContent = arrowSymbol;
+            valueEl.textContent = displayValue;
+        };
+
+        // Update each trend indicator
+        // Success rate: higher is better
+        updateTrend('tl-health-trend', data.changes.success_rate_diff, true, false);
+        
+        // Storage: more storage used means more recordings (usually positive)
+        updateTrend('tl-storage-trend', data.changes.storage_pct, false, false);
+        
+        // Process time: lower is better, so invert color (negative change = green)
+        updateTrend('tl-process-trend', data.changes.process_pct, false, true);
+        
+        // Total events: more events usually means more activity (positive)
+        updateTrend('tl-total-trend', data.changes.total_pct, false, false);
+        
+    } catch (e) { 
+        console.error("Load Trend Comparison Error", e); 
+    }
 }
 
 function renderTimelineStackedBar(data) {
