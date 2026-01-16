@@ -4,7 +4,7 @@ let updateTimer = null;
 let timelineDebounce = null;
 
 let currentPage = 1;
-const ITEMS_PER_PAGE = 50;
+let itemsPerPage = 50;
 let totalRecords = 0;
 
 let timelineState = {
@@ -234,13 +234,44 @@ function clearFilters() {
 }
 
 function changePage(delta) {
+    const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
     const newPage = currentPage + delta;
-    if (newPage > 0) { loadLogs(newPage); }
+    if (newPage > 0 && newPage <= totalPages) { 
+        loadLogs(newPage); 
+    }
+}
+
+// Navigate to specific page number
+function gotoPage(page) {
+    const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
+    const targetPage = parseInt(page, 10);
+    if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= totalPages) {
+        loadLogs(targetPage);
+    }
+}
+
+// Handle goto input keypress (Enter to submit)
+function handleGotoKeypress(event) {
+    if (event.key === 'Enter') {
+        const input = event.target;
+        gotoPage(input.value);
+        input.value = '';
+    }
+}
+
+// Update items per page and reload from first page
+function changeItemsPerPage(value) {
+    const newValue = parseInt(value, 10);
+    if (!isNaN(newValue) && newValue > 0) {
+        itemsPerPage = newValue;
+        currentPage = 1;
+        loadLogs(1);
+    }
 }
 
 async function loadLogs(page) {
     currentPage = page;
-    const offset = (page - 1) * ITEMS_PER_PAGE;
+    const offset = (page - 1) * itemsPerPage;
     
     // Collect Multi-select values
     const statuses = getMsValues('ms-status');
@@ -285,7 +316,7 @@ async function loadLogs(page) {
         params.append('search', search);
         params.append('id_search', idSearch);
         params.append('alert_sent', alertSent);
-        params.append('limit', ITEMS_PER_PAGE);
+        params.append('limit', itemsPerPage);
         params.append('offset', offset);
         
         if(createdFrom) params.append('created_from', createdFrom);
@@ -339,14 +370,75 @@ async function loadLogs(page) {
 }
 
 function renderPagination(total) {
-    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
-    const btnPrev = document.getElementById('btn-prev');
-    const btnNext = document.getElementById('btn-next');
-    const pageInfo = document.getElementById('page-info');
+    const totalPages = Math.ceil(total / itemsPerPage) || 1;
+    
+    // Update both pagination containers (top and bottom)
+    document.querySelectorAll('.pagination-container').forEach(container => {
+        const btnPrev = container.querySelector('.btn-prev');
+        const btnNext = container.querySelector('.btn-next');
+        const pageInfo = container.querySelector('.page-info');
+        const pageNumbers = container.querySelector('.page-numbers');
+        const perPageSelect = container.querySelector('.per-page-select');
 
-    btnPrev.disabled = currentPage === 1;
-    btnNext.disabled = currentPage >= totalPages || totalPages === 0;
-    pageInfo.innerText = `Page ${currentPage} of ${totalPages || 1} (Total: ${total})`;
+        if (btnPrev) btnPrev.disabled = currentPage === 1;
+        if (btnNext) btnNext.disabled = currentPage >= totalPages;
+        if (pageInfo) pageInfo.innerText = `Total: ${total}`;
+        if (perPageSelect) perPageSelect.value = itemsPerPage;
+
+        // Render page number buttons
+        if (pageNumbers) {
+            pageNumbers.innerHTML = generatePageNumbers(currentPage, totalPages);
+        }
+    });
+}
+
+// Generate page number buttons with ellipsis for large page counts
+function generatePageNumbers(current, total) {
+    const pages = [];
+    const maxVisible = 5;
+    
+    if (total <= maxVisible + 2) {
+        // Show all pages if total is small
+        for (let i = 1; i <= total; i++) {
+            pages.push(i);
+        }
+    } else {
+        // Always show first page
+        pages.push(1);
+        
+        // Calculate range around current page
+        let start = Math.max(2, current - 1);
+        let end = Math.min(total - 1, current + 1);
+        
+        // Adjust range to show more pages
+        if (current <= 3) {
+            end = Math.min(total - 1, maxVisible - 1);
+        } else if (current >= total - 2) {
+            start = Math.max(2, total - maxVisible + 2);
+        }
+        
+        // Add ellipsis before range if needed
+        if (start > 2) pages.push('...');
+        
+        // Add range pages
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+        
+        // Add ellipsis after range if needed
+        if (end < total - 1) pages.push('...');
+        
+        // Always show last page
+        if (total > 1) pages.push(total);
+    }
+    
+    return pages.map(p => {
+        if (p === '...') {
+            return '<span class="page-ellipsis">...</span>';
+        }
+        const activeClass = p === current ? 'active' : '';
+        return `<button class="page-num ${activeClass}" onclick="gotoPage(${p})">${p}</button>`;
+    }).join('');
 }
 
 async function loadPerformance() {

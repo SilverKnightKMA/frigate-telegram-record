@@ -43,14 +43,95 @@ th { background: #f9fafb; font-weight: 600; color: var(--text-sub); font-size: 0
 tr:hover { background: #f9fafb; cursor: pointer; }
 
 /* Pagination Controls */
-.pagination-container { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 15px; }
+.pagination-container { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    gap: 15px; 
+    margin: 15px 0; 
+    padding: 10px 15px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+.pagination-left, .pagination-right { 
+    display: flex; 
+    align-items: center; 
+    gap: 8px; 
+}
+.pagination-center { 
+    display: flex; 
+    align-items: center; 
+    gap: 5px; 
+}
+.pagination-label { 
+    font-size: 0.85rem; 
+    color: var(--text-sub); 
+}
 .pagination-btn {
-    padding: 8px 12px; border: 1px solid #d1d5db; background: white; border-radius: 6px;
-    color: var(--text-main); cursor: pointer; font-size: 0.9rem; transition: all 0.2s;
+    padding: 6px 12px; 
+    border: 1px solid #d1d5db; 
+    background: white; 
+    border-radius: 6px;
+    color: var(--text-main); 
+    cursor: pointer; 
+    font-size: 0.85rem; 
+    transition: all 0.2s;
 }
 .pagination-btn:hover:not(:disabled) { background: #f3f4f6; border-color: #9ca3af; }
 .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.pagination-info { font-size: 0.9rem; color: var(--text-sub); margin: 0 10px; }
+.page-info { font-size: 0.85rem; color: var(--text-sub); }
+
+/* Page Number Buttons */
+.page-numbers { 
+    display: flex; 
+    align-items: center; 
+    gap: 3px; 
+}
+.page-num {
+    min-width: 32px; 
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d1d5db; 
+    background: white; 
+    border-radius: 6px;
+    color: var(--text-main); 
+    cursor: pointer; 
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+.page-num:hover { background: #f3f4f6; border-color: var(--primary); }
+.page-num.active { 
+    background: var(--primary); 
+    color: white; 
+    border-color: var(--primary); 
+}
+.page-ellipsis { 
+    padding: 0 5px; 
+    color: var(--text-sub); 
+}
+
+/* Per Page Select & Goto Input */
+.per-page-select {
+    padding: 5px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+}
+.goto-input {
+    width: 60px;
+    padding: 5px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+.goto-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
 
 /* Status Badges */
 .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }

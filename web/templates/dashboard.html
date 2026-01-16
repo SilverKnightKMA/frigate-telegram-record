@@ -181,6 +181,29 @@
                 </div>
             </div>
 
+            <!-- Pagination Controls (Top) -->
+            <div class="pagination-container">
+                <div class="pagination-left">
+                    <span class="pagination-label">Per page:</span>
+                    <select class="per-page-select" onchange="changeItemsPerPage(this.value)">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                </div>
+                <div class="pagination-center">
+                    <button class="pagination-btn btn-prev" onclick="changePage(-1)">❮ Prev</button>
+                    <div class="page-numbers"></div>
+                    <button class="pagination-btn btn-next" onclick="changePage(1)">Next ❯</button>
+                </div>
+                <div class="pagination-right">
+                    <span class="page-info">Total: 0</span>
+                    <span class="pagination-label">Go to:</span>
+                    <input type="number" class="goto-input" min="1" placeholder="#" onkeypress="handleGotoKeypress(event)">
+                </div>
+            </div>
+
             <div class="table-container">
                 <table id="log-table">
                     <thead>
@@ -203,10 +226,27 @@
                 </table>
             </div>
             
-            <div class="pagination-container" id="pagination-controls">
-                <button class="pagination-btn" id="btn-prev" onclick="changePage(-1)">Previous</button>
-                <span class="pagination-info" id="page-info">Page 1</span>
-                <button class="pagination-btn" id="btn-next" onclick="changePage(1)">Next</button>
+            <!-- Pagination Controls (Bottom) -->
+            <div class="pagination-container">
+                <div class="pagination-left">
+                    <span class="pagination-label">Per page:</span>
+                    <select class="per-page-select" onchange="changeItemsPerPage(this.value)">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                </div>
+                <div class="pagination-center">
+                    <button class="pagination-btn btn-prev" onclick="changePage(-1)">❮ Prev</button>
+                    <div class="page-numbers"></div>
+                    <button class="pagination-btn btn-next" onclick="changePage(1)">Next ❯</button>
+                </div>
+                <div class="pagination-right">
+                    <span class="page-info">Total: 0</span>
+                    <span class="pagination-label">Go to:</span>
+                    <input type="number" class="goto-input" min="1" placeholder="#" onkeypress="handleGotoKeypress(event)">
+                </div>
             </div>
         </div>
     </div>
