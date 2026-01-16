@@ -214,7 +214,7 @@ async function loadTimelineStats(minTs, maxTs) {
 }
 
 function renderTimelineStackedBar(data) {
-    const categories = data.map(d => d.date);
+    const categories = data.map(d => d.label); // Use 'label' instead of 'date'
     const successData = data.map(d => d.success);
     const failedData = data.map(d => d.failed);
 
@@ -238,17 +238,10 @@ function renderTimelineStackedBar(data) {
         xaxis: { categories: categories },
         yaxis: { title: { text: 'Số lượng' } },
         legend: { position: 'top' },
-        dataLabels: { enabled: false },
-        markers: { size: 4, hover: { size: 6 } },
-        tooltip: { shared: true, intersect: false }
     };
 
-    if (charts.tlDaily) {
-        charts.tlDaily.updateOptions(options);
-    } else {
-        charts.tlDaily = new ApexCharts(document.querySelector("#tl-chart-daily"), options);
-        charts.tlDaily.render();
-    }
+    const chart = new ApexCharts(document.querySelector('#tl-chart-daily'), options);
+    chart.render();
 }
 
 function renderTimelineDonut(data) {
