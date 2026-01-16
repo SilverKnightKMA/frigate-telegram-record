@@ -221,9 +221,15 @@ function renderTimelineStackedBar(data) {
             type: 'gradient',
             gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1 }
         },
+        dataLabels: { enabled: false },
         xaxis: { categories: categories },
-        yaxis: { title: { text: 'Số lượng' } },
+        yaxis: { title: { text: 'Events' } },
         legend: { position: 'top' },
+        tooltip: {
+            shared: true,
+            intersect: false,
+            y: { formatter: (val) => val + ' events' }
+        }
     };
 
     const chart = new ApexCharts(document.querySelector('#tl-chart-daily'), options);
@@ -278,11 +284,18 @@ function renderTimelineDonut(data) {
         dataLabels: { 
             enabled: true,
             style: { fontSize: '12px', colors: ['#333'], fontFamily: 'inherit' },
-            offsetX: -10
+            offsetX: 5,
+            textAnchor: 'start'
         },
         tooltip: {
             style: { fontFamily: 'inherit' },
             y: { formatter: (val) => `${val} errors` }
+        },
+        plotOptions: {
+            bar: {
+                horizontal: true,
+                dataLabels: { position: 'top' }
+            }
         }
     };
 
@@ -688,6 +701,7 @@ async function loadPerformance(minTs, maxTs) {
     charts.perfLine.render();
 
     // Stacked bar chart: Storage by type per day
+    const storageLabels = data.storage.labels || data.storage.dates || [];
     const optBar = {
         series: [
             { name: 'Record (MB)', data: data.storage.record || [] },
@@ -704,8 +718,8 @@ async function loadPerformance(minTs, maxTs) {
             bar: { horizontal: false, columnWidth: '70%' }
         },
         xaxis: { 
-            categories: data.storage.dates || [],
-            labels: { rotate: -45, rotateAlways: (data.storage.dates?.length || 0) > 10 }
+            categories: storageLabels,
+            labels: { rotate: -45, rotateAlways: storageLabels.length > 15 }
         },
         yaxis: { title: { text: 'Size (MB)' } },
         colors: ['#2563eb', '#10b981'],

@@ -487,11 +487,28 @@ def get_performance():
             perf_data['avg_process'].append(round(r['avg_process'] or 0, 1))
             perf_data['ratio'].append(round((r['avg_ratio'] or 0) * 100, 2))  # ratio as percentage
 
-        # Adaptive Storage Chart Query
-        granularity = '15min'  # Example granularity, can be parameterized
+        # Adaptive Storage Chart Query - choose granularity based on time range
+        duration_hours = (end_ts - start_ts) / 3600
+        
+        if duration_hours <= 6:
+            time_sql = "strftime('%H:%M', start_ts, 'unixepoch', 'localtime')"
+            granularity = '15min'
+        elif duration_hours <= 24:
+            time_sql = "strftime('%H:00', start_ts, 'unixepoch', 'localtime')"
+            granularity = 'hour'
+        elif duration_hours <= 720:  # Up to 30 days
+            time_sql = "strftime('%d/%m', start_ts, 'unixepoch', 'localtime')"
+            granularity = 'day'
+        elif duration_hours <= 2160:  # Up to 90 days
+            time_sql = "strftime('%Y-W%W', start_ts, 'unixepoch', 'localtime')"
+            granularity = 'week'
+        else:
+            time_sql = "strftime('%m/%Y', start_ts, 'unixepoch', 'localtime')"
+            granularity = 'month'
+
         query_store = f"""
             SELECT 
-                strftime('%H:%M', start_ts, 'unixepoch', 'localtime') as time_bucket,
+                {time_sql} as time_bucket,
                 CASE WHEN type LIKE '%timelapse%' THEN 'timelapse' ELSE 'record' END as type,
                 SUM(filesize) as total
             FROM events 
