@@ -490,7 +490,7 @@ async function loadLogs(page) {
     const procMax = document.getElementById('f-proc-max').value;
 
     const tbody = document.querySelector('#log-table tbody');
-    tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Đang tải dữ liệu trang ' + page + '...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Đang tải dữ liệu trang ' + page + '...</td></tr>';
 
     try {
         const params = new URLSearchParams();
@@ -530,14 +530,17 @@ async function loadLogs(page) {
         
         tbody.innerHTML = '';
         if(json.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Không tìm thấy dữ liệu</td></tr>';
             renderPagination(0);
             return;
         }
 
         json.data.forEach(row => {
             const tr = document.createElement('tr');
+            // Truncate message for display
+            const msgPreview = row.message ? (row.message.length > 50 ? row.message.substring(0, 50) + '...' : row.message) : '-';
             tr.innerHTML = `
+                <td><code>${row.id}</code></td>
                 <td>${row.time}</td>
                 <td><strong>${row.camera}</strong></td>
                 <td>${row.type}</td>
@@ -550,6 +553,7 @@ async function loadLogs(page) {
                 <td style="color:var(--danger)">${row.error_type}</td>
                 <td>${row.msg_id}</td>
                 <td>${row.alert_sent}</td>
+                <td title="${row.message || ''}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${msgPreview}</td>
             `;
             tr.onclick = () => showModal(row);
             tbody.appendChild(tr);
@@ -558,7 +562,7 @@ async function loadLogs(page) {
         renderPagination(totalRecords);
     } catch (e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="12" class="loading-row">Lỗi kết nối server</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="loading-row">Lỗi kết nối server</td></tr>';
     }
 }
 
@@ -648,42 +652,51 @@ async function loadPerformance(minTs, maxTs) {
     const res = await fetch(url);
     const data = await res.json();
     
-    // Scatter plot: Duration vs Processing Time (separated by type)
-    const optScatter = {
+    // Bar chart: Performance comparison by type
+    const optPerf = {
         series: [
-            { name: 'Record', data: data.performance.record },
-            { name: 'Timelapse', data: data.performance.timelapse }
+            { name: 'Độ dài TB (giây)', data: data.performance.avg_duration },
+            { name: 'Xử lý TB (giây)', data: data.performance.avg_process }
         ],
         chart: { 
-            height: 300, 
-            type: 'scatter', 
-            zoom: { enabled: true, type: 'xy' }, 
+            height: 280, 
+            type: 'bar',
             animations: { enabled: false },
-            toolbar: { show: true }
+            toolbar: { show: false }
+        },
+        plotOptions: {
+            bar: { horizontal: false, columnWidth: '60%', dataLabels: { position: 'top' } }
+        },
+        dataLabels: {
+            enabled: true,
+            formatter: function(val) { return val + 's'; },
+            offsetY: -20,
+            style: { fontSize: '11px', colors: ['#333'] }
         },
         xaxis: { 
-            title: { text: 'Độ dài Video (giây)' },
-            tickAmount: 10
+            categories: data.performance.categories
         },
         yaxis: { 
-            title: { text: 'Thời gian Xử lý (giây)' }
+            title: { text: 'Giây' },
+            labels: { formatter: function(val) { return Math.round(val); } }
         },
-        colors: ['#2563eb', '#10b981'],
-        markers: { size: 6 },
+        colors: ['#2563eb', '#f59e0b'],
         legend: { position: 'top' },
         tooltip: {
-            custom: function({ seriesIndex, dataPointIndex, w }) {
-                const data = w.config.series[seriesIndex].data[dataPointIndex];
-                return `<div class="apexcharts-tooltip-custom" style="padding:8px">
-                    <b>${w.config.series[seriesIndex].name}</b><br/>
-                    Độ dài: ${data[0]}s<br/>
-                    Xử lý: ${data[1]}s
-                </div>`;
-            }
+            y: { formatter: function(val) { return val + ' giây'; } }
+        },
+        annotations: {
+            xaxis: data.performance.categories.map((cat, i) => ({
+                x: cat,
+                label: {
+                    text: `${data.performance.count[i]} videos`,
+                    style: { fontSize: '10px', color: '#666' }
+                }
+            }))
         }
     };
     if(charts.perfLine) charts.perfLine.destroy();
-    charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optScatter);
+    charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optPerf);
     charts.perfLine.render();
 
     // Stacked bar chart: Storage by type per day

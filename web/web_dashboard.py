@@ -405,29 +405,37 @@ def get_performance():
         start_ts = end_ts - (7 * 24 * 60 * 60)
 
     try:
-        # Get performance data grouped by type (timelapse vs record)
+        # Get aggregated performance stats by type
         query_perf = """
-            SELECT type, duration, process_sec 
+            SELECT 
+                CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END as category,
+                COUNT(*) as count,
+                AVG(duration) as avg_duration,
+                MIN(duration) as min_duration,
+                MAX(duration) as max_duration,
+                AVG(process_sec) as avg_process,
+                MIN(process_sec) as min_process,
+                MAX(process_sec) as max_process,
+                AVG(CASE WHEN duration > 0 THEN process_sec * 1.0 / duration ELSE 0 END) as avg_ratio
             FROM events 
             WHERE status = 'SUCCESS' AND start_ts >= ? AND start_ts <= ?
-            ORDER BY start_ts ASC
+            GROUP BY category
         """
         rows = cursor.execute(query_perf, (start_ts, end_ts)).fetchall()
         
-        # Separate data by type for scatter plot
-        record_data = []
-        timelapse_data = []
-        for r in rows:
-            point = [r['duration'] or 0, r['process_sec'] or 0]
-            if r['type'] and 'timelapse' in r['type'].lower():
-                timelapse_data.append(point)
-            else:
-                record_data.append(point)
-        
         perf_data = {
-            'record': record_data,
-            'timelapse': timelapse_data
+            'categories': [],
+            'count': [],
+            'avg_duration': [],
+            'avg_process': [],
+            'ratio': []
         }
+        for r in rows:
+            perf_data['categories'].append(r['category'])
+            perf_data['count'].append(r['count'])
+            perf_data['avg_duration'].append(round(r['avg_duration'] or 0, 1))
+            perf_data['avg_process'].append(round(r['avg_process'] or 0, 1))
+            perf_data['ratio'].append(round((r['avg_ratio'] or 0) * 100, 2))  # ratio as percentage
 
         # Storage data grouped by type per day
         query_store = """
