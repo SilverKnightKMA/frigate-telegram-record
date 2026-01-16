@@ -12,7 +12,6 @@
     <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchTab('timeline')">Tổng quan</button>
         <button class="tab-btn" onclick="switchTab('logs')">Lịch sử chi tiết</button>
-        <button class="tab-btn" onclick="switchTab('perf')">Hiệu năng</button>
         <div style="margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--text-sub);">
             Cập nhật lần cuối: <span id="last-updated" style="font-weight:600">-</span>
         </div>
@@ -83,6 +82,18 @@
             <div class="card">
                 <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
                 <div id="tl-chart-reasons"></div>
+            </div>
+        </div>
+
+        <!-- Performance Charts -->
+        <div class="chart-row" style="margin-top: 20px;">
+            <div class="card">
+                <h3 style="margin-bottom:15px">Tương quan: Độ dài Video vs Thời gian Xử lý</h3>
+                <div id="chart-perf-line"></div>
+            </div>
+            <div class="card">
+                <h3 style="margin-bottom:15px">Xu hướng tiêu thụ dung lượng đĩa</h3>
+                <div id="chart-storage-bar"></div>
             </div>
         </div>
 
@@ -294,17 +305,6 @@
                     <span class="page-info">of 0 events</span>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <div id="tab-perf" class="tab-content">
-        <div class="card" style="margin-bottom: 20px;">
-            <h3 style="margin-bottom:15px">Tương quan: Độ dài Video vs Thời gian Xử lý</h3>
-            <div id="chart-perf-line"></div>
-        </div>
-        <div class="card">
-            <h3 style="margin-bottom:15px">Xu hướng tiêu thụ dung lượng đĩa (7 ngày)</h3>
-            <div id="chart-storage-bar"></div>
         </div>
     </div>
 

@@ -111,7 +111,6 @@ function switchTab(tabId) {
 
     if(tabId === 'timeline') loadTimeline(timelineState.start, timelineState.end);
     if(tabId === 'logs') resetAndLoadLogs();
-    if(tabId === 'perf') loadPerformance();
 }
 
 // --- Timeline Logic Helpers (Unchanged) ---
@@ -317,8 +316,9 @@ function renderTimelineDonut(data) {
 }
 
 async function loadTimeline(minTs, maxTs) {
-    // Load both timeline chart and stats in parallel
+    // Load timeline chart, stats, and performance in parallel
     loadTimelineStats(minTs, maxTs);
+    loadPerformance(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
@@ -640,8 +640,12 @@ function generatePageNumbers(current, total) {
     }).join('');
 }
 
-async function loadPerformance() {
-    const res = await fetch('/api/performance');
+async function loadPerformance(minTs, maxTs) {
+    let url = '/api/performance';
+    if (minTs && maxTs) {
+        url += `?start=${minTs/1000}&end=${maxTs/1000}`;
+    }
+    const res = await fetch(url);
     const data = await res.json();
     // Chart rendering logic (unchanged)
     const optLine = {

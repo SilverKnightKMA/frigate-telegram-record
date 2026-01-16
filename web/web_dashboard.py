@@ -102,7 +102,7 @@ def get_timeline_stats():
                 SUM(filesize) as total_storage,
                 AVG(process_sec) as avg_process
             FROM events 
-            WHERE created_at >= ? AND created_at <= ?
+            WHERE start_ts >= ? AND start_ts <= ?
         """
         metrics = cursor.execute(query_metrics, (start_ts, end_ts)).fetchone()
         
@@ -116,11 +116,11 @@ def get_timeline_stats():
         # Daily statistics for stacked bar chart
         query_daily = """
             SELECT 
-                date(created_at, 'unixepoch', 'localtime') as day_str,
+                date(start_ts, 'unixepoch', 'localtime') as day_str,
                 SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
                 SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
             FROM events
-            WHERE created_at >= ? AND created_at <= ?
+            WHERE start_ts >= ? AND start_ts <= ?
             GROUP BY day_str
             ORDER BY day_str ASC
         """
@@ -130,7 +130,7 @@ def get_timeline_stats():
         query_reasons = """
             SELECT fail_type, COUNT(*) as count 
             FROM events 
-            WHERE status = 'FAILED' AND created_at >= ? AND created_at <= ?
+            WHERE status = 'FAILED' AND start_ts >= ? AND start_ts <= ?
             GROUP BY fail_type
         """
         fail_reasons = cursor.execute(query_reasons, (start_ts, end_ts)).fetchall()
@@ -396,29 +396,35 @@ def get_performance():
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
     
-    cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=7)).timestamp()
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+    
+    # Fallback to last 7 days if no params provided
+    if not start_ts or not end_ts:
+        end_ts = datetime.now(pytz.utc).timestamp()
+        start_ts = end_ts - (7 * 24 * 60 * 60)
 
     try:
         query_perf = """
-            SELECT created_at, duration, process_sec 
+            SELECT start_ts, duration, process_sec 
             FROM events 
-            WHERE status = 'SUCCESS' AND created_at > ?
-            ORDER BY created_at ASC
+            WHERE status = 'SUCCESS' AND start_ts >= ? AND start_ts <= ?
+            ORDER BY start_ts ASC
         """
-        rows = cursor.execute(query_perf, (cutoff_ts,)).fetchall()
+        rows = cursor.execute(query_perf, (start_ts, end_ts)).fetchall()
         
         perf_data = {
-            'categories': [common.format_timestamp(r['created_at']) for r in rows],
+            'categories': [common.format_timestamp(r['start_ts']) for r in rows],
             'duration': [r['duration'] for r in rows],
             'processing': [r['process_sec'] for r in rows]
         }
 
         query_store = """
-            SELECT date(created_at, 'unixepoch', 'localtime') as d, SUM(filesize) as total
-            FROM events WHERE created_at > ?
+            SELECT date(start_ts, 'unixepoch', 'localtime') as d, SUM(filesize) as total
+            FROM events WHERE start_ts >= ? AND start_ts <= ?
             GROUP BY d ORDER BY d ASC
         """
-        rows_store = cursor.execute(query_store, (cutoff_ts,)).fetchall()
+        rows_store = cursor.execute(query_store, (start_ts, end_ts)).fetchall()
         store_data = {
             'dates': [r['d'] for r in rows_store],
             'sizes': [round((r['total'] or 0)/(1024*1024), 2) for r in rows_store]
