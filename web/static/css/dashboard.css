@@ -54,19 +54,37 @@ tr:hover { background: #f9fafb; cursor: pointer; }
     border: 1px solid #e5e7eb;
     border-radius: 8px;
 }
-.pagination-left, .pagination-right { 
+.pagination-left { 
     display: flex; 
     align-items: center; 
-    gap: 8px; 
+    gap: 8px;
+    flex-shrink: 0;
+}
+.pagination-right { 
+    display: flex; 
+    align-items: center; 
+    gap: 5px;
+    flex-shrink: 0;
 }
 .pagination-center { 
     display: flex; 
     align-items: center; 
-    gap: 5px; 
+    gap: 5px;
+    flex-wrap: nowrap;
 }
 .pagination-label { 
     font-size: 0.85rem; 
-    color: var(--text-sub); 
+    color: var(--text-sub);
+    white-space: nowrap;
+}
+.pagination-divider {
+    color: #d1d5db;
+    margin: 0 5px;
+}
+.page-range {
+    font-size: 0.85rem;
+    color: var(--text-main);
+    font-weight: 500;
 }
 .pagination-btn {
     padding: 6px 12px; 

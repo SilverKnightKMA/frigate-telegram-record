@@ -373,17 +373,23 @@ async function loadLogs(page) {
 function renderPagination(total) {
     const totalPages = Math.ceil(total / itemsPerPage) || 1;
     
+    // Calculate display range
+    const startItem = total === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+    const endItem = Math.min(currentPage * itemsPerPage, total);
+    
     // Update both pagination containers (top and bottom)
     document.querySelectorAll('.pagination-container').forEach(container => {
         const btnPrev = container.querySelector('.btn-prev');
         const btnNext = container.querySelector('.btn-next');
+        const pageRange = container.querySelector('.page-range');
         const pageInfo = container.querySelector('.page-info');
         const pageNumbers = container.querySelector('.page-numbers');
         const perPageSelect = container.querySelector('.per-page-select');
 
         if (btnPrev) btnPrev.disabled = currentPage === 1;
         if (btnNext) btnNext.disabled = currentPage >= totalPages;
-        if (pageInfo) pageInfo.innerText = `Total: ${total}`;
+        if (pageRange) pageRange.innerText = `Showing ${startItem}-${endItem}`;
+        if (pageInfo) pageInfo.innerText = `of ${total.toLocaleString()} events`;
         if (perPageSelect) perPageSelect.value = itemsPerPage;
 
         // Render page number buttons
