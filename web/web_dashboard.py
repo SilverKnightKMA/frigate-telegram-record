@@ -337,8 +337,9 @@ def get_peak_activity():
             rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
             data = [{'hour': r['hour'], 'count': r['count'], 'success': r['success'], 'failed': r['failed']} for r in rows]
             granularity = 'hour'
-        elif duration_hours <= 168:  # 1 week
-            # Group by day of week + hour
+        else:
+            # Group by day of week + hour for any time range >= 1 day
+            # This shows the general pattern of activity
             query = """
                 SELECT 
                     CAST(strftime('%w', start_ts, 'unixepoch', 'localtime') AS INTEGER) as day_of_week,
@@ -354,22 +355,6 @@ def get_peak_activity():
             rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
             data = [{'day': r['day_of_week'], 'hour': r['hour'], 'count': r['count'], 'success': r['success'], 'failed': r['failed']} for r in rows]
             granularity = 'day_hour'
-        else:
-            # Group by day of week only
-            query = """
-                SELECT 
-                    CAST(strftime('%w', start_ts, 'unixepoch', 'localtime') AS INTEGER) as day_of_week,
-                    COUNT(*) as count,
-                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
-                    SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
-                FROM events
-                WHERE start_ts >= ? AND start_ts <= ?
-                GROUP BY day_of_week
-                ORDER BY day_of_week
-            """
-            rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
-            data = [{'day': r['day_of_week'], 'count': r['count'], 'success': r['success'], 'failed': r['failed']} for r in rows]
-            granularity = 'day'
 
         return jsonify({
             'granularity': granularity,

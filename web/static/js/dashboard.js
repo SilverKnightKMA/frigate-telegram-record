@@ -1052,8 +1052,7 @@ async function loadPeakActivity(minTs, maxTs) {
             container.innerHTML = '';
         }
 
-        // Calculate dynamic thresholds based on actual data
-        const allSuccessCounts = data.data.map(d => d.success || 0).filter(v => v > 0);
+        // Calculate dynamic thresholds based on FAILED counts (errors)
         const allFailedCounts = data.data.map(d => d.failed || 0).filter(v => v > 0);
         
         // Calculate percentiles for dynamic ranges
@@ -1064,11 +1063,10 @@ async function loadPeakActivity(minTs, maxTs) {
             return sorted[Math.max(0, idx)];
         };
         
-        const maxSuccess = Math.max(...allSuccessCounts, 1);
-        const p25 = Math.max(1, getPercentile(allSuccessCounts, 0.25));
-        const p50 = Math.max(p25 + 1, getPercentile(allSuccessCounts, 0.50));
-        const p75 = Math.max(p50 + 1, getPercentile(allSuccessCounts, 0.75));
-        const p90 = Math.max(p75 + 1, getPercentile(allSuccessCounts, 0.90));
+        const maxFailed = Math.max(...allFailedCounts, 1);
+        const p25 = Math.max(1, getPercentile(allFailedCounts, 0.25));
+        const p50 = Math.max(p25 + 1, getPercentile(allFailedCounts, 0.50));
+        const p75 = Math.max(p50 + 1, getPercentile(allFailedCounts, 0.75));
 
         let series = [];
         let categories = [];
@@ -1086,32 +1084,19 @@ async function loadPeakActivity(minTs, maxTs) {
                 { name: 'Success', data: successData },
                 { name: 'Failed', data: failedData }
             ];
-        } else if (data.granularity === 'day') {
-            // Stacked bar for days: success + failed
-            categories = data.day_labels;
-            const successData = new Array(7).fill(0);
-            const failedData = new Array(7).fill(0);
-            data.data.forEach(d => { 
-                successData[d.day] = d.success || 0;
-                failedData[d.day] = d.failed || 0;
-            });
-            series = [
-                { name: 'Success', data: successData },
-                { name: 'Failed', data: failedData }
-            ];
         } else {
-            // Heatmap: days x hours - use success for green intensity, show failed in tooltip
+            // Heatmap: days x hours - use FAILED for red intensity (error distribution)
             // X-axis: hours (hidden labels), Y-axis: days
             categories = data.hour_labels;
             // Build matrix: each day is a series with 24 hours
-            // Store both success and failed for tooltip
+            // Y value is failed count for color intensity
             series = data.day_labels.map((dayLabel, dayIndex) => {
                 const hourData = new Array(24).fill(null).map((_, hourIndex) => {
                     const found = data.data.find(d => d.day === dayIndex && d.hour === hourIndex);
                     return { 
-                        x: hourIndex, // Use index for positioning
-                        y: found ? (found.success || 0) : 0,
-                        failed: found ? (found.failed || 0) : 0,
+                        x: hourIndex,
+                        y: found ? (found.failed || 0) : 0, // Use failed for heatmap color
+                        success: found ? (found.success || 0) : 0,
                         total: found ? (found.count || 0) : 0,
                         hourLabel: data.hour_labels[hourIndex]
                     };
@@ -1131,17 +1116,17 @@ async function loadPeakActivity(minTs, maxTs) {
                 animations: { enabled: false }
             },
             dataLabels: { enabled: !isHeatmap },
-            colors: isHeatmap ? ['#10b981'] : ['#10b981', '#ef4444'],
+            colors: isHeatmap ? ['#ef4444'] : ['#10b981', '#ef4444'],
             plotOptions: isHeatmap ? {
                 heatmap: {
                     shadeIntensity: 0.5,
                     colorScale: {
                         ranges: [
-                            { from: 0, to: 0, color: '#e5e7eb', name: 'None' },
-                            { from: 1, to: p25, color: '#bbf7d0', name: `Low (1-${p25})` },
-                            { from: p25 + 1, to: p50, color: '#4ade80', name: `Medium (${p25+1}-${p50})` },
-                            { from: p50 + 1, to: p75, color: '#22c55e', name: `High (${p50+1}-${p75})` },
-                            { from: p75 + 1, to: maxSuccess + 1000, color: '#15803d', name: `Very High (${p75+1}+)` }
+                            { from: 0, to: 0, color: '#d1fae5', name: 'No Errors' },
+                            { from: 1, to: p25, color: '#fecaca', name: `Low (1-${p25})` },
+                            { from: p25 + 1, to: p50, color: '#f87171', name: `Medium (${p25+1}-${p50})` },
+                            { from: p50 + 1, to: p75, color: '#ef4444', name: `High (${p50+1}-${p75})` },
+                            { from: p75 + 1, to: maxFailed + 1000, color: '#b91c1c', name: `Critical (${p75+1}+)` }
                         ]
                     }
                 }
@@ -1166,14 +1151,14 @@ async function loadPeakActivity(minTs, maxTs) {
                     const dayLabel = w.config.series[seriesIndex].name;
                     const dataPoint = w.config.series[seriesIndex].data[dataPointIndex];
                     const hourLabel = dataPoint.hourLabel || `${dataPointIndex}:00`;
-                    const success = dataPoint.y || 0;
-                    const failed = dataPoint.failed || 0;
+                    const failed = dataPoint.y || 0;
+                    const success = dataPoint.success || 0;
                     const total = success + failed;
                     
                     return `<div style="padding: 10px; font-size: 12px; line-height: 1.6;">
                         <div style="font-weight: 700; margin-bottom: 4px;">${dayLabel}, ${hourLabel}</div>
-                        <div><span style="color:#10b981">●</span> Success: ${success}</div>
                         <div><span style="color:#ef4444">●</span> Failed: ${failed}</div>
+                        <div><span style="color:#10b981">●</span> Success: ${success}</div>
                         <div style="margin-top:4px;border-top:1px solid #eee;padding-top:4px;">Total: ${total} events</div>
                     </div>`;
                 }
