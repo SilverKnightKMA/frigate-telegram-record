@@ -19,7 +19,42 @@
     </div>
 
     <div id="tab-timeline" class="tab-content active">
-        <div class="card">
+        <!-- Timeline Statistics Section -->
+        <div class="grid-4">
+            <div class="card">
+                <div class="metric-title">Tỉ lệ thành công</div>
+                <div class="metric-value" id="tl-health">-%</div>
+                <div class="metric-sub" id="tl-total">trên tổng 0 job</div>
+            </div>
+            <div class="card">
+                <div class="metric-title">Dung lượng lưu trữ</div>
+                <div class="metric-value" id="tl-storage">0 MB</div>
+                <div class="metric-sub" id="tl-storage-sub">trong khoảng đã chọn</div>
+            </div>
+            <div class="card">
+                <div class="metric-title">Thời gian xử lý TB</div>
+                <div class="metric-value" id="tl-process">0s</div>
+                <div class="metric-sub">giây / video</div>
+            </div>
+            <div class="card">
+                <div class="metric-title">Trạng thái</div>
+                <div class="metric-value" id="tl-status">-</div>
+                <div class="metric-sub" id="tl-status-sub"></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="card">
+                <h3 style="margin-bottom:15px">Thống kê Record (Success/Failed)</h3>
+                <div id="tl-chart-daily"></div>
+            </div>
+            <div class="card">
+                <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
+                <div id="tl-chart-reasons"></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
                 <h3>Timeline Ghi hình</h3>
             </div>
@@ -61,41 +96,6 @@
                 <span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;margin-right:5px;margin-left:10px;border-radius:2px;"></span>No Data
             </div>
             <div id="chart-timeline" style="min-height: 500px;"></div>
-        </div>
-
-        <!-- Timeline Statistics Section -->
-        <div class="grid-4" style="margin-top: 20px;">
-            <div class="card">
-                <div class="metric-title">Tỉ lệ thành công</div>
-                <div class="metric-value" id="tl-health">-%</div>
-                <div class="metric-sub" id="tl-total">trên tổng 0 job</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Dung lượng lưu trữ</div>
-                <div class="metric-value" id="tl-storage">0 MB</div>
-                <div class="metric-sub" id="tl-storage-sub">trong khoảng đã chọn</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Thời gian xử lý TB</div>
-                <div class="metric-value" id="tl-process">0s</div>
-                <div class="metric-sub">giây / video</div>
-            </div>
-            <div class="card">
-                <div class="metric-title">Trạng thái</div>
-                <div class="metric-value" id="tl-status">-</div>
-                <div class="metric-sub" id="tl-status-sub"></div>
-            </div>
-        </div>
-
-        <div class="chart-row">
-            <div class="card">
-                <h3 style="margin-bottom:15px">Thống kê Record (Success/Failed)</h3>
-                <div id="tl-chart-daily"></div>
-            </div>
-            <div class="card">
-                <h3 style="margin-bottom:15px">Nguyên nhân lỗi</h3>
-                <div id="tl-chart-reasons"></div>
-            </div>
         </div>
     </div>
 
