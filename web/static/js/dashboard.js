@@ -159,25 +159,11 @@ function applyCustomRange() {
 
 // --- API Functions ---
 async function loadOverview() {
+    // This function is deprecated - timeline tab now handles stats
+    // Keeping for backwards compatibility but doing nothing
     try {
-        const res = await fetch('/api/overview?days=1');
-        const data = await res.json();
-        const m = data.metrics;
-
-        document.getElementById('m-health').innerText = `${m.success_rate}%`;
-        document.getElementById('m-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
-        document.getElementById('m-total').innerText = `trên tổng ${m.total} events`;
-        document.getElementById('m-storage').innerText = m.storage;
-        document.getElementById('m-process').innerText = m.avg_process;
         document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
-        
-        const statusEl = document.getElementById('m-status');
-        statusEl.innerText = m.success_rate > 95 ? 'Ổn định' : 'Cần kiểm tra';
-        statusEl.style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
-
-        renderStackedBar(data.charts.daily);
-        renderDonut(data.charts.reasons);
-    } catch (e) { console.error("Load Overview Error", e); }
+    } catch (e) { /* Element may not exist */ }
 }
 
 async function loadTimelineStats(minTs, maxTs) {
@@ -638,18 +624,27 @@ function generatePageNumbers(current, total) {
 }
 
 async function loadPerformance(minTs, maxTs) {
-    let url = '/api/performance';
-    if (minTs && maxTs) {
-        url += `?start=${minTs/1000}&end=${maxTs/1000}`;
-    }
-    const res = await fetch(url);
-    const data = await res.json();
+    try {
+        let url = '/api/performance';
+        if (minTs && maxTs) {
+            url += `?start=${minTs/1000}&end=${maxTs/1000}`;
+        }
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        // Validate data structure
+        if (!data || !data.performance || !data.storage) {
+            console.warn('Invalid performance data received');
+            return;
+        }
     
     // Bar chart: Performance comparison by type
+    const perfCategories = data.performance.categories || [];
+    const perfCount = data.performance.count || [];
     const optPerf = {
         series: [
-            { name: 'Độ dài TB (giây)', data: data.performance.avg_duration },
-            { name: 'Xử lý TB (giây)', data: data.performance.avg_process }
+            { name: 'Độ dài TB (giây)', data: data.performance.avg_duration || [] },
+            { name: 'Xử lý TB (giây)', data: data.performance.avg_process || [] }
         ],
         chart: { 
             height: 280, 
@@ -667,7 +662,7 @@ async function loadPerformance(minTs, maxTs) {
             style: { fontSize: '11px', colors: ['#333'] }
         },
         xaxis: { 
-            categories: data.performance.categories
+            categories: perfCategories
         },
         yaxis: { 
             title: { text: 'Seconds' },
@@ -679,10 +674,10 @@ async function loadPerformance(minTs, maxTs) {
             y: { formatter: function(val) { return val + ' giây'; } }
         },
         annotations: {
-            xaxis: data.performance.categories.map((cat, i) => ({
+            xaxis: perfCategories.map((cat, i) => ({
                 x: cat,
                 label: {
-                    text: `${data.performance.count[i]} videos`,
+                    text: `${perfCount[i] || 0} videos`,
                     style: { fontSize: '10px', color: '#666' }
                 }
             }))
@@ -695,8 +690,8 @@ async function loadPerformance(minTs, maxTs) {
     // Stacked bar chart: Storage by type per day
     const optBar = {
         series: [
-            { name: 'Record (MB)', data: data.storage.record },
-            { name: 'Timelapse (MB)', data: data.storage.timelapse }
+            { name: 'Record (MB)', data: data.storage.record || [] },
+            { name: 'Timelapse (MB)', data: data.storage.timelapse || [] }
         ],
         chart: { 
             height: 300, 
@@ -709,8 +704,8 @@ async function loadPerformance(minTs, maxTs) {
             bar: { horizontal: false, columnWidth: '70%' }
         },
         xaxis: { 
-            categories: data.storage.dates,
-            labels: { rotate: -45, rotateAlways: data.storage.dates.length > 10 }
+            categories: data.storage.dates || [],
+            labels: { rotate: -45, rotateAlways: (data.storage.dates?.length || 0) > 10 }
         },
         yaxis: { title: { text: 'Size (MB)' } },
         colors: ['#2563eb', '#10b981'],
@@ -720,6 +715,7 @@ async function loadPerformance(minTs, maxTs) {
     if(charts.storeBar) charts.storeBar.destroy();
     charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);
     charts.storeBar.render();
+    } catch (e) { console.error("Load Performance Error", e); }
 }
 
 async function loadCameraPerformance(startTs, endTs) {

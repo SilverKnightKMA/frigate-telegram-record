@@ -120,6 +120,26 @@ def get_timeline_stats():
         return sql_expr, label_format, granularity
 
     try:
+        # First, get overall metrics for the time range
+        query_metrics = """
+            SELECT 
+                COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_jobs,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_jobs,
+                SUM(filesize) as total_storage,
+                AVG(process_sec) as avg_process
+            FROM events 
+            WHERE start_ts >= ? AND start_ts <= ?
+        """
+        metrics = cursor.execute(query_metrics, (start_ts, end_ts)).fetchone()
+        
+        total = metrics['total_jobs'] or 0
+        success_count = metrics['success_jobs'] or 0
+        failed_count = metrics['failed_jobs'] or 0
+        success_rate = round((success_count / total * 100), 1) if total > 0 else 0
+        storage_bytes = metrics['total_storage'] or 0
+        storage_fmt = f"{storage_bytes/1024**3:.2f} GB" if storage_bytes > 1024**3 else f"{storage_bytes/1024**2:.2f} MB"
+
         sql_expr, label_format, granularity = get_time_grouping(start_ts, end_ts)
 
         query_daily = f"""
@@ -165,6 +185,12 @@ def get_timeline_stats():
             return str(time_bucket)
 
         return jsonify({
+            'total': total,
+            'success': success_count,
+            'failed': failed_count,
+            'success_rate': success_rate,
+            'storage': storage_fmt,
+            'avg_process': round(metrics['avg_process'] or 0, 2),
             'charts': {
                 'daily': [{'label': format_time_label(row['time_bucket'], granularity, label_format), 'success': row['success'], 'failed': row['failed']} for row in daily_stats],
                 'granularity': granularity,
