@@ -251,6 +251,80 @@ def get_duration_distribution():
     finally:
         conn.close()
 
+@app.route('/api/peak_activity')
+def get_peak_activity():
+    """Get peak activity heatmap data"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        duration_hours = (end_ts - start_ts) / 3600
+        day_labels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
+        hour_labels = [f"{h:02d}:00" for h in range(24)]
+
+        if duration_hours <= 24:
+            # Group by hour only
+            query = """
+                SELECT 
+                    CAST(strftime('%H', start_ts, 'unixepoch', 'localtime') AS INTEGER) as hour,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success
+                FROM events
+                WHERE start_ts >= ? AND start_ts <= ?
+                GROUP BY hour
+                ORDER BY hour
+            """
+            rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+            data = [{'hour': r['hour'], 'count': r['count'], 'success': r['success']} for r in rows]
+            granularity = 'hour'
+        elif duration_hours <= 168:  # 1 week
+            # Group by day of week + hour
+            query = """
+                SELECT 
+                    CAST(strftime('%w', start_ts, 'unixepoch', 'localtime') AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', start_ts, 'unixepoch', 'localtime') AS INTEGER) as hour,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success
+                FROM events
+                WHERE start_ts >= ? AND start_ts <= ?
+                GROUP BY day_of_week, hour
+                ORDER BY day_of_week, hour
+            """
+            rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+            data = [{'day': r['day_of_week'], 'hour': r['hour'], 'count': r['count'], 'success': r['success']} for r in rows]
+            granularity = 'day_hour'
+        else:
+            # Group by day of week only
+            query = """
+                SELECT 
+                    CAST(strftime('%w', start_ts, 'unixepoch', 'localtime') AS INTEGER) as day_of_week,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success
+                FROM events
+                WHERE start_ts >= ? AND start_ts <= ?
+                GROUP BY day_of_week
+                ORDER BY day_of_week
+            """
+            rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+            data = [{'day': r['day_of_week'], 'count': r['count'], 'success': r['success']} for r in rows]
+            granularity = 'day'
+
+        return jsonify({
+            'granularity': granularity,
+            'data': data,
+            'day_labels': day_labels,
+            'hour_labels': hour_labels
+        })
+    finally:
+        conn.close()
+
 @app.route('/api/trend_comparison')
 def get_trend_comparison():
     """Compare current period metrics with previous period of same duration"""

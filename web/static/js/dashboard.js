@@ -377,6 +377,7 @@ async function loadTimeline(minTs, maxTs) {
     loadPerformance(minTs, maxTs);
     loadCameraPerformance(minTs, maxTs);
     loadDurationDistribution(minTs, maxTs);
+    loadPeakActivity(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
@@ -867,6 +868,98 @@ async function loadDurationDistribution(minTs, maxTs) {
         }
     } catch (e) {
         console.error('Load Duration Distribution Error', e);
+    }
+}
+
+async function loadPeakActivity(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/peak_activity?start=${minTs / 1000}&end=${maxTs / 1000}`);
+        const data = await res.json();
+
+        const container = document.querySelector('#chart-peak-heatmap');
+        if (!container) return;
+
+        // Validate data
+        if (!data.data || data.data.length === 0) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
+            return;
+        }
+
+        // Reset container if showing "no data" message
+        if (container.innerHTML.includes('Không có dữ liệu')) {
+            container.innerHTML = '';
+        }
+
+        let series = [];
+        let categories = [];
+
+        if (data.granularity === 'hour') {
+            // Single series for hours
+            categories = data.hour_labels;
+            const hourData = new Array(24).fill(0);
+            data.data.forEach(d => { hourData[d.hour] = d.count; });
+            series = [{ name: 'Hoạt động', data: hourData }];
+        } else if (data.granularity === 'day') {
+            // Single series for days
+            categories = data.day_labels;
+            const dayData = new Array(7).fill(0);
+            data.data.forEach(d => { dayData[d.day] = d.count; });
+            series = [{ name: 'Hoạt động', data: dayData }];
+        } else {
+            // Heatmap: days x hours
+            categories = data.hour_labels;
+            // Build matrix: each day is a series with 24 hours
+            series = data.day_labels.map((dayLabel, dayIndex) => {
+                const hourData = new Array(24).fill(null).map((_, hourIndex) => {
+                    const found = data.data.find(d => d.day === dayIndex && d.hour === hourIndex);
+                    return { x: data.hour_labels[hourIndex], y: found ? found.count : 0 };
+                });
+                return { name: dayLabel, data: hourData };
+            });
+        }
+
+        const isHeatmap = data.granularity === 'day_hour';
+        const options = {
+            series: series,
+            chart: {
+                type: isHeatmap ? 'heatmap' : 'bar',
+                height: isHeatmap ? 300 : 280,
+                toolbar: { show: false },
+                animations: { enabled: false }
+            },
+            dataLabels: { enabled: !isHeatmap },
+            colors: isHeatmap ? ['#10b981'] : ['#2563eb'],
+            plotOptions: isHeatmap ? {
+                heatmap: {
+                    shadeIntensity: 0.5,
+                    colorScale: {
+                        ranges: [
+                            { from: 0, to: 0, color: '#e5e7eb', name: 'Không' },
+                            { from: 1, to: 10, color: '#bbf7d0', name: 'Thấp' },
+                            { from: 11, to: 30, color: '#4ade80', name: 'TB' },
+                            { from: 31, to: 60, color: '#22c55e', name: 'Cao' },
+                            { from: 61, to: 1000, color: '#15803d', name: 'Rất cao' }
+                        ]
+                    }
+                }
+            } : {
+                bar: { horizontal: false, columnWidth: '70%', borderRadius: 4 }
+            },
+            xaxis: { categories: categories },
+            yaxis: { title: { text: isHeatmap ? '' : 'Số lượng' } },
+            legend: { show: isHeatmap, position: 'top' },
+            tooltip: {
+                y: { formatter: (val) => val + ' events' }
+            }
+        };
+
+        if (charts.peakHeatmap) {
+            charts.peakHeatmap.destroy();
+        }
+        charts.peakHeatmap = new ApexCharts(container, options);
+        charts.peakHeatmap.render();
+    } catch (e) {
+        console.error('Load Peak Activity Error', e);
     }
 }
 
