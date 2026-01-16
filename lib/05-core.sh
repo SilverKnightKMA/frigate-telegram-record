@@ -136,14 +136,28 @@ check_source_gatekeeper() {
     # [FIX] Immediate block if estimated output is 0s
     # Reason: Prevents "Best Effort" execution when result is guaranteed to be 0s.
     if [ "$estimated_output" -eq 0 ]; then
-        # [FIX] Send alert if never sent before for this slot
+        # [FIX] Send alert if never sent before for this slot AND within lookback window
         if [ "$prev_alert_sent" -eq 0 ]; then
-            log "[$src] [$mode] Gatekeeper: No source data (Est: 0s). Sending first-time alert."
-            # Set global variables for caller to use (export gatekeeper failure info)
-            _gatekeeper_fail="true"
-            _gatekeeper_reason="No Recording Data Available (VOD: 0s)"
-            _gatekeeper_prev_alert_sent=$prev_alert_sent
-            return 1
+            # Check if slot is within lookback window (use mode-specific value)
+            local current_ts=$(date +%s)
+            local alert_window_hours=$LOOKBACK_HOURS
+            if [ "$mode" == "timelapse" ]; then
+                alert_window_hours=$TIMELAPSE_LOOKBACK_HOURS
+            fi
+            local alert_window_sec=$((alert_window_hours * 3600))
+            local slot_age=$((current_ts - end_ts))
+            
+            if [ "$slot_age" -le "$alert_window_sec" ]; then
+                log "[$src] [$mode] Gatekeeper: No source data (Est: 0s). Sending first-time alert."
+                # Set global variables for caller to use (export gatekeeper failure info)
+                _gatekeeper_fail="true"
+                _gatekeeper_reason="No Recording Data Available (VOD: 0s)"
+                _gatekeeper_prev_alert_sent=$prev_alert_sent
+                return 1
+            else
+                log "[$src] [$mode] Gatekeeper: Skipping old slot (Age: $((slot_age/3600))h > ${alert_window_hours}h window)."
+                return 1
+            fi
         fi
         log "[$src] [$mode] Gatekeeper: Skipping (No valid source data found - Est: 0s, Alert already sent)."
         return 1
