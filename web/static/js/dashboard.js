@@ -311,6 +311,7 @@ async function loadTimeline(minTs, maxTs) {
     // Load timeline chart, stats, and performance in parallel
     loadTimelineStats(minTs, maxTs);
     loadPerformance(minTs, maxTs);
+    loadCameraPerformance(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
@@ -737,6 +738,15 @@ async function loadCameraPerformance(startTs, endTs) {
         const res = await fetch(`/api/camera_performance?start=${startTs / 1000}&end=${endTs / 1000}`);
         const data = await res.json();
 
+        // Validate data
+        if (!data.cameras || data.cameras.length === 0) {
+            const container = document.querySelector('#chart-camera-perf');
+            if (container) {
+                container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu camera trong khoảng thời gian này</div>';
+            }
+            return;
+        }
+
         const categories = data.cameras.map(c => c.name);
         const successCounts = data.cameras.map(c => c.success);
         const failedCounts = data.cameras.map(c => c.failed);
@@ -771,6 +781,12 @@ async function loadCameraPerformance(startTs, endTs) {
                 }
             }
         };
+
+        // Clear "no data" message if it was showing
+        const container = document.querySelector('#chart-camera-perf');
+        if (container && container.innerHTML.includes('Không có dữ liệu')) {
+            container.innerHTML = '';
+        }
 
         if (charts.cameraPerf) {
             charts.cameraPerf.updateOptions(options);
