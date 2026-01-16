@@ -373,14 +373,15 @@ execute_timelapse_pipeline() {
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
                     local current_ts=$(date +%s)
+                    local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
                     local msg_b64=$(echo "Timelapse Sent" | base64 -w 0)
                     
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
                     # [Dashboard Update] Insert record with process_sec
                     # [CHANGE] Include 'search_text' ('Timelapse Sent') in INSERT
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', 0, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent', 0);"
-                    log "[$src] Timelapse saved to history (Process: ${pipe_duration}s)."
+                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent', 0);"
+                    log "[$src] ✅ Timelapse Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
                     pipeline_success=1
                 fi
             else
