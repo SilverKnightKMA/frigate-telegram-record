@@ -244,7 +244,8 @@ def get_timeline_stats():
 
 @app.route('/api/duration_distribution')
 def get_duration_distribution():
-    """Get duration distribution histogram for videos - separated by Record and Timelapse"""
+    """Get duration distribution histogram for videos - separated by Record and Timelapse
+    Buckets are dynamically calculated based on actual data range"""
     conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -256,45 +257,133 @@ def get_duration_distribution():
         return jsonify({'error': 'start and end parameters required'}), 400
 
     try:
-        query = """
+        # First, get min/max duration for each category to calculate dynamic buckets
+        stats_query = """
             SELECT 
                 CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END as category,
-                CASE 
-                    WHEN duration < 30 THEN '0-30s'
-                    WHEN duration < 60 THEN '30-60s'
-                    WHEN duration < 180 THEN '1-3m'
-                    WHEN duration < 300 THEN '3-5m'
-                    WHEN duration < 600 THEN '5-10m'
-                    ELSE '10m+'
-                END as duration_bucket,
-                COUNT(*) as count,
-                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
-                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+                MIN(duration) as min_dur,
+                MAX(duration) as max_dur,
+                COUNT(*) as total
             FROM events
-            WHERE start_ts >= ? AND start_ts <= ?
-            GROUP BY category, duration_bucket
-            ORDER BY 
-                category,
-                CASE duration_bucket
-                    WHEN '0-30s' THEN 1
-                    WHEN '30-60s' THEN 2
-                    WHEN '1-3m' THEN 3
-                    WHEN '3-5m' THEN 4
-                    WHEN '5-10m' THEN 5
-                    ELSE 6
-                END
+            WHERE start_ts >= ? AND start_ts <= ? AND duration > 0
+            GROUP BY category
         """
-        rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
-
-        # Organize by category
+        stats_rows = cursor.execute(stats_query, (start_ts, end_ts)).fetchall()
+        
+        def format_duration(seconds):
+            """Format seconds into human readable string"""
+            if seconds < 60:
+                return f"{int(seconds)}s"
+            elif seconds < 3600:
+                mins = seconds / 60
+                if mins == int(mins):
+                    return f"{int(mins)}m"
+                return f"{mins:.1f}m"
+            else:
+                hours = seconds / 3600
+                if hours == int(hours):
+                    return f"{int(hours)}h"
+                return f"{hours:.1f}h"
+        
+        def calculate_buckets(min_dur, max_dur, num_buckets=6):
+            """Calculate dynamic bucket boundaries based on data range"""
+            if min_dur is None or max_dur is None:
+                return []
+            
+            # Ensure we have valid range
+            min_dur = max(0, min_dur)
+            max_dur = max(min_dur + 1, max_dur)
+            
+            # Calculate bucket size
+            range_dur = max_dur - min_dur
+            bucket_size = range_dur / num_buckets
+            
+            # Round bucket size to nice numbers
+            if bucket_size < 10:
+                bucket_size = max(1, round(bucket_size))
+            elif bucket_size < 60:
+                bucket_size = round(bucket_size / 5) * 5
+            elif bucket_size < 300:
+                bucket_size = round(bucket_size / 30) * 30
+            elif bucket_size < 3600:
+                bucket_size = round(bucket_size / 60) * 60
+            else:
+                bucket_size = round(bucket_size / 300) * 300
+            
+            bucket_size = max(1, bucket_size)
+            
+            # Generate bucket boundaries
+            buckets = []
+            current = int(min_dur / bucket_size) * bucket_size  # Round down to bucket boundary
+            while current < max_dur:
+                next_val = current + bucket_size
+                buckets.append((current, next_val))
+                current = next_val
+            
+            # Ensure last bucket captures max value
+            if buckets and buckets[-1][1] < max_dur:
+                buckets[-1] = (buckets[-1][0], max_dur + 1)
+            
+            return buckets
+        
+        def get_bucket_data(category, buckets):
+            """Get count data for each bucket"""
+            if not buckets:
+                return []
+            
+            # Build CASE statement for buckets
+            case_parts = []
+            for i, (start, end) in enumerate(buckets):
+                case_parts.append(f"WHEN duration >= {start} AND duration < {end} THEN {i}")
+            
+            case_sql = "CASE " + " ".join(case_parts) + " END"
+            
+            query = f"""
+                SELECT 
+                    {case_sql} as bucket_idx,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
+                    SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+                FROM events
+                WHERE start_ts >= ? AND start_ts <= ? 
+                    AND duration > 0
+                    AND (CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END) = ?
+                GROUP BY bucket_idx
+                HAVING bucket_idx IS NOT NULL
+                ORDER BY bucket_idx
+            """
+            rows = cursor.execute(query, (start_ts, end_ts, category)).fetchall()
+            
+            # Build result with bucket labels
+            result = []
+            row_map = {r['bucket_idx']: r for r in rows}
+            
+            for i, (start, end) in enumerate(buckets):
+                label = f"{format_duration(start)}-{format_duration(end)}"
+                if i in row_map:
+                    r = row_map[i]
+                    result.append({
+                        'range': label,
+                        'total': r['count'],
+                        'success': r['success'],
+                        'failed': r['failed']
+                    })
+                # Skip empty buckets
+            
+            return result
+        
+        # Process each category
         record_buckets = []
         timelapse_buckets = []
-        for r in rows:
-            bucket = {'range': r['duration_bucket'], 'total': r['count'], 'success': r['success'], 'failed': r['failed']}
-            if r['category'] == 'Record':
-                record_buckets.append(bucket)
+        
+        for row in stats_rows:
+            category = row['category']
+            buckets = calculate_buckets(row['min_dur'], row['max_dur'])
+            
+            if category == 'Record':
+                record_buckets = get_bucket_data('Record', buckets)
             else:
-                timelapse_buckets.append(bucket)
+                timelapse_buckets = get_bucket_data('Timelapse', buckets)
 
         return jsonify({
             'record': record_buckets,
