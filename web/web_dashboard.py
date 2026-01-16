@@ -203,6 +203,54 @@ def get_timeline_stats():
     finally:
         conn.close()
 
+@app.route('/api/duration_distribution')
+def get_duration_distribution():
+    """Get duration distribution histogram for videos"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        query = """
+            SELECT 
+                CASE 
+                    WHEN duration < 30 THEN '0-30s'
+                    WHEN duration < 60 THEN '30-60s'
+                    WHEN duration < 180 THEN '1-3m'
+                    WHEN duration < 300 THEN '3-5m'
+                    WHEN duration < 600 THEN '5-10m'
+                    ELSE '10m+'
+                END as duration_bucket,
+                COUNT(*) as count,
+                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
+                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+            GROUP BY duration_bucket
+            ORDER BY 
+                CASE duration_bucket
+                    WHEN '0-30s' THEN 1
+                    WHEN '30-60s' THEN 2
+                    WHEN '1-3m' THEN 3
+                    WHEN '3-5m' THEN 4
+                    WHEN '5-10m' THEN 5
+                    ELSE 6
+                END
+        """
+        rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+
+        buckets = [{'range': r['duration_bucket'], 'total': r['count'], 'success': r['success'], 'failed': r['failed']} for r in rows]
+
+        return jsonify({'buckets': buckets})
+    finally:
+        conn.close()
+
 @app.route('/api/trend_comparison')
 def get_trend_comparison():
     """Compare current period metrics with previous period of same duration"""

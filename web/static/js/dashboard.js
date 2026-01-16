@@ -376,6 +376,7 @@ async function loadTimeline(minTs, maxTs) {
     loadTimelineStats(minTs, maxTs);
     loadPerformance(minTs, maxTs);
     loadCameraPerformance(minTs, maxTs);
+    loadDurationDistribution(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
@@ -795,6 +796,78 @@ async function loadPerformance(minTs, maxTs) {
     charts.storeBar = new ApexCharts(document.querySelector("#chart-storage-bar"), optBar);
     charts.storeBar.render();
     } catch (e) { console.error("Load Performance Error", e); }
+}
+
+async function loadDurationDistribution(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/duration_distribution?start=${minTs / 1000}&end=${maxTs / 1000}`);
+        const data = await res.json();
+
+        const container = document.querySelector('#chart-duration-dist');
+        if (!container) return;
+
+        // Validate data
+        if (!data.buckets || data.buckets.length === 0) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">Không có dữ liệu trong khoảng thời gian này</div>';
+            return;
+        }
+
+        // Reset container if showing "no data" message
+        if (container.innerHTML.includes('Không có dữ liệu')) {
+            container.innerHTML = '';
+        }
+
+        const categories = data.buckets.map(b => b.range);
+        const successData = data.buckets.map(b => b.success);
+        const failedData = data.buckets.map(b => b.failed);
+
+        const options = {
+            series: [
+                { name: 'Success', data: successData },
+                { name: 'Failed', data: failedData }
+            ],
+            chart: {
+                type: 'bar',
+                height: 300,
+                stacked: true,
+                toolbar: { show: false },
+                animations: { enabled: false }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '60%',
+                    borderRadius: 4
+                }
+            },
+            colors: ['#10b981', '#ef4444'],
+            xaxis: {
+                categories: categories,
+                title: { text: 'Độ dài Video' }
+            },
+            yaxis: {
+                title: { text: 'Số lượng' }
+            },
+            legend: { position: 'top' },
+            dataLabels: {
+                enabled: true,
+                formatter: function(val) { return val > 0 ? val : ''; },
+                style: { fontSize: '11px' }
+            },
+            tooltip: {
+                y: { formatter: (val) => val + ' videos' }
+            }
+        };
+
+        if (charts.durationDist) {
+            charts.durationDist.updateOptions(options);
+        } else {
+            charts.durationDist = new ApexCharts(container, options);
+            charts.durationDist.render();
+        }
+    } catch (e) {
+        console.error('Load Duration Distribution Error', e);
+    }
 }
 
 async function loadCameraPerformance(startTs, endTs) {
