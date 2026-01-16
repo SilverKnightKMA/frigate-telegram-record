@@ -96,25 +96,31 @@
                 <div class="metric-title">Processing Ratio</div>
                 <div class="metric-value" id="tl-ratio">-</div>
                 <div class="metric-sub" id="tl-ratio-sub">process_time / video_duration</div>
+                <div class="metric-trend neutral" id="tl-ratio-trend">
+                    <span class="trend-arrow">-</span>
+                    <span class="trend-value">0%</span>
+                    <span class="trend-label">vs prev period</span>
+                </div>
             </div>
         </div>
 
+        <!-- Row 1: Success/Failed Events + Error Breakdown -->
         <div class="chart-row">
             <div class="card">
                 <h3 style="margin-bottom:15px">Success/Failed Events</h3>
                 <div id="tl-chart-daily"></div>
             </div>
             <div class="card">
-                <h3 style="margin-bottom:15px">Storage Trend</h3>
-                <div id="chart-storage-bar"></div>
+                <h3 style="margin-bottom:15px">Error Breakdown</h3>
+                <div id="tl-chart-reasons"></div>
             </div>
         </div>
 
-        <!-- Error & Performance Charts -->
+        <!-- Row 2: Storage Trend + Record vs Timelapse Comparison -->
         <div class="chart-row" style="margin-top: 20px;">
             <div class="card">
-                <h3 style="margin-bottom:15px">Error Breakdown</h3>
-                <div id="tl-chart-reasons"></div>
+                <h3 style="margin-bottom:15px">Storage Trend</h3>
+                <div id="chart-storage-bar"></div>
             </div>
             <div class="card">
                 <h3 style="margin-bottom:15px">Record vs Timelapse Comparison</h3>
@@ -122,14 +128,8 @@
             </div>
         </div>
 
-        <!-- Camera Performance Section -->
-        <div class="card" style="margin-top: 20px;">
-            <h3 style="margin-bottom:15px">Camera Performance (Success/Failed by Camera)</h3>
-            <div id="chart-camera-perf"></div>
-        </div>
-
-        <!-- Duration Distribution Section - Separated by Type -->
-        <div class="chart-row" style="margin-top: 20px;">
+        <!-- Row 3: Record Duration + Timelapse Duration + Activity Distribution -->
+        <div class="chart-row-3" style="margin-top: 20px;">
             <div class="card">
                 <h3 style="margin-bottom:15px">Record Duration Distribution</h3>
                 <div id="chart-duration-record"></div>
@@ -138,12 +138,16 @@
                 <h3 style="margin-bottom:15px">Timelapse Duration Distribution</h3>
                 <div id="chart-duration-timelapse"></div>
             </div>
+            <div class="card">
+                <h3 style="margin-bottom:15px">Activity Distribution by Time</h3>
+                <div id="chart-peak-heatmap" style="min-height: 300px;"></div>
+            </div>
         </div>
 
-        <!-- Peak Activity Heatmap Section -->
+        <!-- Row 4: Camera Performance -->
         <div class="card" style="margin-top: 20px;">
-            <h3 style="margin-bottom:15px">Activity Distribution by Time</h3>
-            <div id="chart-peak-heatmap" style="min-height: 300px;"></div>
+            <h3 style="margin-bottom:15px">Camera Performance (Success/Failed by Camera)</h3>
+            <div id="chart-camera-perf"></div>
         </div>
 
         <div class="card" style="margin-top: 20px;">

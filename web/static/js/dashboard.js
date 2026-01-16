@@ -275,12 +275,18 @@ async function loadProcessingEfficiency(minTs, maxTs) {
 
         const ratioEl = document.getElementById('tl-ratio');
         const ratioSubEl = document.getElementById('tl-ratio-sub');
+        const ratioTrendEl = document.getElementById('tl-ratio-trend');
         if (!ratioEl) return;
 
         if (data.error || (data.record_ratio === null && data.timelapse_ratio === null)) {
             ratioEl.innerText = '-';
             ratioEl.style.color = 'var(--text-sub)';
             if (ratioSubEl) ratioSubEl.innerText = 'No data';
+            if (ratioTrendEl) {
+                ratioTrendEl.className = 'metric-trend neutral';
+                ratioTrendEl.querySelector('.trend-arrow').textContent = '-';
+                ratioTrendEl.querySelector('.trend-value').textContent = '0%';
+            }
             return;
         }
 
@@ -314,6 +320,36 @@ async function loadProcessingEfficiency(minTs, maxTs) {
                 subParts.push(`TL: ${timelapseRatio.toFixed(3)}x (${data.timelapse_count})`);
             }
             ratioSubEl.innerText = subParts.join(' | ') || 'No data';
+        }
+
+        // Update trend indicator
+        // For processing ratio: lower is better, so invert color (negative change = green)
+        if (ratioTrendEl) {
+            const pctChange = data.ratio_pct_change;
+            const arrowEl = ratioTrendEl.querySelector('.trend-arrow');
+            const valueEl = ratioTrendEl.querySelector('.trend-value');
+            
+            if (pctChange === null || pctChange === undefined) {
+                ratioTrendEl.className = 'metric-trend neutral';
+                arrowEl.textContent = '-';
+                valueEl.textContent = 'N/A';
+            } else {
+                const absChange = Math.abs(pctChange);
+                // Lower ratio is better, so negative change is positive (green)
+                const isImproved = pctChange < 0;
+                
+                if (pctChange > 0) {
+                    arrowEl.textContent = '▲';
+                    ratioTrendEl.className = 'metric-trend negative'; // Higher is worse
+                } else if (pctChange < 0) {
+                    arrowEl.textContent = '▼';
+                    ratioTrendEl.className = 'metric-trend positive'; // Lower is better
+                } else {
+                    arrowEl.textContent = '→';
+                    ratioTrendEl.className = 'metric-trend neutral';
+                }
+                valueEl.textContent = `${absChange.toFixed(1)}%`;
+            }
         }
 
     } catch (e) {

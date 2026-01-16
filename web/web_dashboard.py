@@ -438,6 +438,11 @@ def get_processing_efficiency():
     if not start_ts or not end_ts:
         return jsonify({'error': 'start and end parameters required'}), 400
 
+    # Calculate previous period for comparison
+    period_duration = end_ts - start_ts
+    prev_start = start_ts - period_duration
+    prev_end = start_ts
+
     try:
         query = """
             SELECT 
@@ -494,6 +499,22 @@ def get_processing_efficiency():
                 timelapse_ratio = r['avg_ratio'] or 0
                 timelapse_count = r['count']
 
+        # Calculate previous period ratio for comparison
+        prev_ratio_rows = cursor.execute(ratio_by_type_query, (prev_start, prev_end)).fetchall()
+        
+        prev_record_ratio = None
+        for r in prev_ratio_rows:
+            if r['category'] == 'record':
+                prev_record_ratio = r['avg_ratio'] or 0
+                break
+
+        # Calculate percentage change
+        ratio_pct_change = None
+        if record_ratio is not None and prev_record_ratio is not None and prev_record_ratio != 0:
+            ratio_pct_change = round(((record_ratio - prev_record_ratio) / prev_record_ratio) * 100, 1)
+        elif record_ratio is not None and prev_record_ratio is None:
+            ratio_pct_change = None  # No previous data to compare
+
         # Use record ratio as primary metric since timelapse has very different characteristics
         primary_ratio = record_ratio if record_ratio is not None else (timelapse_ratio or 0)
 
@@ -504,7 +525,9 @@ def get_processing_efficiency():
             'record_count': record_count,
             'timelapse_ratio': timelapse_ratio,
             'timelapse_count': timelapse_count,
-            'threshold_warning': 0.15
+            'threshold_warning': 0.15,
+            'prev_record_ratio': prev_record_ratio,
+            'ratio_pct_change': ratio_pct_change
         })
     finally:
         conn.close()
