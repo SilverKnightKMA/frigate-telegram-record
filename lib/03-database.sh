@@ -59,37 +59,6 @@ init_db() {
     # [New] Reason: Speeds up aggregation queries for the 'Failure Reason' donut chart.
     db_exec "CREATE INDEX IF NOT EXISTS idx_fail_type ON events(fail_type);"
 
-    # [Dashboard Views] 
-    # Reason: Pre-defined aggregations to simplify Dashboard Backend queries.
-    
-    # View 1: Daily Statistics by Camera & Type
-    # Provides: Total Events, Success %, Total Size, Avg Process Time per day.
-    db_exec "CREATE VIEW IF NOT EXISTS v_daily_stats AS
-    SELECT 
-        date(created_at, 'unixepoch', 'localtime') as day,
-        camera,
-        type,
-        count(*) as total_events,
-        sum(case when status='SUCCESS' then 1 else 0 end) as success_count,
-        sum(case when status='FAILED' then 1 else 0 end) as fail_count,
-        sum(filesize) as total_size_bytes,
-        round(avg(process_sec), 1) as avg_process_sec
-    FROM events 
-    GROUP BY day, camera, type;"
-
-    # View 2: Hourly Performance Timeline
-    # Provides: Data for 'Activity Over Time' charts.
-    db_exec "CREATE VIEW IF NOT EXISTS v_hourly_activity AS
-    SELECT 
-        date(created_at, 'unixepoch', 'localtime') as day,
-        strftime('%H', created_at, 'unixepoch', 'localtime') as hour,
-        camera,
-        type,
-        status,
-        count(*) as count
-    FROM events
-    GROUP BY day, hour, camera, type, status;"
-
     # [Cleanup] Maintain DB size to keep Dashboard queries fast
     
     if [ "$RETENTION_DAYS" -gt 0 ]; then

@@ -191,17 +191,21 @@ dialog::backdrop { background: rgba(0,0,0,0.5); }
 }
 
 /* Filter Controls */
-.controls-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; padding: 15px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
+.controls-container { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 15px; padding: 15px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
+@media (max-width: 1400px) { .controls-container { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px) { .controls-container { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .controls-container { grid-template-columns: 1fr; } }
 .control-group { display: flex; flex-direction: column; gap: 5px; }
 .control-label { font-size: 0.75rem; font-weight: 600; color: var(--text-sub); text-transform: uppercase; }
 .input-row { display: flex; gap: 5px; align-items: center; }
 .input-prefix { 
     font-size: 0.8rem; 
     color: var(--text-sub); 
-    min-width: 45px;
+    min-width: 42px;
     flex-shrink: 0;
 }
 select, input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; outline: none; width: 100%; font-size: 0.9rem; }
+input[type="datetime-local"] { font-size: 0.8rem; padding: 6px; min-width: 0; }
 button.action-btn { padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; height: 100%; }
 
 /* Custom Multi-select Dropdown CSS */
