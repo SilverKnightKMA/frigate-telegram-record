@@ -944,14 +944,13 @@ async function loadDurationDistribution(minTs, maxTs) {
         const recordContainer = document.querySelector('#chart-duration-record');
         const timelapseContainer = document.querySelector('#chart-duration-timelapse');
 
-        // Get all unique buckets
-        const allBuckets = ['0-30s', '30-60s', '1-3m', '3-5m', '5-10m', '10m+'];
-
-        // Helper function to render a single duration chart
+        // Helper function to render a single duration chart with dynamic buckets
         const renderDurationChart = (container, chartKey, typeData, typeName, color) => {
             if (!container) return;
             
-            const hasData = typeData && typeData.length > 0;
+            // Filter to only buckets with data
+            const bucketsWithData = (typeData || []).filter(b => b.total > 0);
+            const hasData = bucketsWithData.length > 0;
             
             if (!hasData) {
                 container.innerHTML = `<div style="text-align:center;color:var(--text-sub);padding:50px;">No ${typeName.toLowerCase()} data in selected range</div>`;
@@ -967,10 +966,9 @@ async function loadDurationDistribution(minTs, maxTs) {
                 container.innerHTML = '';
             }
 
-            const chartData = allBuckets.map(bucket => {
-                const found = typeData.find(b => b.range === bucket);
-                return found ? found.total : 0;
-            });
+            // Use only buckets that have data
+            const categories = bucketsWithData.map(b => b.range);
+            const chartData = bucketsWithData.map(b => b.total);
 
             const options = {
                 series: [{ name: typeName, data: chartData }],
@@ -983,24 +981,29 @@ async function loadDurationDistribution(minTs, maxTs) {
                 plotOptions: {
                     bar: {
                         horizontal: false,
-                        columnWidth: '60%',
+                        columnWidth: categories.length === 1 ? '40%' : '60%',
                         borderRadius: 4,
-                        distributed: true
+                        distributed: false
                     }
                 },
                 colors: [color],
                 xaxis: {
-                    categories: allBuckets,
+                    categories: categories,
                     title: { text: 'Duration' }
                 },
                 yaxis: {
-                    title: { text: 'Count' }
+                    title: { text: 'Count' },
+                    labels: {
+                        formatter: function(val) {
+                            return Math.floor(val);
+                        }
+                    }
                 },
                 legend: { show: false },
                 dataLabels: {
                     enabled: true,
                     formatter: function(val) { return val > 0 ? val : ''; },
-                    style: { fontSize: '11px' }
+                    style: { fontSize: '11px', colors: ['#fff'] }
                 },
                 tooltip: {
                     y: { formatter: (val) => val + ' videos' }
@@ -1049,29 +1052,69 @@ async function loadPeakActivity(minTs, maxTs) {
             container.innerHTML = '';
         }
 
+        // Calculate dynamic thresholds based on actual data
+        const allSuccessCounts = data.data.map(d => d.success || 0).filter(v => v > 0);
+        const allFailedCounts = data.data.map(d => d.failed || 0).filter(v => v > 0);
+        
+        // Calculate percentiles for dynamic ranges
+        const getPercentile = (arr, p) => {
+            if (arr.length === 0) return 0;
+            const sorted = [...arr].sort((a, b) => a - b);
+            const idx = Math.ceil(p * sorted.length) - 1;
+            return sorted[Math.max(0, idx)];
+        };
+        
+        const maxSuccess = Math.max(...allSuccessCounts, 1);
+        const p25 = Math.max(1, getPercentile(allSuccessCounts, 0.25));
+        const p50 = Math.max(p25 + 1, getPercentile(allSuccessCounts, 0.50));
+        const p75 = Math.max(p50 + 1, getPercentile(allSuccessCounts, 0.75));
+        const p90 = Math.max(p75 + 1, getPercentile(allSuccessCounts, 0.90));
+
         let series = [];
         let categories = [];
 
         if (data.granularity === 'hour') {
-            // Single series for hours
+            // Stacked bar for hours: success + failed
             categories = data.hour_labels;
-            const hourData = new Array(24).fill(0);
-            data.data.forEach(d => { hourData[d.hour] = d.count; });
-            series = [{ name: 'Activity', data: hourData }];
+            const successData = new Array(24).fill(0);
+            const failedData = new Array(24).fill(0);
+            data.data.forEach(d => { 
+                successData[d.hour] = d.success || 0;
+                failedData[d.hour] = d.failed || 0;
+            });
+            series = [
+                { name: 'Success', data: successData },
+                { name: 'Failed', data: failedData }
+            ];
         } else if (data.granularity === 'day') {
-            // Single series for days
+            // Stacked bar for days: success + failed
             categories = data.day_labels;
-            const dayData = new Array(7).fill(0);
-            data.data.forEach(d => { dayData[d.day] = d.count; });
-            series = [{ name: 'Activity', data: dayData }];
+            const successData = new Array(7).fill(0);
+            const failedData = new Array(7).fill(0);
+            data.data.forEach(d => { 
+                successData[d.day] = d.success || 0;
+                failedData[d.day] = d.failed || 0;
+            });
+            series = [
+                { name: 'Success', data: successData },
+                { name: 'Failed', data: failedData }
+            ];
         } else {
-            // Heatmap: days x hours
+            // Heatmap: days x hours - use success for green intensity, show failed in tooltip
+            // X-axis: hours (hidden labels), Y-axis: days
             categories = data.hour_labels;
             // Build matrix: each day is a series with 24 hours
+            // Store both success and failed for tooltip
             series = data.day_labels.map((dayLabel, dayIndex) => {
                 const hourData = new Array(24).fill(null).map((_, hourIndex) => {
                     const found = data.data.find(d => d.day === dayIndex && d.hour === hourIndex);
-                    return { x: data.hour_labels[hourIndex], y: found ? found.count : 0 };
+                    return { 
+                        x: hourIndex, // Use index for positioning
+                        y: found ? (found.success || 0) : 0,
+                        failed: found ? (found.failed || 0) : 0,
+                        total: found ? (found.count || 0) : 0,
+                        hourLabel: data.hour_labels[hourIndex]
+                    };
                 });
                 return { name: dayLabel, data: hourData };
             });
@@ -1082,32 +1125,59 @@ async function loadPeakActivity(minTs, maxTs) {
             series: series,
             chart: {
                 type: isHeatmap ? 'heatmap' : 'bar',
-                height: isHeatmap ? 300 : 280,
+                height: isHeatmap ? 280 : 280,
+                stacked: !isHeatmap,
                 toolbar: { show: false },
                 animations: { enabled: false }
             },
             dataLabels: { enabled: !isHeatmap },
-            colors: isHeatmap ? ['#10b981'] : ['#2563eb'],
+            colors: isHeatmap ? ['#10b981'] : ['#10b981', '#ef4444'],
             plotOptions: isHeatmap ? {
                 heatmap: {
                     shadeIntensity: 0.5,
                     colorScale: {
                         ranges: [
                             { from: 0, to: 0, color: '#e5e7eb', name: 'None' },
-                            { from: 1, to: 10, color: '#bbf7d0', name: 'Low' },
-                            { from: 11, to: 30, color: '#4ade80', name: 'Medium' },
-                            { from: 31, to: 60, color: '#22c55e', name: 'High' },
-                            { from: 61, to: 1000, color: '#15803d', name: 'Very High' }
+                            { from: 1, to: p25, color: '#bbf7d0', name: `Low (1-${p25})` },
+                            { from: p25 + 1, to: p50, color: '#4ade80', name: `Medium (${p25+1}-${p50})` },
+                            { from: p50 + 1, to: p75, color: '#22c55e', name: `High (${p50+1}-${p75})` },
+                            { from: p75 + 1, to: maxSuccess + 1000, color: '#15803d', name: `Very High (${p75+1}+)` }
                         ]
                     }
                 }
             } : {
                 bar: { horizontal: false, columnWidth: '70%', borderRadius: 4 }
             },
-            xaxis: { categories: categories },
-            yaxis: { title: { text: isHeatmap ? '' : 'Count' } },
-            legend: { show: isHeatmap, position: 'top' },
-            tooltip: {
+            xaxis: isHeatmap ? { 
+                labels: { show: false },
+                axisBorder: { show: false },
+                axisTicks: { show: false },
+                tooltip: { enabled: false }
+            } : { categories: categories },
+            yaxis: { 
+                title: { text: isHeatmap ? '' : 'Count' },
+                labels: isHeatmap ? { 
+                    style: { fontSize: '12px', fontWeight: 500 }
+                } : {}
+            },
+            legend: { show: true, position: 'top' },
+            tooltip: isHeatmap ? {
+                custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                    const dayLabel = w.config.series[seriesIndex].name;
+                    const dataPoint = w.config.series[seriesIndex].data[dataPointIndex];
+                    const hourLabel = dataPoint.hourLabel || `${dataPointIndex}:00`;
+                    const success = dataPoint.y || 0;
+                    const failed = dataPoint.failed || 0;
+                    const total = success + failed;
+                    
+                    return `<div style="padding: 10px; font-size: 12px; line-height: 1.6;">
+                        <div style="font-weight: 700; margin-bottom: 4px;">${dayLabel}, ${hourLabel}</div>
+                        <div><span style="color:#10b981">●</span> Success: ${success}</div>
+                        <div><span style="color:#ef4444">●</span> Failed: ${failed}</div>
+                        <div style="margin-top:4px;border-top:1px solid #eee;padding-top:4px;">Total: ${total} events</div>
+                    </div>`;
+                }
+            } : {
                 y: { formatter: (val) => val + ' events' }
             }
         };
