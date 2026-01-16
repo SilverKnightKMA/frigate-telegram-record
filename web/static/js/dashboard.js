@@ -966,12 +966,16 @@ async function loadDurationDistribution(minTs, maxTs) {
                 container.innerHTML = '';
             }
 
+            // Calculate total for percentage
+            const totalCount = bucketsWithData.reduce((sum, b) => sum + b.total, 0);
+
             // Use only buckets that have data
             const categories = bucketsWithData.map(b => b.range);
-            const chartData = bucketsWithData.map(b => b.total);
+            const chartDataCount = bucketsWithData.map(b => b.total);
+            const chartDataPct = bucketsWithData.map(b => totalCount > 0 ? Math.round((b.total / totalCount) * 100) : 0);
 
             const options = {
-                series: [{ name: typeName, data: chartData }],
+                series: [{ name: typeName, data: chartDataPct }],
                 chart: {
                     type: 'bar',
                     height: 280,
@@ -992,21 +996,34 @@ async function loadDurationDistribution(minTs, maxTs) {
                     title: { text: 'Duration' }
                 },
                 yaxis: {
-                    title: { text: 'Count' },
+                    title: { text: '% of Total' },
+                    max: 100,
                     labels: {
                         formatter: function(val) {
-                            return Math.floor(val);
+                            return Math.floor(val) + '%';
                         }
                     }
                 },
                 legend: { show: false },
                 dataLabels: {
                     enabled: true,
-                    formatter: function(val) { return val > 0 ? val : ''; },
+                    formatter: function(val, opts) { 
+                        const count = chartDataCount[opts.dataPointIndex];
+                        return count > 0 ? `${val}%` : ''; 
+                    },
                     style: { fontSize: '11px', colors: ['#fff'] }
                 },
                 tooltip: {
-                    y: { formatter: (val) => val + ' videos' }
+                    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                        const pct = series[seriesIndex][dataPointIndex];
+                        const count = chartDataCount[dataPointIndex];
+                        const bucket = categories[dataPointIndex];
+                        return `<div style="padding: 8px 12px; font-size: 12px;">
+                            <div style="font-weight: 600; margin-bottom: 4px;">${bucket}</div>
+                            <div>${count} videos (${pct}%)</div>
+                            <div style="color: #666; font-size: 11px; margin-top: 2px;">Total: ${totalCount}</div>
+                        </div>`;
+                    }
                 }
             };
 
