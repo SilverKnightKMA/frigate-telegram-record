@@ -142,9 +142,31 @@ def get_timeline_stats():
         """
         fail_reasons = cursor.execute(query_reasons, (start_ts, end_ts)).fetchall()
 
+        # Format labels based on granularity type
+        def format_time_label(time_bucket, granularity, label_format):
+            if granularity == "15min":
+                # time_bucket is unix timestamp (integer)
+                return datetime.fromtimestamp(time_bucket, tz=common.LOCAL_TZ).strftime(label_format)
+            elif granularity == "hour":
+                # time_bucket is "YYYY-MM-DD HH:00" string
+                dt = datetime.strptime(time_bucket, "%Y-%m-%d %H:%M")
+                return dt.strftime(label_format)
+            elif granularity == "day":
+                # time_bucket is "YYYY-MM-DD" string
+                dt = datetime.strptime(time_bucket, "%Y-%m-%d")
+                return dt.strftime(label_format)
+            elif granularity == "week":
+                # time_bucket is "YYYY-WWW" string, keep as-is
+                return time_bucket.split('-')[1]  # Returns "W03" from "2026-W03"
+            elif granularity == "month":
+                # time_bucket is "YYYY-MM" string
+                dt = datetime.strptime(time_bucket, "%Y-%m")
+                return dt.strftime(label_format)
+            return str(time_bucket)
+
         return jsonify({
             'charts': {
-                'daily': [{'label': datetime.fromtimestamp(row['time_bucket']).strftime(label_format), 'success': row['success'], 'failed': row['failed']} for row in daily_stats],
+                'daily': [{'label': format_time_label(row['time_bucket'], granularity, label_format), 'success': row['success'], 'failed': row['failed']} for row in daily_stats],
                 'granularity': granularity,
                 'reasons': {
                     'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons],
