@@ -151,7 +151,7 @@ async function loadOverview() {
 
         document.getElementById('m-health').innerText = `${m.success_rate}%`;
         document.getElementById('m-health').style.color = m.success_rate > 95 ? 'var(--success)' : 'var(--danger)';
-        document.getElementById('m-total').innerText = `trên tổng ${m.total} job`;
+        document.getElementById('m-total').innerText = `trên tổng ${m.total} events`;
         document.getElementById('m-storage').innerText = m.storage;
         document.getElementById('m-process').innerText = m.avg_process;
         document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('vi-VN');
@@ -185,11 +185,11 @@ async function loadTimelineStats(minTs, maxTs) {
         } else if (m.success_rate > 95) {
             statusEl.innerText = 'Ổn định';
             statusEl.style.color = 'var(--success)';
-            document.getElementById('tl-status-sub').innerText = `${m.total} job`;
+            document.getElementById('tl-status-sub').innerText = `${m.total} events`;
         } else {
             statusEl.innerText = 'Cần kiểm tra';
             statusEl.style.color = 'var(--danger)';
-            document.getElementById('tl-status-sub').innerText = `${m.total} job`;
+            document.getElementById('tl-status-sub').innerText = `${m.total} events`;
         }
 
         // Render charts for timeline tab
@@ -252,9 +252,20 @@ function renderTimelineDonut(data) {
         container.innerHTML = '';
     }
 
+    // Sort data by value descending (largest to smallest)
+    const combined = data.labels.map((label, i) => ({ label, value: data.series[i] }));
+    combined.sort((a, b) => b.value - a.value);
+    const sortedLabels = combined.map(d => d.label);
+    const sortedSeries = combined.map(d => d.value);
+
     const options = {
-        series: [{ name: 'Số lỗi', data: data.series }],
-        chart: { type: 'bar', height: 300, toolbar: { show: false } },
+        series: [{ name: 'Errors', data: sortedSeries }],
+        chart: { 
+            type: 'bar', 
+            height: 300, 
+            toolbar: { show: false },
+            fontFamily: 'inherit'
+        },
         plotOptions: { 
             bar: { 
                 horizontal: true, 
@@ -264,16 +275,20 @@ function renderTimelineDonut(data) {
         },
         colors: ['#ef4444'],
         xaxis: { 
-            categories: data.labels,
-            title: { text: 'Số lượng lỗi' }
+            categories: sortedLabels,
+            title: { text: 'Error Count', style: { fontFamily: 'inherit' } }
+        },
+        yaxis: {
+            labels: { style: { fontFamily: 'inherit' } }
         },
         dataLabels: { 
             enabled: true,
-            style: { fontSize: '12px', colors: ['#333'] },
+            style: { fontSize: '12px', colors: ['#333'], fontFamily: 'inherit' },
             offsetX: -10
         },
         tooltip: {
-            y: { formatter: (val) => `${val} lỗi` }
+            style: { fontFamily: 'inherit' },
+            y: { formatter: (val) => `${val} errors` }
         }
     };
 
