@@ -95,20 +95,51 @@
                     </div>
                 </div>
                 <div class="metric-sub">seconds / video</div>
-                <div class="metric-trend neutral" id="tl-process-trend">
-                    <span class="trend-arrow">-</span>
-                    <span class="trend-value">0%</span>
-                    <span class="trend-label">vs prev period</span>
+                <div class="metric-trend-dual">
+                    <div class="trend-item">
+                        <span class="trend-type">R:</span>
+                        <span class="metric-trend neutral" id="tl-process-record-trend">
+                            <span class="trend-arrow">-</span>
+                            <span class="trend-value">0%</span>
+                        </span>
+                    </div>
+                    <div class="trend-item">
+                        <span class="trend-type">T:</span>
+                        <span class="metric-trend neutral" id="tl-process-timelapse-trend">
+                            <span class="trend-arrow">-</span>
+                            <span class="trend-value">0%</span>
+                        </span>
+                    </div>
                 </div>
             </div>
             <div class="card">
                 <div class="metric-title">Processing Ratio</div>
-                <div class="metric-value" id="tl-ratio">-</div>
+                <div class="metric-value-dual">
+                    <div class="dual-item">
+                        <span class="dual-label">Record:</span>
+                        <span class="dual-value" id="tl-ratio-record">-</span>
+                    </div>
+                    <div class="dual-item">
+                        <span class="dual-label">Timelapse:</span>
+                        <span class="dual-value" id="tl-ratio-timelapse">-</span>
+                    </div>
+                </div>
                 <div class="metric-sub" id="tl-ratio-sub">process_time / video_duration</div>
-                <div class="metric-trend neutral" id="tl-ratio-trend">
-                    <span class="trend-arrow">-</span>
-                    <span class="trend-value">0%</span>
-                    <span class="trend-label">vs prev period</span>
+                <div class="metric-trend-dual">
+                    <div class="trend-item">
+                        <span class="trend-type">R:</span>
+                        <span class="metric-trend neutral" id="tl-ratio-record-trend">
+                            <span class="trend-arrow">-</span>
+                            <span class="trend-value">0%</span>
+                        </span>
+                    </div>
+                    <div class="trend-item">
+                        <span class="trend-type">T:</span>
+                        <span class="metric-trend neutral" id="tl-ratio-timelapse-trend">
+                            <span class="trend-arrow">-</span>
+                            <span class="trend-value">0%</span>
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>

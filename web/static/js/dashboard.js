@@ -259,7 +259,8 @@ async function loadTrendComparison(minTs, maxTs) {
         updateTrend('tl-storage-trend', data.changes.storage_pct, false, false);
         
         // Process time: lower is better, so invert color (negative change = green)
-        updateTrend('tl-process-trend', data.changes.process_pct, false, true);
+        updateTrend('tl-process-record-trend', data.changes.process_record_pct, false, true);
+        updateTrend('tl-process-timelapse-trend', data.changes.process_timelapse_pct, false, true);
         
         // Total events: more events usually means more activity (positive)
         updateTrend('tl-total-trend', data.changes.total_pct, false, false);
@@ -274,84 +275,93 @@ async function loadProcessingEfficiency(minTs, maxTs) {
         const res = await fetch(`/api/processing_efficiency?start=${minTs / 1000}&end=${maxTs / 1000}`);
         const data = await res.json();
 
-        const ratioEl = document.getElementById('tl-ratio');
+        const ratioRecordEl = document.getElementById('tl-ratio-record');
+        const ratioTimelapseEl = document.getElementById('tl-ratio-timelapse');
         const ratioSubEl = document.getElementById('tl-ratio-sub');
-        const ratioTrendEl = document.getElementById('tl-ratio-trend');
-        if (!ratioEl) return;
-
-        if (data.error || (data.record_ratio === null && data.timelapse_ratio === null)) {
-            ratioEl.innerText = '-';
-            ratioEl.style.color = 'var(--text-sub)';
-            if (ratioSubEl) ratioSubEl.innerText = 'No data';
-            if (ratioTrendEl) {
-                ratioTrendEl.className = 'metric-trend neutral';
-                ratioTrendEl.querySelector('.trend-arrow').textContent = '-';
-                ratioTrendEl.querySelector('.trend-value').textContent = '0%';
-            }
-            return;
-        }
-
-        // Display Record ratio as primary (more meaningful metric)
-        const recordRatio = data.record_ratio;
-        const timelapseRatio = data.timelapse_ratio;
+        const ratioRecordTrendEl = document.getElementById('tl-ratio-record-trend');
+        const ratioTimelapseTrendEl = document.getElementById('tl-ratio-timelapse-trend');
         
-        if (recordRatio !== null) {
-            ratioEl.innerText = `${recordRatio.toFixed(3)}x`;
-            
-            // Color based on threshold
-            if (recordRatio > data.threshold_warning) {
-                ratioEl.style.color = 'var(--danger)';
-            } else if (recordRatio < 0.1) {
-                ratioEl.style.color = 'var(--success)';
-            } else {
-                ratioEl.style.color = 'var(--text)';
-            }
-        } else {
-            ratioEl.innerText = '-';
-            ratioEl.style.color = 'var(--text-sub)';
-        }
+        if (!ratioRecordEl) return;
 
-        // Show breakdown in sub text
-        if (ratioSubEl) {
-            let subParts = [];
-            if (recordRatio !== null) {
-                subParts.push(`Record: ${recordRatio.toFixed(3)}x (${data.record_count})`);
-            }
-            if (timelapseRatio !== null) {
-                subParts.push(`TL: ${timelapseRatio.toFixed(3)}x (${data.timelapse_count})`);
-            }
-            ratioSubEl.innerText = subParts.join(' | ') || 'No data';
-        }
-
-        // Update trend indicator
-        // For processing ratio: lower is better, so invert color (negative change = green)
-        if (ratioTrendEl) {
-            const pctChange = data.ratio_pct_change;
-            const arrowEl = ratioTrendEl.querySelector('.trend-arrow');
-            const valueEl = ratioTrendEl.querySelector('.trend-value');
+        // Helper to update ratio trend
+        const updateRatioTrend = (trendEl, pctChange) => {
+            if (!trendEl) return;
+            const arrowEl = trendEl.querySelector('.trend-arrow');
+            const valueEl = trendEl.querySelector('.trend-value');
             
             if (pctChange === null || pctChange === undefined) {
-                ratioTrendEl.className = 'metric-trend neutral';
+                trendEl.className = 'metric-trend neutral';
                 arrowEl.textContent = '-';
                 valueEl.textContent = 'N/A';
             } else {
                 const absChange = Math.abs(pctChange);
                 // Lower ratio is better, so negative change is positive (green)
-                const isImproved = pctChange < 0;
-                
                 if (pctChange > 0) {
-                    arrowEl.textContent = '▲';
-                    ratioTrendEl.className = 'metric-trend negative'; // Higher is worse
+                    arrowEl.textContent = '↑';
+                    trendEl.className = 'metric-trend negative'; // Higher is worse
                 } else if (pctChange < 0) {
-                    arrowEl.textContent = '▼';
-                    ratioTrendEl.className = 'metric-trend positive'; // Lower is better
+                    arrowEl.textContent = '↓';
+                    trendEl.className = 'metric-trend positive'; // Lower is better
                 } else {
-                    arrowEl.textContent = '→';
-                    ratioTrendEl.className = 'metric-trend neutral';
+                    arrowEl.textContent = '-';
+                    trendEl.className = 'metric-trend neutral';
                 }
                 valueEl.textContent = `${absChange.toFixed(1)}%`;
             }
+        };
+
+        if (data.error || (data.record_ratio === null && data.timelapse_ratio === null)) {
+            ratioRecordEl.innerText = '-';
+            ratioTimelapseEl.innerText = '-';
+            if (ratioSubEl) ratioSubEl.innerText = 'No data';
+            updateRatioTrend(ratioRecordTrendEl, null);
+            updateRatioTrend(ratioTimelapseTrendEl, null);
+            return;
         }
+
+        // Display Record ratio
+        const recordRatio = data.record_ratio;
+        if (recordRatio !== null) {
+            ratioRecordEl.innerText = `${recordRatio.toFixed(3)}x`;
+            if (recordRatio > data.threshold_warning) {
+                ratioRecordEl.style.color = 'var(--danger)';
+            } else if (recordRatio < 0.1) {
+                ratioRecordEl.style.color = 'var(--success)';
+            } else {
+                ratioRecordEl.style.color = 'var(--text)';
+            }
+        } else {
+            ratioRecordEl.innerText = '-';
+            ratioRecordEl.style.color = 'var(--text-sub)';
+        }
+
+        // Display Timelapse ratio
+        const timelapseRatio = data.timelapse_ratio;
+        if (timelapseRatio !== null) {
+            ratioTimelapseEl.innerText = `${timelapseRatio.toFixed(3)}x`;
+            if (timelapseRatio > data.threshold_warning) {
+                ratioTimelapseEl.style.color = 'var(--danger)';
+            } else if (timelapseRatio < 0.1) {
+                ratioTimelapseEl.style.color = 'var(--success)';
+            } else {
+                ratioTimelapseEl.style.color = 'var(--text)';
+            }
+        } else {
+            ratioTimelapseEl.innerText = '-';
+            ratioTimelapseEl.style.color = 'var(--text-sub)';
+        }
+
+        // Show counts in sub text
+        if (ratioSubEl) {
+            let subParts = [];
+            if (data.record_count > 0) subParts.push(`${data.record_count} records`);
+            if (data.timelapse_count > 0) subParts.push(`${data.timelapse_count} timelapses`);
+            ratioSubEl.innerText = subParts.join(' | ') || 'No data';
+        }
+
+        // Update trend indicators
+        updateRatioTrend(ratioRecordTrendEl, data.ratio_pct_change);
+        updateRatioTrend(ratioTimelapseTrendEl, data.timelapse_ratio_pct_change);
 
     } catch (e) {
         console.error('Load Processing Efficiency Error', e);

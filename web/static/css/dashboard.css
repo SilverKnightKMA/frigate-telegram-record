@@ -52,6 +52,28 @@ body { background: var(--bg); color: var(--text-main); padding: 20px; font-size:
     align-items: center;
     gap: 4px;
 }
+.metric-trend-dual {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e5e7eb;
+}
+.metric-trend-dual .metric-trend {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+.trend-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.trend-type {
+    font-size: 0.7rem;
+    color: var(--text-sub);
+    font-weight: 500;
+}
 .metric-trend.positive { color: #10b981; }
 .metric-trend.negative { color: #ef4444; }
 .metric-trend.neutral { color: #6b7280; }

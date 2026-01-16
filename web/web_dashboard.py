@@ -584,17 +584,26 @@ def get_processing_efficiency():
         prev_ratio_rows = cursor.execute(ratio_by_type_query, (prev_start, prev_end)).fetchall()
         
         prev_record_ratio = None
+        prev_timelapse_ratio = None
         for r in prev_ratio_rows:
             if r['category'] == 'record':
                 prev_record_ratio = r['avg_ratio'] or 0
-                break
+            else:
+                prev_timelapse_ratio = r['avg_ratio'] or 0
 
-        # Calculate percentage change
+        # Calculate percentage change for record
         ratio_pct_change = None
         if record_ratio is not None and prev_record_ratio is not None and prev_record_ratio != 0:
             ratio_pct_change = round(((record_ratio - prev_record_ratio) / prev_record_ratio) * 100, 1)
         elif record_ratio is not None and prev_record_ratio is None:
             ratio_pct_change = None  # No previous data to compare
+
+        # Calculate percentage change for timelapse
+        timelapse_ratio_pct_change = None
+        if timelapse_ratio is not None and prev_timelapse_ratio is not None and prev_timelapse_ratio != 0:
+            timelapse_ratio_pct_change = round(((timelapse_ratio - prev_timelapse_ratio) / prev_timelapse_ratio) * 100, 1)
+        elif timelapse_ratio is not None and prev_timelapse_ratio is None:
+            timelapse_ratio_pct_change = None  # No previous data to compare
 
         # Use record ratio as primary metric since timelapse has very different characteristics
         primary_ratio = record_ratio if record_ratio is not None else (timelapse_ratio or 0)
@@ -608,7 +617,9 @@ def get_processing_efficiency():
             'timelapse_count': timelapse_count,
             'threshold_warning': 0.15,
             'prev_record_ratio': prev_record_ratio,
-            'ratio_pct_change': ratio_pct_change
+            'prev_timelapse_ratio': prev_timelapse_ratio,
+            'ratio_pct_change': ratio_pct_change,
+            'timelapse_ratio_pct_change': timelapse_ratio_pct_change
         })
     finally:
         conn.close()
@@ -637,7 +648,9 @@ def get_trend_comparison():
                 COUNT(*) as total_jobs,
                 SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_count,
                 SUM(filesize) as total_bytes,
-                AVG(process_sec) as avg_process
+                AVG(process_sec) as avg_process,
+                AVG(CASE WHEN type NOT LIKE '%timelapse%' THEN process_sec END) as avg_process_record,
+                AVG(CASE WHEN type LIKE '%timelapse%' THEN process_sec END) as avg_process_timelapse
             FROM events
             WHERE start_ts >= ? AND start_ts <= ?
         """
@@ -648,6 +661,8 @@ def get_trend_comparison():
         current_success = current['success_count'] or 0
         current_bytes = current['total_bytes'] or 0
         current_process = current['avg_process'] or 0
+        current_process_record = current['avg_process_record'] or 0
+        current_process_timelapse = current['avg_process_timelapse'] or 0
         current_success_rate = round((current_success / current_total * 100), 1) if current_total > 0 else 0
 
         # Previous period
@@ -656,6 +671,8 @@ def get_trend_comparison():
         previous_success = previous['success_count'] or 0
         previous_bytes = previous['total_bytes'] or 0
         previous_process = previous['avg_process'] or 0
+        previous_process_record = previous['avg_process_record'] or 0
+        previous_process_timelapse = previous['avg_process_timelapse'] or 0
         previous_success_rate = round((previous_success / previous_total * 100), 1) if previous_total > 0 else 0
 
         # Calculate changes
@@ -669,19 +686,25 @@ def get_trend_comparison():
                 'total': current_total,
                 'success_rate': current_success_rate,
                 'storage_bytes': current_bytes,
-                'avg_process': round(current_process, 2)
+                'avg_process': round(current_process, 2),
+                'avg_process_record': round(current_process_record, 2),
+                'avg_process_timelapse': round(current_process_timelapse, 2)
             },
             'previous': {
                 'total': previous_total,
                 'success_rate': previous_success_rate,
                 'storage_bytes': previous_bytes,
-                'avg_process': round(previous_process, 2)
+                'avg_process': round(previous_process, 2),
+                'avg_process_record': round(previous_process_record, 2),
+                'avg_process_timelapse': round(previous_process_timelapse, 2)
             },
             'changes': {
                 'total_pct': calc_pct_change(current_total, previous_total),
                 'success_rate_diff': round(current_success_rate - previous_success_rate, 1),
                 'storage_pct': calc_pct_change(current_bytes, previous_bytes),
-                'process_pct': calc_pct_change(current_process, previous_process)
+                'process_pct': calc_pct_change(current_process, previous_process),
+                'process_record_pct': calc_pct_change(current_process_record, previous_process_record),
+                'process_timelapse_pct': calc_pct_change(current_process_timelapse, previous_process_timelapse)
             }
         })
     finally:
