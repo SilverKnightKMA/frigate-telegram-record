@@ -373,6 +373,68 @@ def get_type_comparison():
     finally:
         conn.close()
 
+@app.route('/api/processing_efficiency')
+def get_processing_efficiency():
+    """Get processing efficiency ratio (process_sec / duration)"""
+    conn = common.get_db_connection()
+    if not conn: return jsonify({'error': 'Database connect failed'}), 500
+    cursor = conn.cursor()
+
+    start_ts = request.args.get('start', type=float)
+    end_ts = request.args.get('end', type=float)
+
+    if not start_ts or not end_ts:
+        return jsonify({'error': 'start and end parameters required'}), 400
+
+    try:
+        query = """
+            SELECT 
+                camera,
+                type,
+                COUNT(*) as count,
+                AVG(duration) as avg_duration,
+                AVG(process_sec) as avg_process,
+                ROUND(AVG(CAST(process_sec AS FLOAT) / NULLIF(duration, 0)), 3) as process_ratio
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+                AND status = 'SUCCESS'
+                AND duration > 0
+            GROUP BY camera, type
+            ORDER BY process_ratio DESC
+        """
+        rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
+
+        efficiency = []
+        for r in rows:
+            efficiency.append({
+                'camera': r['camera'],
+                'type': r['type'] or 'UNKNOWN',
+                'count': r['count'],
+                'avg_duration': round(r['avg_duration'] or 0, 1),
+                'avg_process': round(r['avg_process'] or 0, 2),
+                'ratio': r['process_ratio'] or 0
+            })
+
+        # Calculate overall ratio
+        overall_query = """
+            SELECT 
+                ROUND(AVG(CAST(process_sec AS FLOAT) / NULLIF(duration, 0)), 3) as overall_ratio
+            FROM events
+            WHERE start_ts >= ? AND start_ts <= ?
+                AND status = 'SUCCESS'
+                AND duration > 0
+        """
+        overall_row = cursor.execute(overall_query, (start_ts, end_ts)).fetchone()
+        overall_ratio = overall_row['overall_ratio'] or 0
+
+        return jsonify({
+            'efficiency': efficiency,
+            'overall_ratio': overall_ratio,
+            'threshold_warning': 0.15
+        })
+    finally:
+        conn.close()
+
 @app.route('/api/trend_comparison')
 def get_trend_comparison():
     """Compare current period metrics with previous period of same duration"""

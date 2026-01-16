@@ -263,6 +263,42 @@ async function loadTrendComparison(minTs, maxTs) {
     }
 }
 
+async function loadProcessingEfficiency(minTs, maxTs) {
+    try {
+        const res = await fetch(`/api/processing_efficiency?start=${minTs / 1000}&end=${maxTs / 1000}`);
+        const data = await res.json();
+
+        const ratioEl = document.getElementById('tl-ratio');
+        const ratioSubEl = document.getElementById('tl-ratio-sub');
+        if (!ratioEl) return;
+
+        if (data.error || data.overall_ratio === null || data.overall_ratio === undefined) {
+            ratioEl.innerText = '-';
+            ratioEl.style.color = 'var(--text-sub)';
+            if (ratioSubEl) ratioSubEl.innerText = 'Không có dữ liệu';
+            return;
+        }
+
+        const ratio = data.overall_ratio;
+        ratioEl.innerText = `${ratio.toFixed(3)}x`;
+
+        // Color based on threshold
+        if (ratio > data.threshold_warning) {
+            ratioEl.style.color = 'var(--danger)';
+            if (ratioSubEl) ratioSubEl.innerHTML = '<span style="color:var(--danger)">⚠️ Chậm</span> - Cần kiểm tra';
+        } else if (ratio < 0.1) {
+            ratioEl.style.color = 'var(--success)';
+            if (ratioSubEl) ratioSubEl.innerHTML = '<span style="color:var(--success)">✓ Tốt</span>';
+        } else {
+            ratioEl.style.color = 'var(--text)';
+            if (ratioSubEl) ratioSubEl.innerText = 'Bình thường';
+        }
+
+    } catch (e) {
+        console.error('Load Processing Efficiency Error', e);
+    }
+}
+
 function renderTimelineStackedBar(data) {
     const categories = data.map(d => d.label); // Use 'label' instead of 'date'
     const successData = data.map(d => d.success);
@@ -379,6 +415,7 @@ async function loadTimeline(minTs, maxTs) {
     loadDurationDistribution(minTs, maxTs);
     loadPeakActivity(minTs, maxTs);
     loadTypeComparison(minTs, maxTs);
+    loadProcessingEfficiency(minTs, maxTs);
     
     let url = `/api/timeline?start=${minTs/1000}&end=${maxTs/1000}`;
     const res = await fetch(url);
