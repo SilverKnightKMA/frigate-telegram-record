@@ -445,74 +445,8 @@ function renderTimelineStackedBar(data) {
 }
 
 function renderTimelineDonut(data) {
-    if (!data.labels || data.labels.length === 0) {
-        if (charts.tlReasons) {
-            charts.tlReasons.destroy();
-            charts.tlReasons = null;
-        }
-        document.querySelector("#tl-chart-reasons").innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:50px;">No errors in selected time range</div>';
-        return;
-    }
-
-    // Reset container if was showing "no data" message
-    const container = document.querySelector("#tl-chart-reasons");
-    if (!charts.tlReasons && container.innerHTML.includes('No errors')) {
-        container.innerHTML = '';
-    }
-
-    // Sort data by value descending (largest to smallest)
-    const combined = data.labels.map((label, i) => ({ label, value: data.series[i] }));
-    combined.sort((a, b) => b.value - a.value);
-    const sortedLabels = combined.map(d => d.label);
-    const sortedSeries = combined.map(d => d.value);
-
-    const options = {
-        series: [{ name: 'Errors', data: sortedSeries }],
-        chart: { 
-            type: 'bar', 
-            height: 300, 
-            toolbar: { show: false },
-            fontFamily: 'inherit'
-        },
-        plotOptions: { 
-            bar: { 
-                horizontal: true, 
-                borderRadius: 4,
-                dataLabels: { position: 'end' }
-            } 
-        },
-        colors: ['#ef4444'],
-        xaxis: { 
-            categories: sortedLabels,
-            title: { text: 'Error Count', style: { fontFamily: 'inherit' } }
-        },
-        yaxis: {
-            labels: { style: { fontFamily: 'inherit' } }
-        },
-        dataLabels: { 
-            enabled: true,
-            style: { fontSize: '12px', colors: ['#333'], fontFamily: 'inherit' },
-            offsetX: 5,
-            textAnchor: 'start'
-        },
-        tooltip: {
-            style: { fontFamily: 'inherit' },
-            y: { formatter: (val) => `${val} errors` }
-        },
-        plotOptions: {
-            bar: {
-                horizontal: true,
-                dataLabels: { position: 'top' }
-            }
-        }
-    };
-
-    if (charts.tlReasons) {
-        charts.tlReasons.updateOptions(options);
-    } else {
-        charts.tlReasons = new ApexCharts(container, options);
-        charts.tlReasons.render();
-    }
+    // Render error breakdown table
+    renderErrorBreakdownTable(data);
 }
 
 async function loadTimeline(minTs, maxTs) {
@@ -864,86 +798,16 @@ async function loadPerformance(minTs, maxTs) {
             return;
         }
     
-    // Merged chart: Performance comparison by type with count, success rate, duration, process time
+    // Render performance comparison table
     const perfCategories = data.performance.categories || [];
     const perfCount = data.performance.count || [];
     const successRates = data.performance.success_rate || [];
     const storageMb = data.performance.storage_mb || [];
+    const avgDuration = data.performance.avg_duration || [];
+    const avgProcess = data.performance.avg_process || [];
     
-    const optPerf = {
-        series: [
-            { name: 'Total Count', data: perfCount, type: 'column' },
-            { name: 'Avg Duration (s)', data: data.performance.avg_duration || [], type: 'line' },
-            { name: 'Avg Process (s)', data: data.performance.avg_process || [], type: 'line' },
-            { name: 'Success Rate (%)', data: successRates, type: 'line' }
-        ],
-        chart: { 
-            height: 320, 
-            type: 'line',
-            animations: { enabled: false },
-            toolbar: { show: true }
-        },
-        stroke: {
-            width: [0, 3, 3, 3],
-            curve: 'smooth'
-        },
-        plotOptions: {
-            bar: { horizontal: false, columnWidth: '50%', borderRadius: 4 }
-        },
-        dataLabels: {
-            enabled: false
-        },
-        xaxis: { 
-            categories: perfCategories,
-            title: { text: 'Event Type' }
-        },
-        yaxis: [
-            { 
-                title: { text: 'Count' },
-                labels: { formatter: function(val) { return Math.round(val); } }
-            },
-            {
-                opposite: true,
-                title: { text: 'Duration / Process / Rate' },
-                labels: { formatter: function(val) { return val.toFixed(1); } },
-                min: 0
-            }
-        ],
-        colors: ['#6366f1', '#2563eb', '#f59e0b', '#10b981'],
-        legend: { position: 'top' },
-        markers: {
-            size: [0, 5, 5, 5],
-            strokeWidth: 2,
-            hover: { size: 7 }
-        },
-        tooltip: {
-            shared: true,
-            intersect: false,
-            custom: function({ series, seriesIndex, dataPointIndex, w }) {
-                const cat = perfCategories[dataPointIndex];
-                const count = perfCount[dataPointIndex] || 0;
-                const duration = (data.performance.avg_duration || [])[dataPointIndex] || 0;
-                const process = (data.performance.avg_process || [])[dataPointIndex] || 0;
-                const rate = successRates[dataPointIndex] || 0;
-                const storage = storageMb[dataPointIndex] || 0;
-                return `
-                    <div style="padding: 10px; font-size: 12px; line-height: 1.6;">
-                        <div style="font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 4px;">${cat}</div>
-                        <div><span style="color:#6366f1">●</span> Total: ${count} videos</div>
-                        <div><span style="color:#10b981">●</span> Success Rate: ${rate}%</div>
-                        <div><span style="color:#2563eb">●</span> Avg Duration: ${duration}s</div>
-                        <div><span style="color:#f59e0b">●</span> Avg Process: ${process}s</div>
-                        <div style="margin-top:4px;color:#666">Storage: ${storage} MB</div>
-                    </div>
-                `;
-            }
-        }
-    };
-    if(charts.perfLine) charts.perfLine.destroy();
-    charts.perfLine = new ApexCharts(document.querySelector("#chart-perf-line"), optPerf);
-    charts.perfLine.render();
+    renderPerformanceTable(perfCategories, perfCount, successRates, avgDuration, avgProcess, storageMb);
 
-    // Storage chart is now rendered from timeline_stats API for synchronized time axis
     } catch (e) { console.error("Load Performance Error", e); }
 }
 
@@ -952,103 +816,9 @@ async function loadDurationDistribution(minTs, maxTs) {
         const res = await fetch(`/api/duration_distribution?start=${minTs / 1000}&end=${maxTs / 1000}`);
         const data = await res.json();
 
-        const recordContainer = document.querySelector('#chart-duration-record');
-        const timelapseContainer = document.querySelector('#chart-duration-timelapse');
-
-        // Helper function to render a single duration chart with dynamic buckets
-        const renderDurationChart = (container, chartKey, typeData, typeName, color) => {
-            if (!container) return;
-            
-            // Filter to only buckets with data
-            const bucketsWithData = (typeData || []).filter(b => b.total > 0);
-            const hasData = bucketsWithData.length > 0;
-            
-            if (!hasData) {
-                container.innerHTML = `<div style="text-align:center;color:var(--text-sub);padding:50px;">No ${typeName.toLowerCase()} data in selected range</div>`;
-                if (charts[chartKey]) {
-                    charts[chartKey].destroy();
-                    charts[chartKey] = null;
-                }
-                return;
-            }
-
-            // Reset container if showing "no data" message
-            if (container.innerHTML.includes('No ')) {
-                container.innerHTML = '';
-            }
-
-            // Calculate total for percentage
-            const totalCount = bucketsWithData.reduce((sum, b) => sum + b.total, 0);
-
-            // Use only buckets that have data
-            const categories = bucketsWithData.map(b => b.range);
-            const chartDataCount = bucketsWithData.map(b => b.total);
-            const chartDataPct = bucketsWithData.map(b => totalCount > 0 ? Math.round((b.total / totalCount) * 100) : 0);
-
-            const options = {
-                series: [{ name: typeName, data: chartDataPct }],
-                chart: {
-                    type: 'bar',
-                    height: 280,
-                    toolbar: { show: false },
-                    animations: { enabled: false }
-                },
-                plotOptions: {
-                    bar: {
-                        horizontal: false,
-                        columnWidth: categories.length === 1 ? '40%' : '60%',
-                        borderRadius: 4,
-                        distributed: false
-                    }
-                },
-                colors: [color],
-                xaxis: {
-                    categories: categories,
-                    title: { text: 'Duration' }
-                },
-                yaxis: {
-                    title: { text: '% of Total' },
-                    max: 100,
-                    labels: {
-                        formatter: function(val) {
-                            return Math.floor(val) + '%';
-                        }
-                    }
-                },
-                legend: { show: false },
-                dataLabels: {
-                    enabled: true,
-                    formatter: function(val, opts) { 
-                        const count = chartDataCount[opts.dataPointIndex];
-                        return count > 0 ? `${val}%` : ''; 
-                    },
-                    style: { fontSize: '11px', colors: ['#fff'] }
-                },
-                tooltip: {
-                    custom: function({ series, seriesIndex, dataPointIndex, w }) {
-                        const pct = series[seriesIndex][dataPointIndex];
-                        const count = chartDataCount[dataPointIndex];
-                        const bucket = categories[dataPointIndex];
-                        return `<div style="padding: 8px 12px; font-size: 12px;">
-                            <div style="font-weight: 600; margin-bottom: 4px;">${bucket}</div>
-                            <div>${count} videos (${pct}%)</div>
-                            <div style="color: #666; font-size: 11px; margin-top: 2px;">Total: ${totalCount}</div>
-                        </div>`;
-                    }
-                }
-            };
-
-            if (charts[chartKey]) {
-                charts[chartKey].updateOptions(options);
-            } else {
-                charts[chartKey] = new ApexCharts(container, options);
-                charts[chartKey].render();
-            }
-        };
-
-        // Render separate charts for Record and Timelapse
-        renderDurationChart(recordContainer, 'durationRecord', data.record, 'Record', '#2563eb');
-        renderDurationChart(timelapseContainer, 'durationTimelapse', data.timelapse, 'Timelapse', '#10b981');
+        // Render duration distribution tables for Record and Timelapse
+        renderDurationTable('table-duration-record', data.record, 'Record');
+        renderDurationTable('table-duration-timelapse', data.timelapse, 'Timelapse');
 
     } catch (e) {
         console.error('Load Duration Distribution Error', e);
@@ -1430,4 +1200,122 @@ function renderDonut(data) {
     if(charts.reasons) charts.reasons.destroy();
     charts.reasons = new ApexCharts(document.querySelector("#chart-reasons"), options);
     charts.reasons.render();
+}
+
+// --- Table Rendering Functions ---
+
+/**
+ * Render performance comparison data into a table
+ * Displays type, count, success rate, duration, process time, and storage
+ */
+function renderPerformanceTable(categories, counts, successRates, avgDuration, avgProcess, storageMb) {
+    const tbody = document.querySelector('#table-perf-comparison tbody');
+    if (!tbody) return;
+    
+    if (!categories || categories.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:30px;">No data in selected range</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    for (let i = 0; i < categories.length; i++) {
+        const rate = successRates[i] || 0;
+        const rateColor = rate >= 95 ? 'var(--success)' : rate >= 80 ? 'var(--warning)' : 'var(--danger)';
+        
+        html += `
+            <tr>
+                <td><strong>${categories[i]}</strong></td>
+                <td>${counts[i] || 0}</td>
+                <td style="color: ${rateColor}; font-weight: 600;">${rate}%</td>
+                <td>${(avgDuration[i] || 0).toFixed(1)}s</td>
+                <td>${(avgProcess[i] || 0).toFixed(1)}s</td>
+                <td>${(storageMb[i] || 0).toFixed(2)} MB</td>
+            </tr>
+        `;
+    }
+    tbody.innerHTML = html;
+}
+
+/**
+ * Render duration distribution data into a table
+ * Displays duration range, count, and percentage
+ */
+function renderDurationTable(tableId, typeData, typeName) {
+    const tbody = document.querySelector(`#${tableId} tbody`);
+    if (!tbody) return;
+    
+    const bucketsWithData = (typeData || []).filter(b => b.total > 0);
+    
+    if (bucketsWithData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-sub);padding:30px;">No ${typeName.toLowerCase()} data in selected range</td></tr>`;
+        return;
+    }
+    
+    const totalCount = bucketsWithData.reduce((sum, b) => sum + b.total, 0);
+    
+    let html = '';
+    bucketsWithData.forEach(bucket => {
+        const pct = totalCount > 0 ? ((bucket.total / totalCount) * 100).toFixed(1) : 0;
+        html += `
+            <tr>
+                <td>${bucket.range}</td>
+                <td>${bucket.total}</td>
+                <td>${pct}%</td>
+            </tr>
+        `;
+    });
+    
+    // Total row
+    html += `
+        <tr style="font-weight: 600; border-top: 2px solid var(--border);">
+            <td>Total</td>
+            <td>${totalCount}</td>
+            <td>100%</td>
+        </tr>
+    `;
+    
+    tbody.innerHTML = html;
+}
+
+/**
+ * Render error breakdown data into a table
+ * Displays error type, count, and percentage sorted by count descending
+ */
+function renderErrorBreakdownTable(data) {
+    const tbody = document.querySelector('#table-error-breakdown tbody');
+    if (!tbody) return;
+    
+    if (!data.labels || data.labels.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-sub);padding:30px;">No errors in selected range</td></tr>';
+        return;
+    }
+    
+    // Combine and sort by value descending
+    const combined = data.labels.map((label, i) => ({ label, value: data.series[i] }));
+    combined.sort((a, b) => b.value - a.value);
+    
+    const totalErrors = combined.reduce((sum, item) => sum + item.value, 0);
+    
+    let html = '';
+    combined.forEach(item => {
+        const pct = totalErrors > 0 ? ((item.value / totalErrors) * 100).toFixed(1) : 0;
+        html += `
+            <tr>
+                <td style="color: var(--danger);">${item.label}</td>
+                <td>${item.value}</td>
+                <td>${pct}%</td>
+            </tr>
+        `;
+    });
+    
+    // Total row
+    html += `
+        <tr style="font-weight: 600; border-top: 2px solid var(--border);">
+            <td>Total</td>
+            <td>${totalErrors}</td>
+            <td>100%</td>
+        </tr>
+    `;
+    
+    tbody.innerHTML = html;
 }

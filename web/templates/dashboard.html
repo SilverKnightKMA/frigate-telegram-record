@@ -154,7 +154,7 @@
                 <h3 style="margin-bottom:15px">Error Distribution by Time</h3>
                 <div id="chart-peak-heatmap" style="min-height: 300px;"></div>
             </div>
-        </div>"},{
+        </div>
 
         <!-- Row 2: Storage Trend + Record vs Timelapse Comparison -->
         <div class="chart-row" style="margin-top: 20px;">
@@ -164,23 +164,70 @@
             </div>
             <div class="card">
                 <h3 style="margin-bottom:15px">Record vs Timelapse Comparison</h3>
-                <div id="chart-perf-line"></div>
+                <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+                    <table id="table-perf-comparison" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th>Success Rate</th>
+                                <th>Avg Duration</th>
+                                <th>Avg Process</th>
+                                <th>Storage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <!-- Row 3: Record Duration + Timelapse Duration + Activity Distribution -->
+        <!-- Row 3: Record Duration + Timelapse Duration + Error Breakdown -->
         <div class="chart-row-3" style="margin-top: 20px;">
             <div class="card">
                 <h3 style="margin-bottom:15px">Record Duration Distribution</h3>
-                <div id="chart-duration-record"></div>
+                <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+                    <table id="table-duration-record" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Duration Range</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
             <div class="card">
                 <h3 style="margin-bottom:15px">Timelapse Duration Distribution</h3>
-                <div id="chart-duration-timelapse"></div>
+                <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+                    <table id="table-duration-timelapse" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Duration Range</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
             <div class="card">
                 <h3 style="margin-bottom:15px">Error Breakdown</h3>
-                <div id="tl-chart-reasons"></div>
+                <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+                    <table id="table-error-breakdown" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Error Type</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
