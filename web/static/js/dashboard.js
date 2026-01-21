@@ -162,7 +162,9 @@ async function loadOverview() {
     // This function is deprecated - timeline tab now handles stats
     // Keeping for backwards compatibility but doing nothing
     try {
-        document.getElementById('last-updated').innerText = new Date().toLocaleTimeString('en-US');
+        const now = new Date();
+        document.getElementById('last-updated').innerText = now.toLocaleTimeString('en-US');
+        document.getElementById('last-updated-date').innerText = now.toLocaleDateString('en-US');
     } catch (e) { /* Element may not exist */ }
 }
 
@@ -1282,7 +1284,7 @@ function renderDurationTable(tableId, typeData, typeName) {
     
     let html = '';
     bucketsWithData.forEach(bucket => {
-        const range = bucket.range || `${bucket.duration}s`;
+        const range = bucket.range || `${Math.floor(bucket.duration / 3600)}h${Math.floor((bucket.duration % 3600) / 60)}m${bucket.duration % 60}s`;
         const count = bucket.total || bucket.count;
         const pct = totalCount > 0 ? ((count / totalCount) * 100).toFixed(1) : 0;
         html += `
