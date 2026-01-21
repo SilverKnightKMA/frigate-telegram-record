@@ -291,18 +291,18 @@ def get_duration_distribution():
         
         def calculate_buckets(min_dur, max_dur, num_buckets=6):
             """Calculate dynamic bucket boundaries based on data range"""
-            if min_dur is None or max_dur is None:
+            if min_dur is None or max_dur is None or min_dur >= max_dur:
                 return []
-            
-            # Ensure we have valid range
+
+            # Ensure valid range
             min_dur = max(0, min_dur)
             max_dur = max(min_dur + 1, max_dur)
-            
+
             # Calculate bucket size
             range_dur = max_dur - min_dur
             bucket_size = range_dur / num_buckets
-            
-            # Round bucket size to nice numbers
+
+            # Adjust bucket size to round to nearest nice number
             if bucket_size < 10:
                 bucket_size = max(1, round(bucket_size))
             elif bucket_size < 60:
@@ -313,21 +313,17 @@ def get_duration_distribution():
                 bucket_size = round(bucket_size / 60) * 60
             else:
                 bucket_size = round(bucket_size / 300) * 300
-            
+
             bucket_size = max(1, bucket_size)
-            
+
             # Generate bucket boundaries
             buckets = []
-            current = int(min_dur / bucket_size) * bucket_size  # Round down to bucket boundary
+            current = min_dur
             while current < max_dur:
-                next_val = current + bucket_size
+                next_val = min(current + bucket_size, max_dur)
                 buckets.append((current, next_val))
                 current = next_val
-            
-            # Ensure last bucket captures max value
-            if buckets and buckets[-1][1] < max_dur:
-                buckets[-1] = (buckets[-1][0], max_dur + 1)
-            
+
             return buckets
         
         def get_bucket_data(category, buckets):
