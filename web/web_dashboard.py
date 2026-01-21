@@ -328,6 +328,40 @@ def get_duration_distribution():
 
             return buckets
         
+        def calculate_buckets_weighted(data, num_buckets=6):
+            """Calculate dynamic bucket boundaries based on data range and weights (counts)."""
+            if not data or len(data) == 0:
+                return []
+
+            # Sort data by duration
+            data = sorted(data, key=lambda x: x['duration'])
+
+            # Calculate total count
+            total_count = sum(item['count'] for item in data)
+
+            # Calculate target count per bucket
+            target_count = total_count / num_buckets
+
+            buckets = []
+            current_bucket = []
+            current_count = 0
+
+            for item in data:
+                current_bucket.append(item['duration'])
+                current_count += item['count']
+
+                # If current bucket reaches target count, finalize the bucket
+                if current_count >= target_count:
+                    buckets.append((min(current_bucket), max(current_bucket)))
+                    current_bucket = []
+                    current_count = 0
+
+            # Add remaining items to the last bucket
+            if current_bucket:
+                buckets.append((min(current_bucket), max(current_bucket)))
+
+            return buckets
+        
         def get_bucket_data(category, buckets):
             """Get count data for each bucket"""
             if not buckets:
@@ -403,7 +437,7 @@ def get_duration_distribution():
             return result
         
         def get_duration_data_smart(category, min_dur, max_dur, max_entries=6):
-            """Get duration data - ensure at least max_entries buckets even for small ranges"""
+            """Get duration data - ensure buckets are distributed based on duration and count weights"""
             # First, check how many distinct durations exist
             exact_data = get_exact_duration_data(category)
 
@@ -411,13 +445,8 @@ def get_duration_distribution():
             if len(exact_data) <= max_entries:
                 return exact_data
 
-            # Otherwise, calculate buckets
-            buckets = calculate_buckets(min_dur, max_dur, num_buckets=max_entries)
-
-            # Ensure at least max_entries buckets by reducing bucket size if needed
-            while len(buckets) < max_entries:
-                max_entries += 1
-                buckets = calculate_buckets(min_dur, max_dur, num_buckets=max_entries)
+            # Otherwise, calculate weighted buckets
+            buckets = calculate_buckets_weighted(exact_data, num_buckets=max_entries)
 
             return get_bucket_data(category, buckets)
         
