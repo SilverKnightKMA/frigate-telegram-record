@@ -428,8 +428,8 @@ def get_duration_distribution():
             result = []
             for r in rows:
                 result.append({
-                    'range': f"{r['duration_sec']}s",
-                    'total': r['count'],
+                    'duration': r['duration_sec'],  # Changed 'range' to 'duration'
+                    'count': r['count'],
                     'success': r['success'],
                     'failed': r['failed']
                 })
