@@ -219,6 +219,16 @@ The web dashboard provides a user-friendly interface for monitoring camera stati
 
 For more details, see the [web dashboard README](web/README.md).
 
+### Screenshots
+
+![Record](record.png)
+
+![Timelapse](timelapse.png)
+
+![Error Log](error.png)
+
+![Error Solved](solved.png)
+
 ## 🔧 Advanced Usage
 
 ### Running Both Record and Timelapse
@@ -247,3 +257,41 @@ If you're using a local Telegram Bot API server:
 ```bash
 TELEGRAM_API_URL=http://your-local-api-server:8081
 ```
+
+---
+
+## 🖥️ Running Locally (without Docker) ⚙️
+
+You can run the service directly on a host (Linux or WSL). Requirements include: `bash`, `ffmpeg`, `file`, `sqlite` (or `sqlite3`), `jq`, `coreutils`, and `tzdata`. Example steps (Debian/Ubuntu):
+
+```bash
+sudo apt update && sudo apt install -y bash ffmpeg file sqlite3 jq coreutils ca-certificates tzdata
+git clone https://github.com/SilverKnightKMA/frigate-telegram-record.git
+cd frigate-telegram-record
+cp config.env.example config.env   # or place your file at ./config/config.env
+mkdir -p ./data
+# Edit config.env or set env vars (BOT_TOKEN, FRIGATE_HOST, CAMERAS, etc.)
+MODE=record BOT_TOKEN=... FRIGATE_HOST=http://<frigate-host>:5000 ./app.sh
+# For a single test cycle
+MODE=test ./app.sh
+```
+
+Notes:
+- The app will use `./data` (or `/app/data` inside a container) for the database, logs, and temporary files. Ensure it is writable.
+- The Docker `HEALTHCHECK` inspects `/app/data/.heartbeat`. When running locally, ensure the service can create/update a `.heartbeat` file in the data directory.
+
+For running the web dashboard locally, see `web/README.md`. Install Python dependencies with `pip install -r web/requirements.txt`, set `DB_FILE` and run `python web_dashboard.py`.
+
+## 🧩 Docker build & hardware acceleration notes
+
+- The `Dockerfile` installs an Intel media driver only when building for the `amd64` architecture (via the `TARGETARCH` build-arg). If you need VAAPI acceleration, build/run on `amd64` and map `/dev/dri/renderD128` into the container.
+
+Build example:
+
+```bash
+docker build --build-arg TARGETARCH=$(uname -m) -t frigate-telegram-record:local .
+```
+
+## 🧾 License
+
+This project is released under the **MIT License**. See the `LICENSE` file for details.
