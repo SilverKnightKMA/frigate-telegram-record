@@ -1,63 +1,67 @@
-# Frigate Web Dashboard
+# Frigate Record Web Dashboard
 
-## Cách sử dụng Dashboard
+## How to Use the Dashboard
 
-Dashboard web đơn giản để theo dõi thống kê camera và lịch sử ghi hình từ database.
+A simple web dashboard for monitoring camera statistics and recording history from the database.
 
-### Khởi động với Docker Compose
+### Start with Docker Compose
 
 ```bash
 docker-compose up -d frigate-web-dashboard
 ```
 
-### Truy cập Dashboard
+### Access the Dashboard
 
-Mở trình duyệt và truy cập: `http://localhost:8080`
+Open your browser and navigate to: `http://localhost:8080`
 
-### Tính năng
+![Dashboard](dashboard.png)
 
-Dashboard hiển thị:
+![Events](events.png)
 
-1. **Thống kê tổng quan:**
-   - Tổng số camera
-   - Số lượng video ghi thành công
-   - Số lượng timelapse
-   - Số lượng lỗi/thất bại
-   - Hoạt động trong 24h qua
+### Features
 
-2. **Bảng thống kê chi tiết theo camera:**
-   - Tên camera
-   - Số video thành công
-   - Số timelapse
-   - Số lỗi
-   - Tổng thời lượng ghi
-   - Thời gian ghi đầu tiên và gần nhất
+The dashboard provides:
 
-3. **Danh sách hoạt động gần đây:**
-   - 100 hoạt động gần nhất
-   - Bao gồm records thành công, timelapse, và lỗi
-   - Thông tin chi tiết về từng hoạt động
+1. **Overview Statistics:**
+   - Total number of cameras
+   - Number of successful recordings
+   - Number of timelapse videos
+   - Number of errors/failures
+   - Activity in the last 24 hours
 
-### Cấu hình
+2. **Detailed Camera Statistics Table:**
+   - Camera name
+   - Number of successful recordings
+   - Number of timelapse videos
+   - Number of errors
+   - Total recording duration
+   - First and most recent recording times
 
-Có thể thay đổi port trong `docker-compose.yml`:
+3. **Recent Activity List:**
+   - The 100 most recent activities
+   - Includes successful recordings, timelapse videos, and errors
+   - Detailed information about each activity
+
+### Configuration
+
+You can change the port in `docker-compose.yml`:
 
 ```yaml
 environment:
-  - WEB_PORT=8080  # Thay đổi port nếu cần
+  - WEB_PORT=8080  # Change the port if needed
 ports:
-  - "8080:8080"    # Thay đổi port bên trái
+  - "8080:8080"    # Change the left-hand port
 ```
 
-### Chạy standalone (không dùng Docker)
+### Run Standalone (Without Docker)
 
 ```bash
-# Cài đặt dependencies
-pip install -r requirements-web.txt
+# Install dependencies
+pip install -r requirements.txt
 
-# Chạy app
+# Run the app
 export DB_FILE=./data/video_history.sqlite
 python web_dashboard.py
 ```
 
-Dashboard sẽ tự động làm mới mỗi 30 giây.
+The dashboard will automatically refresh every 30 seconds.
