@@ -377,7 +377,7 @@ def get_duration_distribution():
             return result
         
         def get_exact_duration_data(category):
-            """Get exact duration counts for timelapse (grouped by each second)"""
+            """Get exact duration counts (grouped by each second)"""
             query = """
                 SELECT 
                     CAST(ROUND(duration) AS INTEGER) as duration_sec,
@@ -404,6 +404,19 @@ def get_duration_distribution():
             
             return result
         
+        def get_duration_data_smart(category, min_dur, max_dur, max_entries=6):
+            """Get duration data - show exact values if <= max_entries, otherwise use buckets"""
+            # First, check how many distinct durations exist
+            exact_data = get_exact_duration_data(category)
+            
+            # If 6 or fewer distinct durations, return exact data
+            if len(exact_data) <= max_entries:
+                return exact_data
+            
+            # Otherwise, fall back to bucketed data
+            buckets = calculate_buckets(min_dur, max_dur, num_buckets=max_entries)
+            return get_bucket_data(category, buckets)
+        
         # Process each category
         record_buckets = []
         timelapse_buckets = []
@@ -412,11 +425,10 @@ def get_duration_distribution():
             category = row['category']
             
             if category == 'Record':
-                buckets = calculate_buckets(row['min_dur'], row['max_dur'])
-                record_buckets = get_bucket_data('Record', buckets)
+                record_buckets = get_duration_data_smart('Record', row['min_dur'], row['max_dur'])
             else:
-                # For Timelapse, show exact seconds instead of ranges
-                timelapse_buckets = get_exact_duration_data('Timelapse')
+                # For Timelapse, also use smart logic
+                timelapse_buckets = get_duration_data_smart('Timelapse', row['min_dur'], row['max_dur'])
 
         return jsonify({
             'record': record_buckets,
