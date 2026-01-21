@@ -1284,7 +1284,7 @@ function renderDurationTable(tableId, typeData, typeName) {
     
     let html = '';
     bucketsWithData.forEach(bucket => {
-        const range = bucket.range || `${Math.floor(bucket.duration / 3600)}h${Math.floor((bucket.duration % 3600) / 60)}m${bucket.duration % 60}s`;
+        const range = bucket.range || `${Math.floor(bucket.duration / 3600) > 0 ? Math.floor(bucket.duration / 3600) + 'h' : ''}${Math.floor((bucket.duration % 3600) / 60) > 0 ? Math.floor((bucket.duration % 3600) / 60) + 'm' : ''}${bucket.duration % 60 > 0 ? bucket.duration % 60 + 's' : ''}`;
         const count = bucket.total || bucket.count;
         const pct = totalCount > 0 ? ((count / totalCount) * 100).toFixed(1) : 0;
         html += `

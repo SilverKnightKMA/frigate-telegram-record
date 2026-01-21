@@ -275,15 +275,20 @@ def get_duration_distribution():
         stats_rows = cursor.execute(stats_query, (start_ts, end_ts)).fetchall()
         
         def format_duration(seconds):
-            """Format seconds into human-readable string without decimals"""
-            if seconds < 60:
-                return f"{int(seconds)}s"
-            elif seconds < 3600:
-                mins = int(seconds / 60)
-                return f"{mins}m"
-            else:
-                hours = int(seconds / 3600)
-                return f"{hours}h"
+            """Format seconds into human-readable string with detailed breakdown"""
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+
+            formatted = ""
+            if hours > 0:
+                formatted += f"{hours}h"
+            if minutes > 0 or hours > 0:  # Include minutes if hours > 0
+                formatted += f"{minutes}m"
+            if secs > 0 or (hours == 0 and minutes == 0):  # Include seconds if no hours and minutes
+                formatted += f"{secs}s"
+
+            return formatted
         
         def calculate_buckets_weighted(data, num_buckets=6):
             """Calculate dynamic bucket boundaries based on data range and weights (counts)."""
