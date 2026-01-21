@@ -104,7 +104,7 @@ calculate_vod_source_duration() {
 }
 
 # Centralized gatekeeper to decide if a pipeline should proceed based on source availability.
-# Purpose: Hợp nhất logic kiểm tra VOD và so sánh lịch sử để quyết định có chạy Pipeline không.
+# Purpose: Consolidate VOD checking and history comparison logic to decide whether to run the pipeline.
 check_source_gatekeeper() {
     local src="$1"
     local start_ts="$2"
@@ -114,7 +114,7 @@ check_source_gatekeeper() {
     local expected_duration=$(( end_ts - start_ts ))
     local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
     
-    # Lấy thông tin lỗi cũ từ Database
+    # Retrieve previous failure info from the database
     local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
     local prev_fail_duration=0
     local prev_alert_sent=0
@@ -166,19 +166,19 @@ check_source_gatekeeper() {
     # Reset gatekeeper fail flag
     _gatekeeper_fail="false"
 
-    # [Debug] Log so sánh để dễ kiểm tra
+    # [Debug] Comparison log for easier inspection
     if [ "$prev_fail_duration" -gt 0 ]; then
         log_debug "[$src] Gatekeeper Check: Est. Output ${estimated_output}s vs Prev Fail ${prev_fail_duration}s (VOD: ${vod_duration}s)"
     fi
 
-    # Logic chặn: Nếu đã cảnh báo và dữ liệu Output ước tính không tăng thêm
+    # Blocking logic: If an alert was already sent and the estimated output hasn't increased
     # [FIX] Use estimated_output instead of vod_duration
     if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
         log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
         return 1
     fi
 
-    # Xác định ngưỡng (threshold) tùy theo mode
+    # Determine threshold according to mode
     local threshold=0
     if [ "$mode" == "record" ]; then
         threshold=$(( expected_duration * MIN_DURATION_PERCENT / 100 ))
@@ -188,9 +188,9 @@ check_source_gatekeeper() {
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
         
         # [CHANGE] Replaced hardcoded '60' with TIMELAPSE_MIN_DURATION_SEC env var (Smart Skip)
-        # So sánh dựa trên VOD raw cho Smart Skip (vẫn giữ nguyên logic này vì nó check đầu vào)
+        # Compare based on raw VOD for Smart Skip (retain this logic as it checks the input)
         if [ "$vod_duration" -lt "$TIMELAPSE_MIN_DURATION_SEC" ]; then
-            # [FIX] So sánh với estimated output ở đây luôn cho chắc
+            # [FIX] Compare with estimated output here to be safe
             if [ "$estimated_output" -le "$prev_fail_duration" ] && [ "$prev_fail_duration" -ge 0 ]; then
                 log "[$src] [$mode] Gatekeeper: Smart Skip (Insufficient VOD & No Improvement)."
                 return 1
