@@ -314,7 +314,9 @@ def get_duration_distribution():
             else:
                 bucket_size = round(bucket_size / 300) * 300
 
-            bucket_size = max(1, bucket_size)
+            # Recalculate bucket size if it results in more than num_buckets
+            while (range_dur / bucket_size) > num_buckets:
+                bucket_size *= 2
 
             # Generate bucket boundaries
             buckets = []
