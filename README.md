@@ -1,6 +1,6 @@
 # Frigate Telegram Record
 
-A lightweight containerized service that automatically downloads video clips from your Frigate NVR and sends them to Telegram. The service intelligently manages recording history to prevent duplicates, validates video quality, and provides error notifications.
+A lightweight containerized service that automatically downloads video clips from your Frigate NVR and sends them to Telegram. The service intelligently manages recording history to prevent duplicates, validates video quality, and provides error notifications. Additionally, a web dashboard is available for monitoring statistics and recording history.
 
 ## 📋 Table of Contents
 
@@ -10,6 +10,7 @@ A lightweight containerized service that automatically downloads video clips fro
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Operating Modes](#operating-modes)
+- [Web Dashboard](#web-dashboard)
 - [Advanced Usage](#advanced-usage)
 - [Troubleshooting](#troubleshooting)
 - [Project Structure](#project-structure)
@@ -29,6 +30,7 @@ A lightweight containerized service that automatically downloads video clips fro
 - **Multi-Camera Support**: Configure multiple cameras with individual Telegram destinations
 - **Topic/Thread Support**: Send videos to specific forum topics in Telegram groups
 - **Hardware Acceleration**: VAAPI support for efficient timelapse generation
+- **Web Dashboard**: A user-friendly interface for monitoring camera statistics and recording history
 
 ## 🔍 How It Works
 
@@ -62,7 +64,7 @@ Before you begin, ensure you have:
 
 1. **Clone or download this repository**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/SilverKnightKMA/frigate-telegram-record.git
    cd frigate-telegram-record
    ```
 
@@ -72,17 +74,11 @@ Before you begin, ensure you have:
    ```
 
 3. **Edit `config.env` with your settings**:
-   ```bash
-   nano config.env
-   ```
-   
-   Minimum required settings:
    - `BOT_TOKEN`: Your Telegram bot token
-   - `CAMERAS`: Your camera configuration(s)
-   - `ERROR_CHAT_ID`: Chat ID for error notifications
    - `FRIGATE_HOST`: Your Frigate server URL
+   - `CAMERAS`: Camera configurations
 
-4. **Review and customize** [docker-compose.yml](docker-compose.yml) if needed
+4. **Review and customize** `docker-compose.yml` if needed
 
 5. **Start the service**:
    ```bash
@@ -91,7 +87,7 @@ Before you begin, ensure you have:
 
 6. **Check the logs**:
    ```bash
-   docker-compose logs -f frigate-telegram-record
+   docker-compose logs -f
    ```
 
 ### Method 2: Using Docker Run
@@ -106,11 +102,9 @@ docker build -t frigate-telegram-record .
 docker run -d \
   --name frigate-telegram-record \
   -v $(pwd)/data:/app/data \
-  -e TZ=Asia/Ho_Chi_Minh \
-  -e BOT_TOKEN=your_telegram_bot_token \
-  -e FRIGATE_HOST=http://192.168.1.100:5000 \
-  -e CAMERAS="Front Door|front_door|2|-1001234567890" \
-  -e ERROR_CHAT_ID=-1001234567890 \
+  -e BOT_TOKEN=your_telegram_bot_token_here \
+  -e CAMERAS=Readable_name|camera_id|thread_id|chat_id \
+  -e FRIGATE_HOST=http://192.168.1.x:5000 \
   frigate-telegram-record
 ```
 
@@ -151,24 +145,18 @@ For a complete list of available configuration options, see [config.env.example]
 
 - **Recording Settings**:
   - `REC_DURATION_MIN`: Duration of each clip in minutes (default: 15)
-  - `LOOKBACK_HOURS`: How far back to scan for missing clips (default: 24)
-  - `PADDING_SEC`: Extra seconds before/after each clip (default: 5)
   - `MIN_DURATION_PERCENT`: Minimum valid duration percentage (default: 90)
 
 - **Timelapse Settings**:
   - `TIMELAPSE_HOURS`: Duration of each timelapse block (default: 6)
-  - `TIMELAPSE_SPEED`: Speed multiplier (default: 60x)
-  - `TIMELAPSE_FPS`: Output frame rate (default: 30)
   - `TIMELAPSE_QUALITY`: Encoding quality (default: 24, lower = better)
 
 - **Notification Settings**:
   - `NOTIFY_ON_RECOVERY`: Send recovery notifications (default: true)
-  - `ALERT_RETENTION_HOURS`: How long to keep alert history (default: 72)
   - `ALERT_REPEAT`: Resend alerts for same time slot (default: false)
 
 - **Performance Tuning**:
   - `MAX_CONCURRENT_TASKS`: Maximum parallel operations (default: 2)
-  - `MAX_RETRIES`: Maximum retry attempts (default: 5)
   - `RETENTION_DAYS`: Database record retention (default: 30)
 
 ## 🎮 Operating Modes
@@ -199,11 +187,43 @@ Run a single cycle and exit (useful for testing configuration):
 - `MODE=test`: Test record mode
 - `MODE=test_timelapse`: Test timelapse mode
 
+## 🖥️ Web Dashboard
+
+The web dashboard provides a user-friendly interface for monitoring camera statistics and recording history.
+
+### Features
+
+- Overview of total cameras, successful recordings, timelapse videos, and errors
+- Detailed statistics per camera
+- Recent activity logs
+- Interactive charts for storage trends, error distribution, and more
+
+### Quick Start
+
+1. Ensure the `frigate-web-dashboard` service is included in your `docker-compose.yml`:
+   ```yaml
+   frigate-web-dashboard:
+     image: ghcr.io/silverknightkma/frigate-telegram-record-web:1.1.5
+     container_name: frigate-web-dashboard
+     restart: unless-stopped
+     ports:
+       - "8080:8080"
+     volumes:
+       - ./data:/app/data:ro
+     environment:
+       - DB_FILE=/app/data/video_history.sqlite
+       - WEB_PORT=8080
+   ```
+
+2. Access the dashboard at `http://localhost:8080`.
+
+For more details, see the [web dashboard README](web/README.md).
+
 ## 🔧 Advanced Usage
 
 ### Running Both Record and Timelapse
 
-You can run both modes simultaneously by using two separate containers. See the example in [docker-compose.yml](docker-compose.yml):
+You can run both modes simultaneously by using two separate containers. See the example in `docker-compose.yml`:
 
 ```bash
 docker-compose up -d frigate-telegram-record frigate-telegram-timelapse
@@ -215,11 +235,10 @@ For timelapse mode with Intel GPU acceleration:
 
 1. Ensure your user has access to the GPU device:
    ```bash
-   sudo usermod -a -G video $USER
-   sudo chmod 666 /dev/dri/renderD128
+   sudo usermod -aG video $(whoami)
    ```
 
-2. Add device mapping in docker-compose.yml (already included in the example)
+2. Add device mapping in `docker-compose.yml` (already included in the example).
 
 ### Custom Telegram API Server
 
@@ -228,117 +247,3 @@ If you're using a local Telegram Bot API server:
 ```bash
 TELEGRAM_API_URL=http://your-local-api-server:8081
 ```
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**1. "Database is locked" errors**
-- Reduce `MAX_CONCURRENT_TASKS` in your configuration
-- Ensure only one instance is accessing the database
-
-**2. Videos not being sent**
-- Check bot permissions in the target chat
-- Verify chat ID is correct (should start with `-100` for supergroups)
-- Check logs: `docker-compose logs -f`
-
-**3. Frigate connection errors**
-- Verify `FRIGATE_HOST` is accessible from the container
-- Use the internal network IP, not `localhost`
-- Check Frigate API is enabled
-
-**4. Hardware acceleration not working**
-- Verify device exists: `ls -la /dev/dri/renderD128`
-- Check permissions: `groups` should include `video`
-- Ensure correct device mapping in docker-compose.yml
-
-### Viewing Logs
-
-```bash
-# All logs
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f frigate-telegram-record
-
-# Last 100 lines
-docker-compose logs --tail=100 frigate-telegram-record
-```
-
-### Testing Configuration
-
-Run a single test cycle:
-
-```bash
-docker run --rm \
-  -v $(pwd)/data:/app/data \
-  -e MODE=test \
-  -e BOT_TOKEN=your_token \
-  -e CAMERAS="Test|camera_name||-1001234567890" \
-  -e FRIGATE_HOST=http://192.168.1.100:5000 \
-  -e ERROR_CHAT_ID=-1001234567890 \
-  -e TEST_REC_DURATION_MIN=1 \
-  frigate-telegram-record
-```
-
-## 📁 Project Structure
-
-- [app.sh](app.sh) — Main application script (configuration, database, download/send pipeline)
-- [docker-compose.yml](docker-compose.yml) — Docker Compose configuration with examples for both modes
-- [Dockerfile](Dockerfile) — Container image definition (Alpine Linux with required dependencies)
-- [config.env.example](config.env.example) — Complete configuration template with detailed comments
-- `data/` — Persistent data directory (created automatically)
-  - `video_history.sqlite` — Recording history database
-  - `execution.log` — Application logs
-
-## 📝 License
-
-See [LICENSE](LICENSE) for details.
-
-## 🤝 Contributing
-
-Issues and pull requests are welcome!
-
----
-
-**Need help?** Check the logs first, review [config.env.example](config.env.example) for all available options, or open an issue
-
-```bash
-docker run --rm \
-    -v $(pwd)/data:/app/data \
-    -v $(pwd)/config.env:/app/config/config.env:ro \
-    -e MODE=test \
-    -e TEST_REC_DURATION_MIN=1 \
-    -e BOT_TOKEN=your_token_here \
-    frigate-telegram-record
-```
-
-Data and logs
-- Data directory inside container: `/app/data` (bind this to host `./data`).
-- Log file: `/app/data/execution.log`.
-- SQLite DB: `/app/data/video_history.sqlite`.
-
-Troubleshooting
-- No clips are sent: verify `FRIGATE_HOST`, `CAMERAS`, and that Frigate clip URL pattern is reachable from the container.
-- Clip download fails with 404: confirm Frigate has the camera `src` and the requested timestamps exist.
-- Telegram failures / rate limits: check logs for `retry after`. Lower `MAX_CONCURRENT_TASKS` if hitting limits.
-- Database locked errors: the script sets sqlite timeout; ensure `RETENTION_DAYS` and `MAX_CONCURRENT_TASKS` are reasonable.
-
-Security notes
-- Never commit `BOT_TOKEN` or `config.env` to source control. Use `config.env.example` in the repo and keep real secrets out of version control.
-- Use a secrets manager or mount a file with restricted permissions for `config.env` when running in production.
-
-Ignored files (recommended)
-The repository contains a `.gitignore` that excludes common local/runtime files. Key entries:
-
-- `config.env` — local config with secrets
-- `data/` — runtime data (sqlite DB, logs, downloaded clips)
-- `*.sqlite` and `*.log` — database and log files
-
-Make sure you don't accidentally commit any sensitive files. See `.gitignore` in the repo.
-
-Extending or customizing
-- You can change validation rules (in `app.sh`) to require ffprobe, change padding, or alter how gaps are computed.
-
-License
-- See [LICENSE](LICENSE) for license details.
