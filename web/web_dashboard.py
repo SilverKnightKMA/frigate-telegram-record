@@ -11,75 +11,6 @@ app = Flask(__name__)
 def index():
     return render_template('dashboard.html')
 
-@app.route('/api/overview')
-def get_overview():
-    conn = common.get_db_connection()
-    if not conn: return jsonify({'error': 'Database connect failed', 'details': 'Check logs'}), 500
-    
-    cursor = conn.cursor()
-    days = request.args.get('days', 1, type=int)
-    cutoff_ts = (datetime.now(pytz.utc) - timedelta(days=days)).timestamp()
-
-    try:
-        query_metrics = """
-            SELECT 
-                COUNT(*) as total_jobs,
-                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success_jobs,
-                SUM(filesize) as total_storage,
-                AVG(process_sec) as avg_process
-            FROM events 
-            WHERE created_at > ?
-        """
-        metrics = cursor.execute(query_metrics, (cutoff_ts,)).fetchone()
-        
-        last_update_row = cursor.execute("SELECT MAX(created_at) FROM events").fetchone()
-        last_update = last_update_row[0] if last_update_row else None
-
-        query_daily = """
-            SELECT 
-                date(created_at, 'unixepoch', 'localtime') as day_str,
-                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
-                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
-            FROM events
-            WHERE created_at > ?
-            GROUP BY day_str
-            ORDER BY day_str ASC
-        """
-        daily_stats = cursor.execute(query_daily, (cutoff_ts,)).fetchall()
-
-        query_reasons = """
-            SELECT fail_type, COUNT(*) as count 
-            FROM events 
-            WHERE status = 'FAILED' AND created_at > ? 
-            GROUP BY fail_type
-        """
-        fail_reasons = cursor.execute(query_reasons, (cutoff_ts,)).fetchall()
-
-        total = metrics['total_jobs'] or 0
-        success_count = metrics['success_jobs'] or 0
-        success_rate = round((success_count / total * 100), 1) if total > 0 else 0
-        storage_bytes = metrics['total_storage'] or 0
-        storage_fmt = f"{storage_bytes/1024**3:.2f} GB" if storage_bytes > 1024**3 else f"{storage_bytes/1024**2:.2f} MB"
-
-        return jsonify({
-            'metrics': {
-                'total': total,
-                'success_rate': success_rate,
-                'storage': storage_fmt,
-                'avg_process': round(metrics['avg_process'] or 0, 2),
-                'last_update': common.format_timestamp(last_update)
-            },
-            'charts': {
-                'daily': [{'date': r['day_str'], 'success': r['success'], 'failed': r['failed']} for r in daily_stats],
-                'reasons': {
-                    'labels': [r['fail_type'] or 'Unknown' for r in fail_reasons],
-                    'series': [r['count'] for r in fail_reasons]
-                }
-            }
-        })
-    finally:
-        conn.close()
-
 @app.route('/api/timeline_stats')
 def get_timeline_stats():
     """Get statistics for a specific time range (used by timeline tab)"""
@@ -491,54 +422,6 @@ def get_peak_activity():
             'day_labels': day_labels,
             'hour_labels': hour_labels
         })
-    finally:
-        conn.close()
-
-@app.route('/api/type_comparison')
-def get_type_comparison():
-    """Compare metrics between RECORD and TIMELAPSE event types"""
-    conn = common.get_db_connection()
-    if not conn: return jsonify({'error': 'Database connect failed'}), 500
-    cursor = conn.cursor()
-
-    start_ts = request.args.get('start', type=float)
-    end_ts = request.args.get('end', type=float)
-
-    if not start_ts or not end_ts:
-        return jsonify({'error': 'start and end parameters required'}), 400
-
-    try:
-        query = """
-            SELECT 
-                type,
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
-                SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
-                ROUND(SUM(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as success_rate,
-                SUM(filesize) as total_bytes,
-                ROUND(AVG(duration), 1) as avg_duration,
-                ROUND(AVG(process_sec), 2) as avg_process
-            FROM events
-            WHERE start_ts >= ? AND start_ts <= ?
-            GROUP BY type
-        """
-        rows = cursor.execute(query, (start_ts, end_ts)).fetchall()
-
-        types = []
-        for r in rows:
-            total_bytes = r['total_bytes'] or 0
-            types.append({
-                'type': r['type'] or 'UNKNOWN',
-                'total': r['total'],
-                'success': r['success'],
-                'failed': r['failed'],
-                'success_rate': r['success_rate'] or 0,
-                'storage_mb': round(total_bytes / (1024 * 1024), 2),
-                'avg_duration': r['avg_duration'] or 0,
-                'avg_process': r['avg_process'] or 0
-            })
-
-        return jsonify({'types': types})
     finally:
         conn.close()
 

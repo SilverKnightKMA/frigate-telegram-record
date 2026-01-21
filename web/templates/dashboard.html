@@ -19,7 +19,7 @@
 
     <div id="tab-timeline" class="tab-content active">
         <!-- Filter Toolbar (Top) -->
-        <div class="timeline-toolbar" id="filter-top">
+        <div class="timeline-toolbar">
             <div class="timeline-btn-group">
                 <span class="timeline-label">Short:</span>
                 <button class="btn-group-item" onclick="setWindow(1)">1h</button>
@@ -43,9 +43,9 @@
             </div>
 
             <div class="timeline-btn-group">
-                <input type="datetime-local" id="ts-start-top" class="ts-start" style="font-size:0.8rem; width: 175px;">
+                <input type="datetime-local" class="ts-start" style="font-size:0.8rem; width: 175px;">
                 <span style="color:var(--text-sub); margin:0 5px">-</span>
-                <input type="datetime-local" id="ts-end-top" class="ts-end" style="font-size:0.8rem; width: 175px;">
+                <input type="datetime-local" class="ts-end" style="font-size:0.8rem; width: 175px;">
                 <button class="action-btn" style="padding: 6px 12px; margin-left: 5px;" onclick="applyCustomRange()">Go</button>
             </div>
         </div>
@@ -75,7 +75,7 @@
             <div class="card">
                 <div class="metric-title">Storage Used</div>
                 <div class="metric-value" id="tl-storage">0 MB</div>
-                <div class="metric-sub" id="tl-storage-sub">in selected range</div>
+                <div class="metric-sub">in selected range</div>
                 <div class="metric-trend neutral" id="tl-storage-trend">
                     <span class="trend-arrow">-</span>
                     <span class="trend-value">0%</span>
@@ -247,7 +247,7 @@
             <div id="chart-timeline" style="min-height: 500px;"></div>
 
             <!-- Filter Toolbar (Bottom) -->
-            <div class="timeline-toolbar" id="filter-bottom" style="margin-top: 15px;">
+            <div class="timeline-toolbar" style="margin-top: 15px;">
                 <div class="timeline-btn-group">
                     <span class="timeline-label">Short:</span>
                     <button class="btn-group-item" onclick="setWindow(1)">1h</button>
@@ -271,9 +271,9 @@
                 </div>
 
                 <div class="timeline-btn-group">
-                    <input type="datetime-local" id="ts-start-bottom" class="ts-start" style="font-size:0.8rem; width: 175px;">
+                    <input type="datetime-local" class="ts-start" style="font-size:0.8rem; width: 175px;">
                     <span style="color:var(--text-sub); margin:0 5px">-</span>
-                    <input type="datetime-local" id="ts-end-bottom" class="ts-end" style="font-size:0.8rem; width: 175px;">
+                    <input type="datetime-local" class="ts-end" style="font-size:0.8rem; width: 175px;">
                     <button class="action-btn" style="padding: 6px 12px; margin-left: 5px;" onclick="applyCustomRange()">Go</button>
                 </div>
             </div>
