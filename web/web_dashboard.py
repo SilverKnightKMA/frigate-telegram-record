@@ -275,58 +275,15 @@ def get_duration_distribution():
         stats_rows = cursor.execute(stats_query, (start_ts, end_ts)).fetchall()
         
         def format_duration(seconds):
-            """Format seconds into human readable string"""
+            """Format seconds into human-readable string without decimals"""
             if seconds < 60:
                 return f"{int(seconds)}s"
             elif seconds < 3600:
-                mins = seconds / 60
-                if mins == int(mins):
-                    return f"{int(mins)}m"
-                return f"{mins:.1f}m"
+                mins = int(seconds / 60)
+                return f"{mins}m"
             else:
-                hours = seconds / 3600
-                if hours == int(hours):
-                    return f"{int(hours)}h"
-                return f"{hours:.1f}h"
-        
-        def calculate_buckets(min_dur, max_dur, num_buckets=6):
-            """Calculate dynamic bucket boundaries based on data range"""
-            if min_dur is None or max_dur is None or min_dur >= max_dur:
-                return []
-
-            # Ensure valid range
-            min_dur = max(0, min_dur)
-            max_dur = max(min_dur + 1, max_dur)
-
-            # Calculate bucket size
-            range_dur = max_dur - min_dur
-            bucket_size = range_dur / num_buckets
-
-            # Adjust bucket size to round to nearest nice number
-            if bucket_size < 10:
-                bucket_size = max(1, round(bucket_size))
-            elif bucket_size < 60:
-                bucket_size = round(bucket_size / 5) * 5
-            elif bucket_size < 300:
-                bucket_size = round(bucket_size / 30) * 30
-            elif bucket_size < 3600:
-                bucket_size = round(bucket_size / 60) * 60
-            else:
-                bucket_size = round(bucket_size / 300) * 300
-
-            # Recalculate bucket size if it results in more than num_buckets
-            while (range_dur / bucket_size) > num_buckets:
-                bucket_size *= 2
-
-            # Generate bucket boundaries
-            buckets = []
-            current = min_dur
-            while current < max_dur:
-                next_val = min(current + bucket_size, max_dur)
-                buckets.append((current, next_val))
-                current = next_val
-
-            return buckets
+                hours = int(seconds / 3600)
+                return f"{hours}h"
         
         def calculate_buckets_weighted(data, num_buckets=6):
             """Calculate dynamic bucket boundaries based on data range and weights (counts)."""
