@@ -249,7 +249,7 @@ def get_timeline_stats():
 @app.route('/api/duration_distribution')
 def get_duration_distribution():
     """Get duration distribution histogram for videos - separated by Record and Timelapse
-    Buckets are dynamically calculated based on actual data range"""
+    Record uses dynamic buckets, Timelapse shows exact seconds (since there aren't many different durations)"""
     conn = common.get_db_connection()
     if not conn: return jsonify({'error': 'Database connect failed'}), 500
     cursor = conn.cursor()
@@ -376,18 +376,47 @@ def get_duration_distribution():
             
             return result
         
+        def get_exact_duration_data(category):
+            """Get exact duration counts for timelapse (grouped by each second)"""
+            query = """
+                SELECT 
+                    CAST(ROUND(duration) AS INTEGER) as duration_sec,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as success,
+                    SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+                FROM events
+                WHERE start_ts >= ? AND start_ts <= ? 
+                    AND duration > 0
+                    AND (CASE WHEN type LIKE '%timelapse%' THEN 'Timelapse' ELSE 'Record' END) = ?
+                GROUP BY duration_sec
+                ORDER BY duration_sec
+            """
+            rows = cursor.execute(query, (start_ts, end_ts, category)).fetchall()
+            
+            result = []
+            for r in rows:
+                result.append({
+                    'range': f"{r['duration_sec']}s",
+                    'total': r['count'],
+                    'success': r['success'],
+                    'failed': r['failed']
+                })
+            
+            return result
+        
         # Process each category
         record_buckets = []
         timelapse_buckets = []
         
         for row in stats_rows:
             category = row['category']
-            buckets = calculate_buckets(row['min_dur'], row['max_dur'])
             
             if category == 'Record':
+                buckets = calculate_buckets(row['min_dur'], row['max_dur'])
                 record_buckets = get_bucket_data('Record', buckets)
             else:
-                timelapse_buckets = get_bucket_data('Timelapse', buckets)
+                # For Timelapse, show exact seconds instead of ranges
+                timelapse_buckets = get_exact_duration_data('Timelapse')
 
         return jsonify({
             'record': record_buckets,

@@ -1205,34 +1205,56 @@ function renderDonut(data) {
 // --- Table Rendering Functions ---
 
 /**
- * Render performance comparison data into a table
- * Displays type, count, success rate, duration, process time, and storage
+ * Render performance comparison data into a vertical table
+ * Displays metrics as rows with Record and Timelapse as columns
  */
 function renderPerformanceTable(categories, counts, successRates, avgDuration, avgProcess, storageMb) {
     const tbody = document.querySelector('#table-perf-comparison tbody');
     if (!tbody) return;
     
     if (!categories || categories.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:30px;">No data in selected range</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-sub);padding:30px;">No data in selected range</td></tr>';
         return;
     }
     
-    let html = '';
-    for (let i = 0; i < categories.length; i++) {
-        const rate = successRates[i] || 0;
-        const rateColor = rate >= 95 ? 'var(--success)' : rate >= 80 ? 'var(--warning)' : 'var(--danger)';
-        
-        html += `
-            <tr>
-                <td><strong>${categories[i]}</strong></td>
-                <td>${counts[i] || 0}</td>
-                <td style="color: ${rateColor}; font-weight: 600;">${rate}%</td>
-                <td>${(avgDuration[i] || 0).toFixed(1)}s</td>
-                <td>${(avgProcess[i] || 0).toFixed(1)}s</td>
-                <td>${(storageMb[i] || 0).toFixed(2)} MB</td>
-            </tr>
-        `;
-    }
+    // Find Record and Timelapse indices
+    const recordIdx = categories.indexOf('Record');
+    const timelapseIdx = categories.indexOf('Timelapse');
+    
+    const getValue = (arr, idx) => idx >= 0 ? arr[idx] : null;
+    
+    const recordRate = getValue(successRates, recordIdx) || 0;
+    const timelapseRate = getValue(successRates, timelapseIdx) || 0;
+    const recordRateColor = recordRate >= 95 ? 'var(--success)' : recordRate >= 80 ? 'var(--warning)' : 'var(--danger)';
+    const timelapseRateColor = timelapseRate >= 95 ? 'var(--success)' : timelapseRate >= 80 ? 'var(--warning)' : 'var(--danger)';
+    
+    let html = `
+        <tr>
+            <td><strong>Count</strong></td>
+            <td>${getValue(counts, recordIdx) ?? '-'}</td>
+            <td>${getValue(counts, timelapseIdx) ?? '-'}</td>
+        </tr>
+        <tr>
+            <td><strong>Success Rate</strong></td>
+            <td style="color: ${recordRateColor}; font-weight: 600;">${recordIdx >= 0 ? recordRate + '%' : '-'}</td>
+            <td style="color: ${timelapseRateColor}; font-weight: 600;">${timelapseIdx >= 0 ? timelapseRate + '%' : '-'}</td>
+        </tr>
+        <tr>
+            <td><strong>Avg Duration</strong></td>
+            <td>${recordIdx >= 0 ? (avgDuration[recordIdx] || 0).toFixed(1) + 's' : '-'}</td>
+            <td>${timelapseIdx >= 0 ? (avgDuration[timelapseIdx] || 0).toFixed(1) + 's' : '-'}</td>
+        </tr>
+        <tr>
+            <td><strong>Avg Process</strong></td>
+            <td>${recordIdx >= 0 ? (avgProcess[recordIdx] || 0).toFixed(1) + 's' : '-'}</td>
+            <td>${timelapseIdx >= 0 ? (avgProcess[timelapseIdx] || 0).toFixed(1) + 's' : '-'}</td>
+        </tr>
+        <tr>
+            <td><strong>Storage</strong></td>
+            <td>${recordIdx >= 0 ? (storageMb[recordIdx] || 0).toFixed(2) + ' MB' : '-'}</td>
+            <td>${timelapseIdx >= 0 ? (storageMb[timelapseIdx] || 0).toFixed(2) + ' MB' : '-'}</td>
+        </tr>
+    `;
     tbody.innerHTML = html;
 }
 
