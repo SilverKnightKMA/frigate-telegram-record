@@ -187,7 +187,6 @@ check_source_gatekeeper() {
         local ideal_timelapse_duration=$(( expected_duration / speed ))
         threshold=$(( ideal_timelapse_duration * MIN_DURATION_PERCENT / 100 ))
         
-        # [CHANGE] Replaced hardcoded '60' with TIMELAPSE_MIN_DURATION_SEC env var (Smart Skip)
         # Compare based on raw VOD for Smart Skip (retain this logic as it checks the input)
         if [ "$vod_duration" -lt "$TIMELAPSE_MIN_DURATION_SEC" ]; then
             # [FIX] Compare with estimated output here to be safe
