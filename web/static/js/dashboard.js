@@ -1266,22 +1266,29 @@ function renderDurationTable(tableId, typeData, typeName) {
     const tbody = document.querySelector(`#${tableId} tbody`);
     if (!tbody) return;
     
-    const bucketsWithData = (typeData || []).filter(b => b.total > 0);
-    
+    if (!typeData || typeData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-sub);padding:30px;">No ${typeName.toLowerCase()} data available</td></tr>`;
+        return;
+    }
+
+    const bucketsWithData = (typeData || []).filter(b => b.total > 0 || b.count > 0);
+
     if (bucketsWithData.length === 0) {
         tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-sub);padding:30px;">No ${typeName.toLowerCase()} data in selected range</td></tr>`;
         return;
     }
     
-    const totalCount = bucketsWithData.reduce((sum, b) => sum + b.total, 0);
+    const totalCount = bucketsWithData.reduce((sum, b) => sum + (b.total || b.count), 0);
     
     let html = '';
     bucketsWithData.forEach(bucket => {
-        const pct = totalCount > 0 ? ((bucket.total / totalCount) * 100).toFixed(1) : 0;
+        const range = bucket.range || `${bucket.duration}s`;
+        const count = bucket.total || bucket.count;
+        const pct = totalCount > 0 ? ((count / totalCount) * 100).toFixed(1) : 0;
         html += `
             <tr>
-                <td>${bucket.range}</td>
-                <td>${bucket.total}</td>
+                <td>${range}</td>
+                <td>${count}</td>
                 <td>${pct}%</td>
             </tr>
         `;
