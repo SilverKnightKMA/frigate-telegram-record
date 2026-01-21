@@ -403,16 +403,22 @@ def get_duration_distribution():
             return result
         
         def get_duration_data_smart(category, min_dur, max_dur, max_entries=6):
-            """Get duration data - show exact values if <= max_entries, otherwise use buckets"""
+            """Get duration data - ensure at least max_entries buckets even for small ranges"""
             # First, check how many distinct durations exist
             exact_data = get_exact_duration_data(category)
-            
+
             # If 6 or fewer distinct durations, return exact data
             if len(exact_data) <= max_entries:
                 return exact_data
-            
-            # Otherwise, fall back to bucketed data
+
+            # Otherwise, calculate buckets
             buckets = calculate_buckets(min_dur, max_dur, num_buckets=max_entries)
+
+            # Ensure at least max_entries buckets by reducing bucket size if needed
+            while len(buckets) < max_entries:
+                max_entries += 1
+                buckets = calculate_buckets(min_dur, max_dur, num_buckets=max_entries)
+
             return get_bucket_data(category, buckets)
         
         # Process each category
