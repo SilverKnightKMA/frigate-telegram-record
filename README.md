@@ -32,7 +32,7 @@ A lightweight containerized service that automatically downloads video clips fro
 - **Hardware Acceleration**: VAAPI support for efficient timelapse generation
 - **Web Dashboard**: A user-friendly interface for monitoring camera statistics and recording history
 
-## 🔍 How It Works
+## 🔍 How It Works?
 
 The service operates on a time-slot based system:
 
