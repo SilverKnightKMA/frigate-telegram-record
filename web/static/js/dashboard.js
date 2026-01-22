@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadFilters(); 
     loadTimeline(timelineState.start, timelineState.end);
-    loadOverview(); // Ensure 'Last Updated' is set on page load
+    loadOverview();
     
     // Sync datetime inputs between top and bottom toolbars
     document.querySelectorAll('.ts-start, .ts-end').forEach(input => {
