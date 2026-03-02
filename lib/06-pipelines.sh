@@ -251,7 +251,8 @@ generate_timelapse_video() {
         # - an: Disables audio to prevent synchronization failures and reduce bandwidth.
         nice -n 10 timeout 3600 ffmpeg -y -v info \
             -analyzeduration 30M -probesize 30M \
-            -fflags +genpts \
+            -err_detect ignore_err \
+            -fflags +genpts+discardcorrupt \
             -init_hw_device vaapi=intel:"$VAAPI_DEVICE" \
             -hwaccel vaapi \
             -hwaccel_device intel \
