@@ -85,12 +85,22 @@ calculate_vod_source_duration() {
         local http_code=$(curl -s -o "$playlist_file" -w "%{http_code}" "$vod_url")
         
         if [ "$http_code" == "200" ] && [ -s "$playlist_file" ]; then
-            # Sum up EXTINF values to get accurate seconds for this chunk
-            local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$playlist_file" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
-            chunk_duration=${chunk_duration:-0}
-            total_duration=$((total_duration + chunk_duration))
-            # [Debug] Log progress of duration accumulation
-            log_debug "[$camera_name] Chunk $count Duration: ${chunk_duration}s (Total: ${total_duration}s)"
+            # Use ffprobe to check the remote URL header to confirm if a 'video' stream actually exists.
+            # Added a 5-second timeout to prevent hanging if the Frigate server is slow to respond.
+            local has_video=$(timeout 5 ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$vod_url" 2>/dev/null | grep -ic "video")
+            has_video=${has_video:-0}
+            
+            if [ "$has_video" -eq 0 ]; then
+                log_debug "[$camera_name] Chunk $count has a playlist but NO VIDEO stream (Audio-only). Skipping duration calculation."
+                # Intentionally not adding to chunk_duration to exclude audio-only junk data
+            else
+                # Sum up EXTINF values to get accurate seconds for this chunk
+                local chunk_duration=$(grep -o "#EXTINF:[0-9.]*" "$playlist_file" 2>/dev/null | awk -F: '{sum+=$2} END {print int(sum)}')
+                chunk_duration=${chunk_duration:-0}
+                total_duration=$((total_duration + chunk_duration))
+                # [Debug] Log progress of duration accumulation
+                log_debug "[$camera_name] Chunk $count Duration: ${chunk_duration}s (Total: ${total_duration}s)"
+            fi
         else
             log_debug "[$camera_name] Chunk $count Failed/Empty (HTTP $http_code)"
         fi
