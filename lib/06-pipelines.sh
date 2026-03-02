@@ -151,7 +151,7 @@ execute_clip_pipeline() {
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
 ⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)
-<b>EventID:</b> ${event_id}"
+🆔 <b>EventID:</b> ${event_id}"
 
             log_debug "[$src] Caption prepared (EventID=${event_id}), sending to Telegram..."
 
@@ -382,7 +382,7 @@ execute_timelapse_pipeline() {
     ⏰ $display_start - $display_end
     ⏩ Speed: x$speed
     ⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)
-    <b>EventID:</b> ${event_id}"
+    🆔 <b>EventID:</b> ${event_id}"
 
         if send_telegram_video "$filepath" "$chat_id" "$target_tid" "$caption" "$src"; then
             
