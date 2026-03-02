@@ -115,26 +115,28 @@ check_source_gatekeeper() {
     local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
     
     # Retrieve previous failure info from the database
-    local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+        local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent, fail_type FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
     local prev_fail_duration=0
     local prev_alert_sent=0
-    if [ -n "$prev_fail_row" ]; then
-        prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
-        prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
-    fi
+        local prev_fail_type=""
+        if [ -n "$prev_fail_row" ]; then
+            prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
+            prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
+            prev_fail_type=$(echo "$prev_fail_row" | awk -F'|' '{print $3}')
+        fi
     prev_fail_duration=${prev_fail_duration:-0}
     prev_alert_sent=${prev_alert_sent:-0}
 
-    # [FIX] Calculate estimated output duration to ensure valid comparison with DB history
-    # Reason: Timelapse duration is (Source / Speed), while Record is (Source).
+    # Calculate estimated output duration to ensure valid comparison with DB history
+    # Timelapse duration is (Source / Speed), while Record is (Source).
     local estimated_output=$vod_duration
     if [ "$mode" == "timelapse" ]; then
         local speed=${TIMELAPSE_SPEED:-60}
         estimated_output=$(( vod_duration / speed ))
     fi
 
-    # [FIX] Immediate block if estimated output is 0s
-    # Reason: Prevents "Best Effort" execution when result is guaranteed to be 0s.
+    # Immediate block if estimated output is 0s
+    # Prevents "Best Effort" execution when result is guaranteed to be 0s.
     if [ "$estimated_output" -eq 0 ]; then
         # [FIX] Send alert if never sent before for this slot AND within lookback window
         if [ "$prev_alert_sent" -eq 0 ]; then
@@ -172,11 +174,17 @@ check_source_gatekeeper() {
     fi
 
     # Blocking logic: If an alert was already sent and the estimated output hasn't increased
-    # [FIX] Use estimated_output instead of vod_duration
-    if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
-        log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
-        return 1
-    fi
+    # Use estimated_output instead of vod_duration
+        # If previous fail_type is exactly TELEGRAM (case-insensitive), force a retry
+        local prev_type_uc=$(echo "${prev_fail_type:-}" | tr '[:lower:]' '[:upper:]')
+        if [ "$prev_type_uc" == "TELEGRAM" ]; then
+            log_debug "[$src] Gatekeeper: Previous fail_type=TELEGRAM, forcing retry."
+        else
+            if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
+                log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
+                return 1
+            fi
+        fi
 
     # Determine threshold according to mode
     local threshold=0
