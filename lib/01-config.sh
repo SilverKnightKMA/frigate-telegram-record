@@ -98,10 +98,8 @@ TIMELAPSE_PIXEL_FORMAT="${TIMELAPSE_PIXEL_FORMAT:-nv12}" # Pixel format for scal
 TELEGRAM_MAX_ALERT_RETRIES="${TELEGRAM_MAX_ALERT_RETRIES:-3}" # Retries for Error Text Alerts
 
 # [NEW] Crash / Retry Tuning
-# RETRY_CRASH_PARTIAL: If true, retry CRASH_PARTIAL indefinitely until resolved.
-# CRASH_MAX_RETRIES: Maximum retry attempts for CRASH_PARTIAL when RETRY_CRASH_PARTIAL=false.
-#   Special: Set CRASH_MAX_RETRIES=0 to allow unlimited retries (equivalent to RETRY_CRASH_PARTIAL=true).
-RETRY_CRASH_PARTIAL="${RETRY_CRASH_PARTIAL:-false}"
+# CRASH_MAX_RETRIES: Maximum retry attempts for CRASH_PARTIAL.
+#   Special: Set CRASH_MAX_RETRIES=0 to allow unlimited retries.
 CRASH_MAX_RETRIES="${CRASH_MAX_RETRIES:-3}"
 # Global variables to store Telegram Message IDs for recovery logic
 SENT_ERROR_MSG_ID=""

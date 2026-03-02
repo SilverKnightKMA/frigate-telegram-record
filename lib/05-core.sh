@@ -200,19 +200,15 @@ check_source_gatekeeper() {
         fi
     elif [ "$prev_type_uc" == "CRASH_PARTIAL" ]; then
         # System crash: allow limited retries or unlimited if configured
-        local retry_unlimited=$(echo "${RETRY_CRASH_PARTIAL:-false}" | tr '[:upper:]' '[:lower:]')
         local max_crash_retries=${CRASH_MAX_RETRIES:-3}
 
         # Interpret CRASH_MAX_RETRIES=0 as unlimited retries
-        local crash_unlimited_by_count=0
-        if [ "$max_crash_retries" -eq 0 ]; then crash_unlimited_by_count=1; fi
-
-        if [ "$retry_unlimited" != "true" ] && [ "$crash_unlimited_by_count" -eq 0 ] && [ "$prev_retry_count" -ge "$max_crash_retries" ]; then
+        if [ "$max_crash_retries" -ne 0 ] && [ "$prev_retry_count" -ge "$max_crash_retries" ]; then
             log "[$src] [$mode] Gatekeeper: CRASH_PARTIAL limit reached ($max_crash_retries attempts). Skipping permanently."
             return 1
         fi
 
-        if [ "$crash_unlimited_by_count" -eq 1 ] || [ "$retry_unlimited" == "true" ]; then
+        if [ "$max_crash_retries" -eq 0 ]; then
             log "[$src] [$mode] Gatekeeper: Retrying CRASH_PARTIAL (Attempt $((prev_retry_count + 1))/unlimited)."
         else
             log "[$src] [$mode] Gatekeeper: Retrying CRASH_PARTIAL (Attempt $((prev_retry_count + 1))/$max_crash_retries)."
