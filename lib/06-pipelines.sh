@@ -139,13 +139,21 @@ execute_clip_pipeline() {
                 return
             fi
 
-            # 5. SEND TELEGRAM
+            # Prepare DB placeholder so we can include EventID in the caption
+            local current_ts=$(date +%s)
+            local placeholder_msg_b64=$(echo "Pending" | base64 -w 0)
+            local insert_sql="INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'RECORD', 'PENDING', $start_ts, $end_ts, $current_ts, '$placeholder_msg_b64', 0, 0, 0, 0, 'Record Pending', 0); SELECT last_insert_rowid();"
+            local event_id=$(sqlite3 -cmd ".timeout $DB_TIMEOUT_MS" "$DB_FILE" "$insert_sql")
+            event_id=${event_id:-0}
+
+            # 5. SEND TELEGRAM (include EventID in caption)
             local caption="📷 <b>$cam_name</b>
 📅 $display_date
 ⏰ ${display_start} - ${display_end}
-⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
+⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)
+<b>EventID:</b> ${event_id}"
 
-            log_debug "[$src] Caption prepared, sending to Telegram..."
+            log_debug "[$src] Caption prepared (EventID=${event_id}), sending to Telegram..."
 
             if send_telegram_video "$filepath" "$chat_id" "$tid" "$caption" "$src"; then
                 log_debug "[$src] Video sent successfully, msg_id: $SENT_VIDEO_MSG_ID"
@@ -157,25 +165,34 @@ execute_clip_pipeline() {
                     
                     # 5a. FAILURE HANDLING (Partial)
                     if [ "$_status" == "partial" ]; then
+                        # Update placeholder to FAILED with DURATION
+                        local fail_msg_b64=$(echo "Partial Video (Duration: ${_fmt_actual})" | base64 -w 0)
+                        if [ -n "${event_id:-}" ] && [ "$event_id" -ne 0 ]; then
+                            db_exec "UPDATE events SET status='FAILED', fail_type='DURATION', message='$fail_msg_b64', duration=$_actual, filesize=$current_filesize, process_sec=$pipe_duration, alert_sent=0 WHERE id=$event_id;"
+                        fi
                         trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Video (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
                     else
                         # 5b. SUCCESS HANDLING & RECOVERY
-                        local current_ts=$(date +%s)
+                        local current_ts2=$(date +%s)
                         local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
                         local msg_b64=$(echo "Record Sent" | base64 -w 0)
-                        
+
                         handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                        # [Dashboard Update] Insert record with process_sec
-                        # [CHANGE] Include 'search_text' ('Record Sent') in INSERT
-                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'RECORD', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Record Sent', 0);"
-                        log "[$src] ✅ Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
+                        # Update placeholder event with success details
+                        db_exec "UPDATE events SET status='SUCCESS', created_at=$current_ts2, msg_id=$sent_msg_id, message='$msg_b64', duration=$_actual, filesize=$current_filesize, process_sec=$pipe_duration, search_text='Record Sent', alert_sent=0 WHERE id=$event_id;"
+                        log "[$src] ✅ Success (MsgID: $sent_msg_id, EventID: ${event_id:-unknown}, Size: $current_filesize, Process: ${pipe_duration}s)."
                     fi
                 else
                     log "[$src] Sent (Test Mode)."
                 fi
             else
                 pipe_duration=$(( $(date +%s) - pipe_start ))
+                # Update placeholder to FAILED with TELEGRAM
+                local fail_msg_b64=$(echo "Failed to send Video" | base64 -w 0)
+                if [ -n "${event_id:-}" ] && [ "$event_id" -ne 0 ]; then
+                    db_exec "UPDATE events SET status='FAILED', fail_type='TELEGRAM', message='$fail_msg_b64', duration=$_actual, filesize=$current_filesize, process_sec=$pipe_duration, alert_sent=0 WHERE id=$event_id;"
+                fi
                 trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Video" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
             fi
         else
@@ -350,14 +367,22 @@ execute_timelapse_pipeline() {
             return 1 # Fail status required for retry loop
         fi
 
-        # 5. SEND TELEGRAM
+        # Prepare DB placeholder so we can include EventID in the caption
+        local current_ts=$(date +%s)
+        local placeholder_msg_b64=$(echo "Pending" | base64 -w 0)
+        local insert_sql="INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'PENDING', $start_ts, $end_ts, $current_ts, '$placeholder_msg_b64', 0, 0, 0, 0, 'Timelapse Pending', 0); SELECT last_insert_rowid();"
+        local event_id=$(sqlite3 -cmd ".timeout $DB_TIMEOUT_MS" "$DB_FILE" "$insert_sql")
+        event_id=${event_id:-0}
+
+        # 5. SEND TELEGRAM (include EventID in caption)
         local total_hours=$(( total_real_seconds / 3600 ))
         local caption="🎞️ <b>TIMELAPSE ($total_hours h)</b>
-📷 $cam_name
-📅 $display_date
-⏰ $display_start - $display_end
-⏩ Speed: x$speed
-⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)"
+    📷 $cam_name
+    📅 $display_date
+    ⏰ $display_start - $display_end
+    ⏩ Speed: x$speed
+    ⏳ Duration: ${_fmt_actual} / ${_fmt_expected} (${_percent}%)
+    <b>EventID:</b> ${event_id}"
 
         if send_telegram_video "$filepath" "$chat_id" "$target_tid" "$caption" "$src"; then
             
@@ -372,16 +397,21 @@ execute_timelapse_pipeline() {
                         pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY
-                    local current_ts=$(date +%s)
+                    # 5b. SUCCESS HANDLING & RECOVERY
+                    local current_ts2=$(date +%s)
                     local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
                     local msg_b64=$(echo "Timelapse Sent" | base64 -w 0)
-                    
+
                     handle_recovery_actions "$src" "$start_ts" "$end_ts"
 
-                    # [Dashboard Update] Insert record with process_sec
-                    # [CHANGE] Include 'search_text' ('Timelapse Sent') in INSERT
-                    db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent', 0);"
-                    log "[$src] ✅ Timelapse Success (MsgID: $sent_msg_id, Size: $current_filesize, Process: ${pipe_duration}s)."
+                    # Update placeholder event with success details
+                    if [ -n "${event_id:-}" ] && [ "$event_id" -ne 0 ]; then
+                        db_exec "UPDATE events SET status='SUCCESS', created_at=$current_ts2, msg_id=$sent_msg_id, message='$msg_b64', duration=$_actual, filesize=$current_filesize, process_sec=$pipe_duration, search_text='Timelapse Sent', alert_sent=0 WHERE id=$event_id;"
+                    else
+                        # Fallback insert if placeholder missing
+                        db_exec "INSERT INTO events (camera, type, status, start_ts, end_ts, created_at, message, msg_id, duration, filesize, process_sec, search_text, alert_sent) VALUES ('$src', 'TIMELAPSE', 'SUCCESS', $start_ts, $end_ts, $current_ts2, '$msg_b64', $sent_msg_id, $_actual, $current_filesize, $pipe_duration, 'Timelapse Sent', 0);"
+                    fi
+                    log "[$src] ✅ Timelapse Success (MsgID: $sent_msg_id, EventID: ${event_id:-unknown}, Size: $current_filesize, Process: ${pipe_duration}s)."
                     pipeline_success=1
                 fi
             else
@@ -390,6 +420,11 @@ execute_timelapse_pipeline() {
             fi
         else
             local pipe_duration=$(( $(date +%s) - pipe_start ))
+            # Update placeholder to failed with TELEGRAM fail_type
+            local fail_msg_b64=$(echo "Failed to send Timelapse" | base64 -w 0)
+            if [ -n "${event_id:-}" ] && [ "$event_id" -ne 0 ]; then
+                db_exec "UPDATE events SET status='FAILED', fail_type='TELEGRAM', message='$fail_msg_b64', filesize=$current_filesize, process_sec=$pipe_duration, alert_sent=0 WHERE id=$event_id;"
+            fi
             trigger_failure_alert "$src" "$start_ts" "$end_ts" "TELEGRAM" "Failed to send Timelapse" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
             pipeline_success=0
         fi
