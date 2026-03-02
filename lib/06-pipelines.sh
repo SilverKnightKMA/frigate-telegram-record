@@ -255,12 +255,11 @@ generate_timelapse_video() {
             -init_hw_device vaapi=intel:"$VAAPI_DEVICE" \
             -hwaccel vaapi \
             -hwaccel_device intel \
-            -hwaccel_output_format vaapi \
             -filter_hw_device intel \
             -i "$url" \
-            -vf "setpts=PTS/$TIMELAPSE_SPEED,format=vaapi|nv12,hwupload,scale_vaapi=format=$TIMELAPSE_PIXEL_FORMAT" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,format=vaapi|nv12,hwupload,scale_vaapi=format=nv12" \
             -r "$TIMELAPSE_FPS" \
-            -c:v "$TIMELAPSE_CODEC" \
+            -c:v "${TIMELAPSE_CODEC:-h264_vaapi}" \
             -qp "$TIMELAPSE_QUALITY" \
             -an \
             "$chunk_file" > "$ffmpeg_log" 2>&1
