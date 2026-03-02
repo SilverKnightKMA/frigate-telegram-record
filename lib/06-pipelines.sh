@@ -211,6 +211,7 @@ execute_clip_pipeline() {
 }
 
 # Generates timelapse using VAAPI hardware acceleration by concatenating HLS chunks
+# Features: Dynamic Resolution Scaling, HLS Target Duration parsing, Auto-Resume & Smart Blind Jump
 # Returns: 0=success, 1=fail
 generate_timelapse_video() {
     local camera_name="$1"
@@ -223,33 +224,54 @@ generate_timelapse_video() {
     mkdir -p "$job_temp_dir"
     
     local concat_list="$job_temp_dir/concat_list.txt"
-    # [Ops] Capture FFmpeg output for detailed analysis
     local ffmpeg_log="$job_temp_dir/ffmpeg_err.log"
     local cursor=$start_ts
     local count=1
     local success=0
 
-    # Initialize error message buffer
+    # Initialize globals
     _gen_error=""
+    _had_crash="false"
 
     log "[$camera_name] Processing Timelapse: $(date -d @$start_ts '+%H:%M') -> $(date -d @$end_ts '+%H:%M') (Speed: x$TIMELAPSE_SPEED)"
 
+    local init_url="${FRIGATE_HOST}/vod/${camera_name}/start/${start_ts}/end/${end_ts}/index.m3u8"
+
+    # [Ops] 1A. MEASURE RESOLUTION
+    log_debug "[$camera_name] Measuring video stream resolution..."
+    local res=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$init_url" 2>/dev/null | head -n 1)
+
+    if [ -z "$res" ] || ! echo "$res" | grep -qE '^[0-9]+x[0-9]+$'; then
+        res="1920x1080" 
+    fi
+    local hw_w=$(echo "$res" | cut -d'x' -f1)
+    local hw_h=$(echo "$res" | cut -d'x' -f2)
+    log_debug "[$camera_name] Hardware scale template locked at: ${hw_w}x${hw_h}"
+
+    # [Ops] 1B. MEASURE SEGMENT DURATION (EXT-X-TARGETDURATION)
+    log_debug "[$camera_name] Measuring HLS segment duration..."
+    local target_dur=$(curl -s "$init_url" | grep -m1 "#EXT-X-TARGETDURATION" | cut -d':' -f2 | tr -d '\r')
+    if [ -z "$target_dur" ] || ! echo "$target_dur" | grep -qE '^[0-9]+$'; then
+        target_dur=10 # Fallback
+    fi
+    local blind_jump_sec=$target_dur
+    log_debug "[$camera_name] Dynamic Blind Jump step locked at: ${blind_jump_sec}s"
+
     # Render parts
-    cursor=$start_ts
-    count=1
-
     while [ "$cursor" -lt "$end_ts" ]; do
-        local next_cursor=$(($cursor + $TIMELAPSE_CHUNK_SIZE_SEC))
-        if [ "$next_cursor" -gt "$end_ts" ]; then next_cursor=$end_ts; fi
-        
-        local chunk_file="$job_temp_dir/part_${count}.mp4"
-        local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${next_cursor}/index.m3u8"
+        # Stop near the end to prevent micro-chunks causing errors
+        if [ "$cursor" -ge "$((end_ts - target_dur))" ]; then
+            log_debug "[$camera_name] Reached the end zone. Breaking loop."
+            break
+        fi
 
-        # [Ops] High-Reliability Render Logic
-        # - analyzeduration/probesize: Resolves width=0 metadata issues.
-        # - fflags +genpts: Normalizes DTS timestamps.
-        # - an: Disables audio to prevent synchronization failures and reduce bandwidth.
-        nice -n 10 timeout 3600 ffmpeg -y -v info \
+        local chunk_file="$job_temp_dir/part_${count}.mp4"
+        local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${end_ts}/index.m3u8"
+
+        log_debug "[$camera_name] Processing chunk $count: $cursor -> $end_ts"
+
+        # [Ops] 100% Strict GPU Pipeline
+        nice -n 10 timeout 3600 ffmpeg -y -v warning \
             -analyzeduration 30M -probesize 30M \
             -err_detect ignore_err \
             -fflags +genpts+discardcorrupt \
@@ -260,35 +282,49 @@ generate_timelapse_video() {
             -filter_hw_device intel \
             -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
             -i "$url" \
-            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=${TIMELAPSE_PIXEL_FORMAT:-nv12}" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=w=${hw_w}:h=${hw_h}:format=${TIMELAPSE_PIXEL_FORMAT:-nv12}" \
             -r "$TIMELAPSE_FPS" \
             -c:v "${TIMELAPSE_CODEC:-h264_vaapi}" \
             -qp "$TIMELAPSE_QUALITY" \
             -an \
-            "$chunk_file" > "$ffmpeg_log" 2>&1
+            "$chunk_file" >> "$ffmpeg_log" 2>&1
 
         local exit_code=$?
+        
+        local partial_dur=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$chunk_file" 2>/dev/null || echo 0)
+        partial_dur=$(printf "%.0f" "$partial_dur" 2>/dev/null || echo 0)
 
-        if [ $exit_code -eq 0 ] && [ -s "$chunk_file" ]; then
+        if [ $exit_code -eq 0 ] && [ "$partial_dur" -gt 0 ]; then
             echo "file '$chunk_file'" >> "$concat_list"
+            log_debug "[$camera_name] Success! Reached the end smoothly."
+            break 
         else
-            # [Ops] Fault Tolerance: Skip corrupt chunks
-            # Purpose: If a chunk is corrupt (0x0 stream) or HTTP 503 occurs, skip it but continue rendering.
-            local shm_status=$(df -h /dev/shm | tail -1)
-            local log_tail=$(tail -n 5 "$ffmpeg_log" | tr '\n' ' ')
-            log "[$camera_name] ⚠️ Chunk $count corrupt/failed (Exit: $exit_code). Skipping. SHM: $shm_status. Log: $log_tail"
-            if [ -z "$_gen_error" ]; then _gen_error="Partial (Chunk $count failed)"; fi
-            _had_crash="true"
+            if [ "$partial_dur" -gt 0 ]; then
+                echo "file '$chunk_file'" >> "$concat_list"
+                local processed_source=$(( partial_dur * TIMELAPSE_SPEED ))
+                log "[$camera_name] ⚠️ Crash at chunk $count. Saved ${partial_dur}s. Resuming next chunk from +${processed_source}s."
+                
+                # Auto-Resume: Jump past the processed data + half a segment to skip the corrupted boundary
+                cursor=$(( cursor + processed_source + (target_dur / 2) ))
+                _had_crash="true"
+                if [ -z "$_gen_error" ]; then _gen_error="Recovered mid-stream crash"; fi
+            else
+                # Sập ở giây số 0
+                local shm_status=$(df -h /dev/shm | tail -1)
+                log "[$camera_name] ⚠️ Chunk $count failed immediately (Bad Segment). Smart jumping +${blind_jump_sec}s. SHM: $shm_status."
+                
+                # Smart Blind Jump: Jump exactly 1 segment to find the next valid keyframe
+                cursor=$(( cursor + blind_jump_sec ))
+                _had_crash="true"
+            fi
         fi
-
-        cursor=$next_cursor
         count=$((count + 1))
     done
 
     # Concatenate all processed chunks into final file
     if [ -f "$concat_list" ] && [ -s "$concat_list" ]; then
         log "[$camera_name] Concatenating timelapse parts..."
-        nice -n 10 timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" > "$ffmpeg_log" 2>&1
+        nice -n 10 timeout 600 ffmpeg -y -v error -f concat -safe 0 -i "$concat_list" -c copy "$output_file" >> "$ffmpeg_log" 2>&1
         if [ $? -eq 0 ]; then 
             success=1
         else
@@ -419,7 +455,6 @@ execute_timelapse_pipeline() {
                         trigger_failure_alert "$src" "$start_ts" "$end_ts" "$final_fail_type" "$final_reason" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
                         pipeline_success=0
                 else
-                    # 5b. SUCCESS HANDLING & RECOVERY
                     # 5b. SUCCESS HANDLING & RECOVERY
                     local current_ts2=$(date +%s)
                     local sent_msg_id="${SENT_VIDEO_MSG_ID:-0}"
