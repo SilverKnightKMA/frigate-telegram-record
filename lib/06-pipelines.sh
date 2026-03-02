@@ -252,11 +252,13 @@ generate_timelapse_video() {
         nice -n 10 timeout 3600 ffmpeg -y -v info \
             -analyzeduration 30M -probesize 30M \
             -fflags +genpts \
+            -init_hw_device vaapi=intel:"$VAAPI_DEVICE" \
             -hwaccel vaapi \
-            -hwaccel_device "$VAAPI_DEVICE" \
+            -hwaccel_device intel \
             -hwaccel_output_format vaapi \
+            -filter_hw_device intel \
             -i "$url" \
-            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=$TIMELAPSE_PIXEL_FORMAT" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,format=vaapi|nv12,hwupload,scale_vaapi=format=$TIMELAPSE_PIXEL_FORMAT" \
             -r "$TIMELAPSE_FPS" \
             -c:v "$TIMELAPSE_CODEC" \
             -qp "$TIMELAPSE_QUALITY" \
