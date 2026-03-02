@@ -256,9 +256,11 @@ generate_timelapse_video() {
             -init_hw_device vaapi=intel:"$VAAPI_DEVICE" \
             -hwaccel vaapi \
             -hwaccel_device intel \
+            -hwaccel_output_format vaapi \
             -filter_hw_device intel \
+            -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
             -i "$url" \
-            -vf "setpts=PTS/$TIMELAPSE_SPEED,format=vaapi|nv12,hwupload,scale_vaapi=format=nv12" \
+            -vf "setpts=PTS/$TIMELAPSE_SPEED,scale_vaapi=format=${TIMELAPSE_PIXEL_FORMAT:-nv12}" \
             -r "$TIMELAPSE_FPS" \
             -c:v "${TIMELAPSE_CODEC:-h264_vaapi}" \
             -qp "$TIMELAPSE_QUALITY" \
@@ -276,6 +278,7 @@ generate_timelapse_video() {
             local log_tail=$(tail -n 5 "$ffmpeg_log" | tr '\n' ' ')
             log "[$camera_name] ⚠️ Chunk $count corrupt/failed (Exit: $exit_code). Skipping. SHM: $shm_status. Log: $log_tail"
             if [ -z "$_gen_error" ]; then _gen_error="Partial (Chunk $count failed)"; fi
+            _had_crash="true"
         fi
 
         cursor=$next_cursor
@@ -327,6 +330,7 @@ execute_timelapse_pipeline() {
 
     # 2. CORE GATEKEEPER CHECK
     # Reset gatekeeper globals
+    _had_crash="false"
     _gatekeeper_fail="false"
     _gatekeeper_reason=""
     _gatekeeper_prev_alert_sent=1
@@ -395,7 +399,24 @@ execute_timelapse_pipeline() {
                 
                 # 5a. FAILURE HANDLING (Partial)
                 if [ "$_status" == "partial" ]; then
-                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "DURATION" "Partial Timelapse (Duration: ${_fmt_actual})" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
+                        local final_fail_type="DURATION"
+                        local final_reason="Partial Timelapse (Duration: ${_fmt_actual})"
+                        
+                        if [ "$_had_crash" == "true" ]; then
+                            final_fail_type="CRASH_PARTIAL"
+                            if [ -n "${_gen_error:-}" ]; then
+                                final_reason="Crashed midway: ${_gen_error}. Result: ${_fmt_actual}"
+                            else
+                                final_reason="Crashed/Aborted midway. Result: ${_fmt_actual}"
+                            fi
+                        fi
+
+                        if [ -n "${event_id:-}" ] && [ "$event_id" -ne 0 ]; then
+                            local fail_msg_b64=$(echo "$final_reason" | base64 -w 0)
+                            db_exec "UPDATE events SET status='FAILED', fail_type='$final_fail_type', message='$fail_msg_b64', duration=$_actual, filesize=$current_filesize, process_sec=$pipe_duration, alert_sent=0 WHERE id=$event_id;"
+                        fi
+                        
+                        trigger_failure_alert "$src" "$start_ts" "$end_ts" "$final_fail_type" "$final_reason" "$run_mode" "$_actual" "$current_filesize" "$pipe_duration"
                         pipeline_success=0
                 else
                     # 5b. SUCCESS HANDLING & RECOVERY

@@ -124,18 +124,21 @@ check_source_gatekeeper() {
     local expected_duration=$(( end_ts - start_ts ))
     local vod_duration=$(calculate_vod_source_duration "$src" "$start_ts" "$end_ts")
     
-    # Retrieve previous failure info from the database
-        local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent, fail_type FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
+    # Retrieve previous failure info from the database (include retry_count)
+    local prev_fail_row=$(sqlite3 "$DB_FILE" "SELECT duration, alert_sent, fail_type, COALESCE(retry_count,0) FROM events WHERE camera='$src' AND start_ts=$start_ts AND end_ts=$end_ts AND status='FAILED' ORDER BY id DESC LIMIT 1;")
     local prev_fail_duration=0
     local prev_alert_sent=0
-        local prev_fail_type=""
-        if [ -n "$prev_fail_row" ]; then
-            prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
-            prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
-            prev_fail_type=$(echo "$prev_fail_row" | awk -F'|' '{print $3}')
-        fi
+    local prev_fail_type=""
+    local prev_retry_count=0
+    if [ -n "$prev_fail_row" ]; then
+        prev_fail_duration=$(echo "$prev_fail_row" | awk -F'|' '{print $1}')
+        prev_alert_sent=$(echo "$prev_fail_row" | awk -F'|' '{print $2}')
+        prev_fail_type=$(echo "$prev_fail_row" | awk -F'|' '{print $3}')
+        prev_retry_count=$(echo "$prev_fail_row" | awk -F'|' '{print $4}')
+    fi
     prev_fail_duration=${prev_fail_duration:-0}
     prev_alert_sent=${prev_alert_sent:-0}
+    prev_retry_count=${prev_retry_count:-0}
 
     # Calculate estimated output duration to ensure valid comparison with DB history
     # Timelapse duration is (Source / Speed), while Record is (Source).
@@ -185,16 +188,42 @@ check_source_gatekeeper() {
 
     # Blocking logic: If an alert was already sent and the estimated output hasn't increased
     # Use estimated_output instead of vod_duration
-        # If previous fail_type is exactly TELEGRAM (case-insensitive), force a retry
-        local prev_type_uc=$(echo "${prev_fail_type:-}" | tr '[:lower:]' '[:upper:]')
-        if [ "$prev_type_uc" == "TELEGRAM" ]; then
-            log_debug "[$src] Gatekeeper: Previous fail_type=TELEGRAM, forcing retry."
-        else
-            if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
-                log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
-                return 1
-            fi
+    # Advanced pipeline loop prevention based on previous failure type
+    local prev_type_uc=$(echo "${prev_fail_type:-}" | tr '[:lower:]' '[:upper:]')
+    if [ "$prev_type_uc" == "TELEGRAM" ]; then
+        log_debug "[$src] Gatekeeper: Previous fail_type=TELEGRAM, forcing retry."
+    elif [ "$prev_type_uc" == "DURATION" ]; then
+        # Data problem: if estimated output hasn't increased, skip permanently
+        if [ "$estimated_output" -le "$prev_fail_duration" ]; then
+            log "[$src] [$mode] Gatekeeper: DURATION fail confirmed (VOD unchanged). Skipping to prevent loop."
+            return 1
         fi
+    elif [ "$prev_type_uc" == "CRASH_PARTIAL" ]; then
+        # System crash: allow limited retries or unlimited if configured
+        local retry_unlimited=$(echo "${RETRY_CRASH_PARTIAL:-false}" | tr '[:upper:]' '[:lower:]')
+        local max_crash_retries=${CRASH_MAX_RETRIES:-3}
+
+        # Interpret CRASH_MAX_RETRIES=0 as unlimited retries
+        local crash_unlimited_by_count=0
+        if [ "$max_crash_retries" -eq 0 ]; then crash_unlimited_by_count=1; fi
+
+        if [ "$retry_unlimited" != "true" ] && [ "$crash_unlimited_by_count" -eq 0 ] && [ "$prev_retry_count" -ge "$max_crash_retries" ]; then
+            log "[$src] [$mode] Gatekeeper: CRASH_PARTIAL limit reached ($max_crash_retries attempts). Skipping permanently."
+            return 1
+        fi
+
+        if [ "$crash_unlimited_by_count" -eq 1 ] || [ "$retry_unlimited" == "true" ]; then
+            log "[$src] [$mode] Gatekeeper: Retrying CRASH_PARTIAL (Attempt $((prev_retry_count + 1))/unlimited)."
+        else
+            log "[$src] [$mode] Gatekeeper: Retrying CRASH_PARTIAL (Attempt $((prev_retry_count + 1))/$max_crash_retries)."
+        fi
+    else
+        # Other error types: skip if no improvement and alert previously sent
+        if [ "$prev_alert_sent" -eq 1 ] && [ "$estimated_output" -le "$prev_fail_duration" ]; then
+            log "[$src] [$mode] Gatekeeper: Skipping (Est. ${estimated_output}s <= previous ${prev_fail_duration}s)."
+            return 1
+        fi
+    fi
 
     # Determine threshold according to mode
     local threshold=0
@@ -438,11 +467,14 @@ trigger_failure_alert() {
 
     local prev_duration=0
     local prev_alert_sent=0
+    local prev_retry_count=0
     if [ "$existing_id" -gt 0 ]; then
         prev_duration=$(sqlite3 "$DB_FILE" "SELECT duration FROM events WHERE id=$existing_id;")
         prev_duration=${prev_duration:-0}
         prev_alert_sent=$(sqlite3 "$DB_FILE" "SELECT alert_sent FROM events WHERE id=$existing_id;")
         prev_alert_sent=${prev_alert_sent:-0}
+        prev_retry_count=$(sqlite3 "$DB_FILE" "SELECT COALESCE(retry_count,0) FROM events WHERE id=$existing_id;")
+        prev_retry_count=${prev_retry_count:-0}
     fi
 
     # [Debug] Log key variables affecting alert decision logic
@@ -518,6 +550,12 @@ trigger_failure_alert() {
         final_alert_sent=1
     fi
 
+    # Compute new retry count (increment when updating existing failure record)
+    local new_retry_count=1
+    if [ "$existing_id" -gt 0 ]; then
+        new_retry_count=$((prev_retry_count + 1))
+    fi
+
     if [ "$existing_id" -gt 0 ]; then
          # [Database] Update record including 'message' persistence
          db_exec \
@@ -530,7 +568,8 @@ trigger_failure_alert() {
                  filesize=$filesize_val, \
                  process_sec=$process_sec_val, \
                  search_text='$clean_search_text', \
-                 alert_sent=$final_alert_sent \
+                 alert_sent=$final_alert_sent, \
+                 retry_count=$new_retry_count \
              WHERE id=$existing_id;"
     else
          # [Database] Insert new record with 'message' column
@@ -538,10 +577,10 @@ trigger_failure_alert() {
             "INSERT INTO events \
              (camera, type, status, start_ts, end_ts, created_at, \
               message, msg_id, duration, fail_type, filesize, process_sec, \
-              search_text, alert_sent) \
+              search_text, alert_sent, retry_count) \
              VALUES \
              ('$src', '$type_code', 'FAILED', $start_ts, $end_ts, $current_ts, \
               '$b64_alert_text', $msg_id_to_save, $duration_val, '$fail_type', $filesize_val, $process_sec_val, \
-              '$clean_search_text', $final_alert_sent);"
+              '$clean_search_text', $final_alert_sent, $new_retry_count);"
     fi
 }

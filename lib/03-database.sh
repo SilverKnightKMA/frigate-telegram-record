@@ -33,6 +33,7 @@ init_db() {
         filesize INTEGER DEFAULT 0, -- Bytes
         process_sec INTEGER DEFAULT 0, -- Processing duration (Performance metric)
         search_text TEXT, -- Sanitized content for searching
+        retry_count INTEGER DEFAULT 0,
         alert_sent INTEGER DEFAULT 0 -- 0=Not sent, 1=Sent (prevents duplicate alerts)
     );"
 
@@ -43,6 +44,8 @@ init_db() {
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN search_text TEXT;" 2>/dev/null || true
     # Reason: Track alert notification status to prevent duplicate alerts for same failure
     sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN alert_sent INTEGER DEFAULT 0;" 2>/dev/null || true
+    # Reason: Track number of retries for failure slots (prevents infinite retry loops)
+    sqlite3 "$DB_FILE" "ALTER TABLE events ADD COLUMN retry_count INTEGER DEFAULT 0;" 2>/dev/null || true
 
     # [Dashboard Indexes] Optimized for common Dashboard queries
     
