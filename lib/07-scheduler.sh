@@ -39,20 +39,32 @@ process_time_window() {
             # [CHANGE] Replaced hardcoded '10' with SCHEDULER_GAP_THRESHOLD_SEC env var
             if [ $((ex_start - cursor)) -gt $SCHEDULER_GAP_THRESHOLD_SEC ]; then
                 log "[$src] 💡 Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$ex_start '+%H:%M')"
-                execute_clip_pipeline "$cam_name" "$src" "$cursor" "$ex_start" "$run_mode" "$tid" "$chat_id"
+                local gap_start=$cursor
+                local gap_end=$ex_start
+                local gap_duration=$((gap_end - gap_start))
+                local gap_start_human=$(date -d @${gap_start} '+%Y-%m-%d %H:%M:%S')
+                local gap_end_human=$(date -d @${gap_end} '+%Y-%m-%d %H:%M:%S')
+                log_debug "[$src] Gap metadata: start_ts=${gap_start} (${gap_start_human}), end_ts=${gap_end} (${gap_end_human}), duration=${gap_duration}s, master_window=${master_start_ts}-${master_end_ts}, run_mode=${run_mode}, tid=${tid}, chat_id=${chat_id}"
+                execute_clip_pipeline "$cam_name" "$src" "$gap_start" "$gap_end" "$run_mode" "$tid" "$chat_id"
             fi
         fi
         if [ "$ex_end" -gt "$cursor" ]; then cursor=$ex_end; fi
     done
 
     # Check for tail gap
-    if [ "$cursor" -lt "$master_end_ts" ]; then
-          # [CHANGE] Replaced hardcoded '10' with SCHEDULER_GAP_THRESHOLD_SEC env var
-          if [ $((master_end_ts - cursor)) -gt $SCHEDULER_GAP_THRESHOLD_SEC ]; then
-            log "[$src] 💡 Tail Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$master_end_ts '+%H:%M')"
-            execute_clip_pipeline "$cam_name" "$src" "$cursor" "$master_end_ts" "$run_mode" "$tid" "$chat_id"
-         fi
-    fi
+        if [ "$cursor" -lt "$master_end_ts" ]; then
+                    # [CHANGE] Replaced hardcoded '10' with SCHEDULER_GAP_THRESHOLD_SEC env var
+                    if [ $((master_end_ts - cursor)) -gt $SCHEDULER_GAP_THRESHOLD_SEC ]; then
+                        log "[$src] 💡 Tail Gap: $(date -d @$cursor '+%H:%M') -> $(date -d @$master_end_ts '+%H:%M')"
+                        local gap_start=$cursor
+                        local gap_end=$master_end_ts
+                        local gap_duration=$((gap_end - gap_start))
+                        local gap_start_human=$(date -d @${gap_start} '+%Y-%m-%d %H:%M:%S')
+                        local gap_end_human=$(date -d @${gap_end} '+%Y-%m-%d %H:%M:%S')
+                        log_debug "[$src] Gap metadata: start_ts=${gap_start} (${gap_start_human}), end_ts=${gap_end} (${gap_end_human}), duration=${gap_duration}s, master_window=${master_start_ts}-${master_end_ts}, run_mode=${run_mode}, tid=${tid}, chat_id=${chat_id}"
+                        execute_clip_pipeline "$cam_name" "$src" "$gap_start" "$gap_end" "$run_mode" "$tid" "$chat_id"
+                 fi
+        fi
 }
 
 process_camera_batch() {
