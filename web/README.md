@@ -21,9 +21,9 @@ Open your browser at: `http://localhost:8080` (or `http://<host>:<WEB_PORT>` if 
 
 ### Screenshots
 
-![Dashboard](dashboard.png)
+![Dashboard](docs/dashboard.png)
 
-![Events](events.png)
+![Events](docs/events.png)
 
 ---
 

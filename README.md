@@ -221,13 +221,13 @@ For more details, see the [web dashboard README](web/README.md).
 
 ### Screenshots
 
-![Record](record.png)
+![Record](docs/record.png)
 
-![Timelapse](timelapse.png)
+![Timelapse](docs/timelapse.png)
 
-![Error Log](error.png)
+![Error Log](docs/error.png)
 
-![Error Solved](solved.png)
+![Error Solved](docs/solved.png)
 
 ## 🔧 Advanced Usage
 
