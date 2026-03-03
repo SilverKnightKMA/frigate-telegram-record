@@ -211,7 +211,7 @@ execute_clip_pipeline() {
 }
 
 # Generates timelapse using VAAPI hardware acceleration by concatenating HLS chunks
-# Features: Dynamic Resolution Scaling, HLS Target Duration parsing, Auto-Resume & Smart Blind Jump
+# Features: Dynamic Resolution, Segment parsing, Chunking, Auto-Resume & Smart Jump
 # Returns: 0=success, 1=fail
 generate_timelapse_video() {
     local camera_name="$1"
@@ -219,7 +219,6 @@ generate_timelapse_video() {
     local end_ts="$3"
     local output_file="$4"
 
-    # Create a unique temporary directory to avoid file collisions
     local job_temp_dir="${TEMP_DIR}/timelapse_${camera_name}_${start_ts}"
     mkdir -p "$job_temp_dir"
     
@@ -228,8 +227,8 @@ generate_timelapse_video() {
     local cursor=$start_ts
     local count=1
     local success=0
+    local chunk_sec=${TIMELAPSE_CHUNK_SIZE_SEC:-3600}
 
-    # Initialize globals
     _gen_error=""
     _had_crash="false"
 
@@ -248,29 +247,33 @@ generate_timelapse_video() {
     local hw_h=$(echo "$res" | cut -d'x' -f2)
     log_debug "[$camera_name] Hardware scale template locked at: ${hw_w}x${hw_h}"
 
-    # [Ops] 1B. MEASURE SEGMENT DURATION (EXT-X-TARGETDURATION)
+    # [Ops] 1B. MEASURE SEGMENT DURATION
     log_debug "[$camera_name] Measuring HLS segment duration..."
     local target_dur=$(curl -s "$init_url" | grep -m1 "#EXT-X-TARGETDURATION" | cut -d':' -f2 | tr -d '\r')
     if [ -z "$target_dur" ] || ! echo "$target_dur" | grep -qE '^[0-9]+$'; then
-        target_dur=10 # Fallback
+        target_dur=10
     fi
     local blind_jump_sec=$target_dur
     log_debug "[$camera_name] Dynamic Blind Jump step locked at: ${blind_jump_sec}s"
 
     # Render parts
     while [ "$cursor" -lt "$end_ts" ]; do
-        # Stop near the end to prevent micro-chunks causing errors
         if [ "$cursor" -ge "$((end_ts - target_dur))" ]; then
             log_debug "[$camera_name] Reached the end zone. Breaking loop."
             break
         fi
 
+        # Calculate target for this specific chunk (1-hour max to bypass Frigate API limits)
+        local current_target=$((cursor + chunk_sec))
+        if [ "$current_target" -gt "$end_ts" ]; then
+            current_target=$end_ts
+        fi
+
         local chunk_file="$job_temp_dir/part_${count}.mp4"
-        local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${end_ts}/index.m3u8"
+        local url="${FRIGATE_HOST}/vod/${camera_name}/start/${cursor}/end/${current_target}/index.m3u8"
 
-        log_debug "[$camera_name] Processing chunk $count: $cursor -> $end_ts"
+        log_debug "[$camera_name] Processing chunk $count: $cursor -> $current_target"
 
-        # [Ops] 100% Strict GPU Pipeline
         nice -n 10 timeout 3600 ffmpeg -y -v warning \
             -analyzeduration 30M -probesize 30M \
             -err_detect ignore_err \
@@ -296,24 +299,21 @@ generate_timelapse_video() {
 
         if [ $exit_code -eq 0 ] && [ "$partial_dur" -gt 0 ]; then
             echo "file '$chunk_file'" >> "$concat_list"
-            log_debug "[$camera_name] Success! Reached the end smoothly."
-            break 
+            log_debug "[$camera_name] Chunk $count reached its target smoothly."
+            cursor=$current_target 
         else
             if [ "$partial_dur" -gt 0 ]; then
                 echo "file '$chunk_file'" >> "$concat_list"
                 local processed_source=$(( partial_dur * TIMELAPSE_SPEED ))
                 log "[$camera_name] ⚠️ Crash at chunk $count. Saved ${partial_dur}s. Resuming next chunk from +${processed_source}s."
                 
-                # Auto-Resume: Jump past the processed data + half a segment to skip the corrupted boundary
                 cursor=$(( cursor + processed_source + (target_dur / 2) ))
                 _had_crash="true"
                 if [ -z "$_gen_error" ]; then _gen_error="Recovered mid-stream crash"; fi
             else
-                # Sập ở giây số 0
                 local shm_status=$(df -h /dev/shm | tail -1)
                 log "[$camera_name] ⚠️ Chunk $count failed immediately (Bad Segment). Smart jumping +${blind_jump_sec}s. SHM: $shm_status."
                 
-                # Smart Blind Jump: Jump exactly 1 segment to find the next valid keyframe
                 cursor=$(( cursor + blind_jump_sec ))
                 _had_crash="true"
             fi
