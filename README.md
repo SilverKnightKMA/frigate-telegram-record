@@ -2,19 +2,6 @@
 
 A lightweight containerized service that automatically downloads video clips from your Frigate NVR and sends them to Telegram. The service intelligently manages recording history to prevent duplicates, validates video quality, and provides error notifications. Additionally, a web dashboard is available for monitoring statistics and recording history.
 
-## 📋 Table of Contents
-
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Operating Modes](#operating-modes)
-- [Web Dashboard](#web-dashboard)
-- [Advanced Usage](#advanced-usage)
-- [Troubleshooting](#troubleshooting)
-- [Project Structure](#project-structure)
-
 ## ✨ Features
 
 - **Automated Video Recording**: Periodically checks Frigate for missing time slots and downloads corresponding clips
