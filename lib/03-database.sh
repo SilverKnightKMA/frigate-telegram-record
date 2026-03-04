@@ -66,12 +66,12 @@ init_db() {
     
     if [ "$RETENTION_DAYS" -gt 0 ]; then
         local sent_cleanup_ts=$(date -d "-$RETENTION_DAYS days" +%s)
-        db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND created_at < $sent_cleanup_ts;"
+        db_exec "DELETE FROM events WHERE type IN ('RECORD', 'TIMELAPSE') AND end_ts < $sent_cleanup_ts;"
     fi
 
     if [ "$ALERT_RETENTION_HOURS" -gt 0 ]; then
         local alert_cleanup_ts=$(date -d "-$ALERT_RETENTION_HOURS hours" +%s)
-        db_exec "DELETE FROM events WHERE status='FAILED' AND created_at < $alert_cleanup_ts;"
+        db_exec "DELETE FROM events WHERE status='FAILED' AND end_ts < $alert_cleanup_ts;"
     fi
 
     # [Ops] Database Maintenance (VACUUM)
