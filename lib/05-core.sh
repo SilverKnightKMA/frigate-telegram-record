@@ -148,6 +148,8 @@ check_source_gatekeeper() {
         estimated_output=$(( vod_duration / speed ))
     fi
 
+    _gatekeeper_estimated_output=$estimated_output
+
     # Immediate block if estimated output is 0s
     # Prevents "Best Effort" execution when result is guaranteed to be 0s.
     if [ "$estimated_output" -eq 0 ]; then

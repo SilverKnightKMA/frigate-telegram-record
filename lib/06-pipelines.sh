@@ -398,9 +398,9 @@ execute_timelapse_pipeline() {
         local current_filesize=$(stat -c%s "$filepath" 2>/dev/null || echo 0)
 
         # 4. CHECK DURATION & STATUS
-        local total_real_seconds=$(( end_ts - start_ts ))
-        local speed=${TIMELAPSE_SPEED:-60}
-        local expected_duration=$(( total_real_seconds / speed ))
+        local expected_duration=${_gatekeeper_estimated_output:-1}
+        
+        if [ "$expected_duration" -le 0 ]; then expected_duration=1; fi
         
         check_duration_and_status "$src" "$filepath" "$expected_duration" "$start_ts" "$end_ts"
 
