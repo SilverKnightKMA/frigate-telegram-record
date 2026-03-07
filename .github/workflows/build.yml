@@ -110,7 +110,7 @@ jobs:
             type=match,pattern=\d.\d.\d$,priority=901
 
       - name: Build and push Record/Timelapse image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -166,7 +166,7 @@ jobs:
             type=match,pattern=\d.\d.\d$,priority=901
 
       - name: Build and push Web Dashboard image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./web
           file: ./web/Dockerfile
